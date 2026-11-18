@@ -139,7 +139,9 @@ context7처럼 MCP를 연결하면 제작에 필요한 지침을 바로 찾아 �
 | `asset_list`, `asset_delete` | 사이트별 자산 관리 |
 
 - CDN 주소: `dsites.daniworks.kr/assets/<siteId>/<hash>.webp`. 내용 해시 경로라 영구 캐시. 설정에는 키만 저장한다.
-- 생성 이미지는 배경·일러스트·분위기 이미지에만 쓴다. 시공 사례·음식·매장 등 실제 작업물은 고객 사진만 쓴다. 자산에 `ai_generated`를 기록한다.
+- 생성 이미지는 배경·일러스트·분위기 이미지에만 쓴다. 시공 사례·음식·매장 등 실제 작업물은 고객 사진만 쓴다.
+- 예외: 고객이 직접 요청하면 실제 작업물 용도로도 생성한다. `image_generate`에 `customer_request`(요청 경로·일시·내용 요약)를 받아 자산에 남긴다. 요청 기록 없이는 기본 용도만 허용한다.
+- 자산에 `ai_generated`를 기록한다.
 - 생성마다 비용을 기록한다. 셀프서비스에서는 크레딧으로 차감한다.
 - 환경 변수: `OPENAI_API_KEY`(secret), `OPENAI_IMAGE_MODEL`. 로컬은 `apps/api/.dev.vars`, 운영은 `wrangler secret put`.
 
@@ -194,7 +196,7 @@ context7처럼 MCP를 연결하면 제작에 필요한 지침을 바로 찾아 �
 | `guides` | id, 주제, 종류(스키마/계약/업종/디자인/작성 규칙), 공개 범위, 현재 버전 |
 | `guide_versions` | id, guide_id, 본문(섹션 단위 markdown), 작성자, created_at |
 | `site_versions` | + guide_versions(참고한 지침 버전 목록) |
-| `assets` | id, site_id, R2 키, 해시, 크기, 출처(upload/url/ai), ai_generated, 프롬프트, 생성 비용, created_at |
+| `assets` | id, site_id, R2 키, 해시, 크기, 출처(upload/url/ai), ai_generated, 프롬프트, 용도(기본/고객 요청), 고객 요청 기록, 생성 비용, created_at |
 | `audit_log` | id, 행위자(Authentik 사용자 ID 또는 스크립트), 경로(콘솔/MCP/스크립트), 동작, 대상, created_at |
 
 ## 8. 우선순위
