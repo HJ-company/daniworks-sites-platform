@@ -83,7 +83,9 @@ policy: https://app.notion.com/p/41cecd5a3ac28107820effaeb6cb4fc8
 
 - 기본 도메인: `*.dsites.co.kr` 와일드카드. slug는 사이트 생성 시 확정.
 - 커스텀 도메인: Cloudflare for SaaS 커스텀 호스트네임. 콘솔에서 등록하면 API로 호스트네임을 만들고, 고객에게 CNAME·TXT 값을 보여주고, 상태를 확인해 표시한다.
-- 루트 도메인(example.com)은 국내 등록업체 대부분이 CNAME/ALIAS를 지원하지 않는다. 안내 기본값은 `www` 연결 + 등록업체 포워딩.
+- 루트 도메인(example.com)은 국내 등록업체 대부분이 CNAME/ALIAS를 지원하지 않는 것으로 보인다. 고정 IP로 연결하는 Apex Proxying은 Enterprise 전용이다. 안내 기본값은 `www` CNAME 연결 + 등록업체 루트 포워딩(`customer.kr` → `https://www.customer.kr`).
+- 루트 직접 연결은 고객 DNS가 ALIAS/CNAME 평탄화를 지원하거나 네임서버가 Cloudflare일 때만 허용한다. 이 경우 호스트네임을 2개(루트·www) 쓴다.
+- 비용: 호스트네임 100개 포함, 이후 개당 월 $0.10. 해지 시 호스트네임을 즉시 삭제하고, quota API로 사용량을 점검한다.
 - 라우터 Worker: Host → siteId(KV) → 게시 버전 포인터(KV) → R2 객체. 커스텀 도메인 연결 후 기본 도메인은 커스텀 도메인으로 리다이렉트.
 
 ### 4-5. 문의
@@ -184,7 +186,8 @@ packages/
 | --- | --- |
 | 블록이 Worker 안에서 `renderToString`으로 렌더되지 않음 | 해소: 로컬 workerd에서 렌더·하이드레이션 확인 ([M0 결과](m0-render-poc.md)) |
 | 구축 3시간 초과 | 사이트 없는 리드 3곳으로 AI 초안 유무별 실측 |
-| 국내 등록업체 도메인 연결 실패 | 가비아·후이즈 등에서 www CNAME + 루트 포워딩 실측 |
+| 국내 등록업체 도메인 연결 실패 | 가비아·후이즈·카페24 등에서 www CNAME 연결 실측, 업체별 안내 문서 작성 |
+| 등록업체 루트 포워딩이 https를 지원하지 않음 (`https://customer.kr` 접속 시 인증서 오류) | 같은 업체들에서 http·https 포워딩 각각 실측. 미지원 업체는 네임서버 Cloudflare 이전 안내 또는 도메인 대행 옵션으로 처리 |
 | 네이버 블로그 이미지 외부 표시 차단 | RSS 수집 PoC에서 확인 |
 | 클라이언트 JS(gzip 94 KiB)와 아이콘 세트 크기로 성능 목표 미달 | M0에서 측정. 부분 하이드레이션·아이콘 분할 검토 |
 | 템플릿 업데이트로 기존 사이트 깨짐 | 템플릿 버전을 사이트별로 기록, 재게시 전 시각 회귀 확인 |
