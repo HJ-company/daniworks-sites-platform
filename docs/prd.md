@@ -125,7 +125,7 @@ policy: https://app.notion.com/p/41cecd5a3ac28107820effaeb6cb4fc8
 - MCP 인증: Authentik OAuth. Claude·ChatGPT 원격 커넥터에서 Authentik으로 로그인하고, MCP 서버가 토큰을 JWKS로 검증한다.
 - 도구: `customer_create`, `customer_get`, `site_create`, `site_get`, `site_update_draft`, `site_validate`, `site_preview_url`, `site_publish`, `site_rollback`, `site_preview_link`(사이트 시안 링크 발급·재발급), `guide_list`, `guide_get`, `guide_create`, `guide_update`(제작 지침 문서), `image_generate`(OpenAI), `asset_import_url`, `asset_upload`, `asset_list`, `asset_delete`. 상세는 [관리자 콘솔 5절](admin-console.md#5-mcp-도구).
 - 관리자 콘솔: `dsites-console.daniworks.kr`, Authentik OIDC(`authentik.daniworks.kr`) 로그인. 화면은 [관리자 콘솔](admin-console.md).
-- 해지: 공개 중단(라우터에서 차단), 데이터·정적 파일은 보관 후 인출 가능.
+- 해지: 공개 중단(라우터에서 차단), 데이터·정적 파일은 해지일부터 1년 보관하고 그동안 인출 가능. 1년 후 삭제한다. 자동 삭제는 차후 구현하고, 그 전까지는 보관만 한다.
 - AI 홈페이지 전환: 사이트 설정(TemplateSeed)을 Strapi로 가져오는 스크립트. `create-daniworks-app` importer를 고객 seed를 받도록 확장하는 방향.
 
 ## 5. 아키텍처
@@ -221,6 +221,5 @@ packages/
 - DB: D1로 충분한지, 콘솔·리포트 요구로 Postgres가 필요한지 (M1에서 결정)
 - 고객 콘솔 인증 방식. 계정 모델은 고객 1 : 사이트 N, 사이트마다 과금으로 확정
 - 분기 AI 노출 재측정(geo-prove)과 리포트 생성의 위치: 이 플랫폼 안인지 별도 시스템인지
-- 해지 후 데이터 보관 기간
 - 콘솔 AI 수정: 크레딧 수량·충전, 크레딧 차감 단위(요청 1건·게시 1건 등), 게시 전 운영자 검수 여부. 정책서의 '연 4건 수정'과의 관계도 정책서에 반영 필요
 - PG 선택과 연동 시점. 그 전까지 수동 입금 확인
