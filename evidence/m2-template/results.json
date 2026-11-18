@@ -1,0 +1,223 @@
+{
+  "sites": {
+    "lesson": {
+      "siteId": "3607154c-b75c-481f-bf93-6970adb43be8",
+      "versionId": "cdbf04a4-f28c-46f2-a158-742bb227f052",
+      "hostname": "jefes-mwmf3e7u.localhost",
+      "slug": "jefes-mwmf3e7u",
+      "token": "41cec816de7b4a88aa40053914613d52"
+    },
+    "field": {
+      "siteId": "c891dc91-95be-48f8-8f6d-da03b25fc208",
+      "versionId": "07766dc1-8861-4e28-b14e-f36f70c6f52b",
+      "hostname": "sangkwae-mwmf3e7u.localhost",
+      "slug": "sangkwae-mwmf3e7u",
+      "token": "f3af5fe96d3a449da8dc8cf830d5f754"
+    }
+  },
+  "scores": {
+    "lesson": {
+      "performance": 100,
+      "accessibility": 100,
+      "bestPractices": 96,
+      "seo": 92,
+      "lcpMs": 1066,
+      "cls": 0,
+      "tbtMs": 13
+    },
+    "field": {
+      "performance": 98,
+      "accessibility": 100,
+      "bestPractices": 96,
+      "seo": 92,
+      "lcpMs": 2276,
+      "cls": 0,
+      "tbtMs": 0
+    }
+  },
+  "results": [
+    {
+      "name": "잘못된 v2 설정은 422와 경로별 오류",
+      "pass": true,
+      "details": [
+        "business.phone: 전화번호 형식이 아닙니다",
+        "content.services.items: Too small: expected array to have >=2 items"
+      ]
+    },
+    {
+      "name": "lesson: 사이트 생성 201",
+      "pass": true,
+      "hostname": "jefes-mwmf3e7u.localhost"
+    },
+    {
+      "name": "lesson: 저장된 설정은 v2",
+      "pass": true
+    },
+    {
+      "name": "lesson: 프리뷰 홈 200, noindex, 링크가 프리뷰 안에 머묾",
+      "pass": true
+    },
+    {
+      "name": "lesson: 프리뷰 개인정보처리방침 200",
+      "pass": true
+    },
+    {
+      "name": "lesson: 게시 200",
+      "pass": true,
+      "versionId": "cdbf04a4-f28c-46f2-a158-742bb227f052",
+      "number": 1,
+      "publishedAt": "2026-11-18T17:50:54.196Z",
+      "pages": [
+        "/",
+        "/privacy"
+      ]
+    },
+    {
+      "name": "lesson: 공개 홈 200 + canonical + JSON-LD + 연락 바",
+      "pass": true
+    },
+    {
+      "name": "lesson: 공개 /privacy 200",
+      "pass": true
+    },
+    {
+      "name": "lesson: sitemap에 /privacy 포함",
+      "pass": true
+    },
+    {
+      "name": "lesson: 없는 경로 404",
+      "pass": true
+    },
+    {
+      "name": "field: 사이트 생성 201",
+      "pass": true,
+      "hostname": "sangkwae-mwmf3e7u.localhost"
+    },
+    {
+      "name": "field: 저장된 설정은 v2",
+      "pass": true
+    },
+    {
+      "name": "field: 프리뷰 홈 200, noindex, 링크가 프리뷰 안에 머묾",
+      "pass": true
+    },
+    {
+      "name": "field: 프리뷰 개인정보처리방침 200",
+      "pass": true
+    },
+    {
+      "name": "field: 게시 200",
+      "pass": true,
+      "versionId": "07766dc1-8861-4e28-b14e-f36f70c6f52b",
+      "number": 1,
+      "publishedAt": "2026-11-18T17:50:54.430Z",
+      "pages": [
+        "/",
+        "/privacy"
+      ]
+    },
+    {
+      "name": "field: 공개 홈 200 + canonical + JSON-LD + 연락 바",
+      "pass": true
+    },
+    {
+      "name": "field: 공개 /privacy 200",
+      "pass": true
+    },
+    {
+      "name": "field: sitemap에 /privacy 포함",
+      "pass": true
+    },
+    {
+      "name": "field: 없는 경로 404",
+      "pass": true
+    },
+    {
+      "name": "프리뷰: 하이드레이션 오류 없음, 링크가 프리뷰 안, 문의 전송 차단",
+      "pass": true,
+      "errors": [],
+      "privacyHref": "/preview/41cec816de7b4a88aa40053914613d52/privacy",
+      "blocked": "프리뷰에서는 문의가 전송되지 않습니다."
+    },
+    {
+      "name": "lesson: 브라우저 mobile",
+      "pass": true,
+      "errors": [],
+      "failed": [],
+      "external": [],
+      "unloaded": 0,
+      "contactBar": true
+    },
+    {
+      "name": "lesson: 브라우저 desktop",
+      "pass": true,
+      "errors": [],
+      "failed": [],
+      "external": [],
+      "unloaded": 0,
+      "contactBar": false
+    },
+    {
+      "name": "field: 브라우저 mobile",
+      "pass": true,
+      "errors": [],
+      "failed": [],
+      "external": [],
+      "unloaded": 0,
+      "contactBar": true
+    },
+    {
+      "name": "field: 브라우저 desktop",
+      "pass": true,
+      "errors": [],
+      "failed": [],
+      "external": [],
+      "unloaded": 0,
+      "contactBar": false
+    },
+    {
+      "name": "lesson: Lighthouse 모바일 성능 90 이상, LCP 2.5초 이하",
+      "pass": true,
+      "performance": 100,
+      "accessibility": 100,
+      "bestPractices": 96,
+      "seo": 92,
+      "lcpMs": 1066,
+      "cls": 0,
+      "tbtMs": 13
+    },
+    {
+      "name": "lesson: Lighthouse SEO 90 이상, 접근성 90 이상",
+      "pass": true,
+      "performance": 100,
+      "accessibility": 100,
+      "bestPractices": 96,
+      "seo": 92,
+      "lcpMs": 1066,
+      "cls": 0,
+      "tbtMs": 13
+    },
+    {
+      "name": "field: Lighthouse 모바일 성능 90 이상, LCP 2.5초 이하",
+      "pass": true,
+      "performance": 98,
+      "accessibility": 100,
+      "bestPractices": 96,
+      "seo": 92,
+      "lcpMs": 2276,
+      "cls": 0,
+      "tbtMs": 0
+    },
+    {
+      "name": "field: Lighthouse SEO 90 이상, 접근성 90 이상",
+      "pass": true,
+      "performance": 98,
+      "accessibility": 100,
+      "bestPractices": 96,
+      "seo": 92,
+      "lcpMs": 2276,
+      "cls": 0,
+      "tbtMs": 0
+    }
+  ]
+}

@@ -30,6 +30,11 @@ describe("validateSiteConfig", () => {
     expect(errors.join("\n")).toMatch(/meta.title/);
   });
 
+  it("rejects a missing or unknown legacy templateId", () => {
+    expect(validateSiteConfig({ ...base, templateId: undefined } as never).join("\n")).toMatch(/templateId/);
+    expect(validateSiteConfig({ ...base, templateId: "other" } as never).join("\n")).toMatch(/templateId/);
+  });
+
   it("accepts allowlisted and built-in icons", () => {
     expect(validateSiteConfig({ ...base, seed: seedWithIcon("FaPhone") })).toEqual([]);
     expect(validateSiteConfig({ ...base, seed: seedWithIcon("phone") })).toEqual([]);

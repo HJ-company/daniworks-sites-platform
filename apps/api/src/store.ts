@@ -7,6 +7,10 @@ export interface SiteRow {
   template_id: string;
   published_version_id: string | null;
   status: string;
+  customer_id: string | null;
+  notify_email: string | null;
+  template_version: string | null;
+  cancelled_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -21,6 +25,7 @@ export interface VersionRow {
   preview_token: string;
   asset_version: string | null;
   rendered_at: string | null;
+  rendered_origin: string | null;
   first_published_at: string | null;
   created_at: string;
 }
@@ -108,22 +113,33 @@ export async function addVersion(
   return { versionId, number: latest.number + 1 };
 }
 
-export async function markRendered(db: D1Database, versionId: string, assetVersion: string) {
+export async function markRendered(db: D1Database, versionId: string, assetVersion: string, origin: string) {
   await db
-    .prepare("UPDATE site_versions SET rendered_at = ?, asset_version = ? WHERE id = ?")
-    .bind(now(), assetVersion, versionId)
+    .prepare("UPDATE site_versions SET rendered_at = ?, asset_version = ?, rendered_origin = ? WHERE id = ?")
+    .bind(now(), assetVersion, origin, versionId)
     .run();
 }
 
-export async function markPublished(db: D1Database, siteId: string, versionId: string) {
+export async function markPublished(db: D1Database, siteId: string, versionId: string, templateVersion: string) {
   const at = now();
   await db.batch([
     db
       .prepare("UPDATE site_versions SET first_published_at = COALESCE(first_published_at, ?) WHERE id = ?")
       .bind(at, versionId),
-    db.prepare("UPDATE sites SET published_version_id = ?, updated_at = ? WHERE id = ?").bind(versionId, at, siteId),
+    db
+      .prepare("UPDATE sites SET published_version_id = ?, template_version = ?, updated_at = ? WHERE id = ?")
+      .bind(versionId, templateVersion, at, siteId),
   ]);
   return at;
+}
+
+/** Active custom domain if any, else the default subdomain. */
+export async function primaryHostname(db: D1Database, site: SiteRow, baseDomain: string): Promise<string> {
+  const custom = await db
+    .prepare("SELECT hostname FROM domains WHERE site_id = ? AND kind = 'custom' AND status = 'active' ORDER BY created_at LIMIT 1")
+    .bind(site.id)
+    .first<{ hostname: string }>();
+  return custom?.hostname ?? `${site.slug}.${baseDomain}`;
 }
 
 export async function versionByPreviewToken(db: D1Database, previewToken: string): Promise<VersionRow> {

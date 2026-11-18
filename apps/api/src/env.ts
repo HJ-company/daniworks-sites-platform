@@ -4,4 +4,6 @@ export interface Env {
   ROUTES: KVNamespace;
   BASE_DOMAIN: string;
   ADMIN_TOKEN: string;
+  /** `https` in deployed environments, `http` locally. Used for canonical and OG URLs. */
+  PUBLIC_SCHEME?: string;
 }

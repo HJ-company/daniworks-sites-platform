@@ -1,8 +1,8 @@
-import { renderSite, SiteConfigError, validateSiteConfig, type SiteConfig } from "@sites/renderer";
+import { parseSiteConfig, renderSite, SiteConfigError, type SiteConfig } from "@sites/renderer";
 import type { Env } from "./env.js";
 import { HttpError, json, readJson, requireAdmin } from "./http.js";
-import { kvHostKey, r2SharedKey } from "./keys.js";
-import { assetBase, publish, rollback } from "./publish.js";
+import { kvHostKey, MEDIA_PATH, r2MediaKey, r2SharedKey } from "./keys.js";
+import { assetBase, publish, rollback, siteOrigin } from "./publish.js";
 import {
   addVersion,
   createSite,
@@ -14,18 +14,19 @@ import {
 
 const CREATORS: CreatedBy[] = ["ai", "operator", "customer"];
 
-function validated(config: SiteConfig) {
-  const errors = validateSiteConfig(config);
-  if (errors.length) throw new HttpError(422, "설정 검증 실패", errors);
-  return config;
+/** Parsed config with defaults filled; what gets stored. */
+function validated(input: unknown): SiteConfig {
+  const result = parseSiteConfig(input);
+  if (!result.ok) throw new HttpError(422, "설정 검증 실패", result.errors);
+  return result.config;
 }
 
 function creator(value: unknown): CreatedBy {
   return CREATORS.includes(value as CreatedBy) ? (value as CreatedBy) : "operator";
 }
 
-async function serveShared(env: Env, path: string) {
-  const object = await env.SITES.get(r2SharedKey(path));
+async function serveImmutable(env: Env, key: string) {
+  const object = await env.SITES.get(key);
   if (!object) return new Response("not found", { status: 404 });
   const headers = new Headers();
   object.writeHttpMetadata(headers);
@@ -41,13 +42,26 @@ async function handle(request: Request, env: Env): Promise<Response> {
   if (method === "GET" && url.pathname === "/health") return json({ ok: true });
 
   // Shared assets are public and immutable; previews load them from here.
-  if (method === "GET" && parts[0] === "_shared") return serveShared(env, parts.slice(1).join("/"));
+  if (method === "GET" && parts[0] === "_shared") return serveImmutable(env, r2SharedKey(parts.slice(1).join("/")));
+  // Uploaded photos (public, content-addressed) so previews show them before publishing.
+  const media = method === "GET" ? MEDIA_PATH.exec(url.pathname) : null;
+  if (media) return serveImmutable(env, r2MediaKey(media[1]!, media[2]!));
 
-  // Preview: anyone with the token can view a version. Never indexed.
-  if (method === "GET" && parts[0] === "preview" && parts.length === 2) {
+  // Preview: anyone with the token can view a version. Never indexed. /preview/<token>[/privacy]
+  if (method === "GET" && parts[0] === "preview" && (parts.length === 2 || parts.length === 3)) {
     const version = await versionByPreviewToken(env.DB, parts[1]!);
-    const { html } = await renderSite(JSON.parse(version.config) as SiteConfig, { assetBase: assetBase() });
-    return new Response(html, {
+    const site = await getSite(env.DB, version.site_id);
+    const { pages } = await renderSite(JSON.parse(version.config) as SiteConfig, {
+      assetBase: assetBase(),
+      origin: await siteOrigin(env, site),
+      preview: true,
+      // Site links are root-relative (`/#inquiry`, `/privacy`); keep them inside this preview.
+      linkPrefix: `/preview/${parts[1]}`,
+    });
+    const route = parts[2] ? `/${parts[2]}` : "/";
+    const page = pages.find((entry) => entry.route === route);
+    if (!page) throw new HttpError(404, "없는 페이지입니다");
+    return new Response(page.html, {
       headers: {
         "content-type": "text/html; charset=utf-8",
         "x-robots-tag": "noindex, nofollow",
@@ -71,7 +85,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
 
   // POST /sites {config, createdBy}
   if (method === "POST" && parts.length === 1) {
-    const body = await readJson<{ config: SiteConfig; createdBy?: CreatedBy }>(request);
+    const body = await readJson<{ config: unknown; createdBy?: CreatedBy }>(request);
     const config = validated(body.config);
     const hostname = `${config.slug}.${env.BASE_DOMAIN}`;
     const { siteId, versionId } = await createSite(env.DB, config, creator(body.createdBy), hostname);
@@ -87,7 +101,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
 
   // POST /sites/:id/versions {config, createdBy, note}: new draft version
   if (method === "POST" && parts[2] === "versions") {
-    const body = await readJson<{ config: SiteConfig; createdBy?: CreatedBy; note?: string }>(request);
+    const body = await readJson<{ config: unknown; createdBy?: CreatedBy; note?: string }>(request);
     const result = await addVersion(env.DB, site, validated(body.config), creator(body.createdBy), body.note ?? null);
     return json(result, 201);
   }

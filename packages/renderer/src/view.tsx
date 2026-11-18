@@ -14,6 +14,20 @@ import type {
   NavigationDocument,
   PageDocument,
 } from "@dani-builder/strapi-client/types";
+import { srcSetFor } from "./images.js";
+import { RenderContext, useSiteHref } from "./render-context.js";
+import { ContactBar } from "./platform/contact-bar.js";
+import { InquiryForm } from "./platform/inquiry-form.js";
+
+/** Platform chrome for industry-template sites (v2). Legacy v1 sites have none. */
+export interface SiteChrome {
+  name: string;
+  tel: string;
+  kakaoUrl: string | null;
+  mapUrl: string | null;
+  bookingUrl: string | null;
+  inquiryLabel: string;
+}
 
 /** Everything the page needs at render and hydration time. Serialized into the HTML. */
 export interface PageData {
@@ -21,7 +35,16 @@ export interface PageData {
   navigation: NavigationDocument;
   footer: Footer;
   brandColors: BrandColors;
+  /** `/` or `/privacy`; drives the shell's current path. */
+  route?: string;
+  site?: SiteChrome | null;
+  /** Prefix for root-relative links, e.g. `/preview/<token>` so previews stay inside themselves. */
+  linkPrefix?: string;
+  /** Preview render: the inquiry form does not submit. */
+  preview?: boolean;
 }
+
+
 
 const fillStyle: CSSProperties = {
   position: "absolute",
@@ -34,6 +57,7 @@ function Img({ src, alt, fill, width, height, sizes, className, priority, onErro
   return (
     <img
       src={src}
+      srcSet={typeof src === "string" ? srcSetFor(src, width ? Number(width) : undefined) : undefined}
       alt={alt}
       width={fill ? undefined : width}
       height={fill ? undefined : height}
@@ -48,8 +72,9 @@ function Img({ src, alt, fill, width, height, sizes, className, priority, onErro
   );
 }
 
-function A({ source: _source, ...props }: BlocksLinkProps) {
-  return <a {...props} />;
+function A({ source: _source, href, ...props }: BlocksLinkProps) {
+  const siteHref = useSiteHref();
+  return <a href={typeof href === "string" ? siteHref(href) : href} {...props} />;
 }
 
 /** M0 placeholder: the shared inquiry Worker arrives in M2. */
@@ -68,25 +93,30 @@ const adapters: BlocksContextValue = {
 };
 
 export function SiteView({ data }: { data: PageData }) {
-  const { page, navigation, footer, brandColors } = data;
+  const { page, navigation, footer, brandColors, site } = data;
   const first = page.blocks[0];
+  const route = data.route ?? "/";
+  const linkPrefix = data.linkPrefix ?? "";
   return (
+    <RenderContext.Provider value={{ linkPrefix, preview: data.preview ?? false }}>
     <BlocksProvider value={adapters}>
       <SiteShell
         navigation={navigation}
         footer={footer}
         organization={footer.organization ?? ""}
-        homeHref="/"
-        currentPath="/"
+        homeHref={`${linkPrefix}/`}
+        currentPath={route}
         headerMode={page.headerMode}
         firstHero={first?.__component === "blocks.hero" ? first : null}
         colors={brandColors}
       >
         <BlockRenderer
           blocks={page.blocks}
-          renderers={{ "blocks.inquiry-form": InquiryPlaceholder }}
+          renderers={{ "blocks.inquiry-form": site ? InquiryForm : InquiryPlaceholder }}
         />
       </SiteShell>
+      {site ? <ContactBar site={site} /> : null}
     </BlocksProvider>
+    </RenderContext.Provider>
   );
 }

@@ -9,7 +9,8 @@
     "migrate:staging": "wrangler d1 migrations apply DB --env staging --remote"
   },
   "dependencies": {
-    "@sites/renderer": "workspace:*"
+    "@sites/renderer": "workspace:*",
+    "@sites/schema": "workspace:*"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20261118.1",

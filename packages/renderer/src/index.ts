@@ -1,7 +1,12 @@
-export { renderSite, type RenderOptions, type RenderResult } from "./render.js";
-export { toPageData, SiteConfigError, BUILDER_VERSION } from "./preview.js";
-export type { SiteConfig } from "./site-config.js";
-export type { PageData } from "./view.js";
-export { validateSiteConfig } from "./validate.js";
+export { renderSite, type RenderOptions, type RenderResult, type RenderedPage } from "./render.js";
+export { toPageData, toSitePages, requireValidConfig, SiteConfigError, BUILDER_VERSION } from "./preview.js";
+export type { SiteConfig, SiteConfigInput, LegacySiteConfig } from "./site-config.js";
+export { isServiceConfig } from "./site-config.js";
+export type { PageData, SiteChrome } from "./view.js";
+export { parseSiteConfig, validateSiteConfig } from "./validate.js";
 export { allowedPickerIcons } from "./icons/allowlist.js";
 export { ASSET_VERSION } from "./generated/asset-version.js";
+export { compileServiceSeed, SAMPLE_PHOTOS, mediaPath } from "./templates/service-local/compile.js";
+export { presets } from "./templates/service-local/presets.js";
+export { lessonFixture, fieldFixture } from "./templates/service-local/fixtures.js";
+export { serviceLocalGuide } from "./templates/service-local/guide.js";

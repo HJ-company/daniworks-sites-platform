@@ -1,8 +1,10 @@
-import { businessBasicTemplate } from "@dani-builder/site-templates";
+import { businessBasicTemplate, type TemplateSeed } from "@dani-builder/site-templates";
 import { createTemplatePreview } from "@dani-builder/site-templates/preview";
-import type { SiteConfig } from "./site-config.js";
-import { validateSiteConfig } from "./validate.js";
-import type { PageData } from "./view.js";
+import { isServiceConfig, type SiteConfig, type SiteConfigInput } from "./site-config.js";
+import { compileServiceSeed, telHref } from "./templates/service-local/compile.js";
+import { presets } from "./templates/service-local/presets.js";
+import { HOST_COMPOSITION, parseSiteConfig } from "./validate.js";
+import type { PageData, SiteChrome } from "./view.js";
 
 /** Builder release the blocks package targets; seeds are validated against it. */
 export const BUILDER_VERSION = "0.16.0";
@@ -13,33 +15,82 @@ export class SiteConfigError extends Error {
   }
 }
 
-/** Validates a site config and projects it into the props the view renders. */
-export function toPageData(config: SiteConfig, assetBase: string): PageData {
+export interface SitePage {
+  /** `/` or `/privacy`. */
+  route: string;
+  title: string;
+  data: PageData;
+}
+
+function chrome(config: SiteConfig): SiteChrome | null {
+  if (!isServiceConfig(config)) return null;
+  const { business } = config;
+  return {
+    name: business.name,
+    tel: telHref(business.phone),
+    kakaoUrl: business.kakaoUrl ?? null,
+    mapUrl: business.mapUrl ?? null,
+    bookingUrl: business.bookingUrl ?? null,
+    inquiryLabel: presets[config.preset].inquiryCta,
+  };
+}
+
+/** Validates a config; throws SiteConfigError with every problem. */
+export function requireValidConfig(input: SiteConfigInput): SiteConfig {
+  const parsed = parseSiteConfig(input);
+  if (!parsed.ok) throw new SiteConfigError(parsed.errors);
+  return parsed.config;
+}
+
+/** Validates a config and projects every page into the props the view renders. */
+export function toSitePages(input: SiteConfigInput, assetBase: string): SitePage[] {
+  return sitePagesFor(requireValidConfig(input), assetBase);
+}
+
+/** Projects an already validated config into page props. */
+export function sitePagesFor(config: SiteConfig, assetBase: string): SitePage[] {
   const manifest = businessBasicTemplate;
-  const errors = validateSiteConfig(config);
-  if (errors.length) throw new SiteConfigError(errors);
+  const service = isServiceConfig(config);
+  const seed: TemplateSeed | undefined = service ? compileServiceSeed(config) : config.seed;
   const preview = createTemplatePreview({
     manifest,
     selection: {
       templateId: manifest.id,
       templateVersion: manifest.version,
       themeId: "open-atelier",
-      compositionId: config.compositionId,
+      compositionId: service ? HOST_COMPOSITION : config.compositionId,
       paletteId: config.paletteId,
     },
-    seed: config.seed,
+    seed,
     builderVersion: BUILDER_VERSION,
     resolveAsset: (asset) => ({
-      url: `${assetBase}/site-templates/${asset.src.replace(/^assets\/business-basic\//, "")}`,
+      url: asset.src.startsWith("/_media/")
+        ? asset.src
+        : `${assetBase}/site-templates/${asset.src.replace(/^assets\/business-basic\//, "")}`,
     }),
   });
-  // Starter homepage is one page: home only.
-  const home = preview.pages.find((entry) => entry.route === "/");
-  if (!home) throw new SiteConfigError(["composition has no home route"]);
-  return {
-    page: home.page,
-    navigation: preview.navigation,
-    footer: preview.footer,
-    brandColors: preview.brandColors,
-  };
+  const site = chrome(config);
+  // v1 is one page (home). v2 adds the privacy page.
+  const routes = service ? ["/", "/privacy"] : ["/"];
+  return routes.map((route) => {
+    const entry = preview.pages.find((page) => page.route === route);
+    if (!entry) throw new SiteConfigError([`composition has no ${route} route`]);
+    return {
+      route,
+      title: entry.page.title ?? "",
+      data: {
+        page: entry.page,
+        navigation: preview.navigation,
+        footer: preview.footer,
+        brandColors: preview.brandColors,
+        route,
+        site,
+      },
+    };
+  });
+}
+
+/** Home page only (M1 callers). */
+export function toPageData(config: SiteConfigInput, assetBase: string): PageData {
+  return toSitePages(config, assetBase)[0]!.data;
 }

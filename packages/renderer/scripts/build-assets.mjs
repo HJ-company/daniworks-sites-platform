@@ -53,6 +53,17 @@ cpSync(join(root, "node_modules/@dani-builder/site-templates/assets/business-bas
   recursive: true,
 });
 
+// Responsive WebP variants next to each sample photo (src/images.ts names them).
+const { default: sharp } = await import("sharp");
+const { VARIANT_WIDTHS, VARIANT_QUALITY, variantUrl } = await import("../src/images.ts");
+for (const file of readdirSync(join(staging, "site-templates")).filter((f) => /\.(jpg|png)$/.test(f))) {
+  const src = join(staging, "site-templates", file);
+  const { width } = await sharp(src).metadata();
+  for (const w of VARIANT_WIDTHS.filter((w) => w < width)) {
+    await sharp(src).resize({ width: w }).webp({ quality: VARIANT_QUALITY }).toFile(variantUrl(src, w));
+  }
+}
+
 function walk(dir) {
   return readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
     e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)],

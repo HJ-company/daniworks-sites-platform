@@ -26,3 +26,10 @@
   color: var(--color-text-muted);
   background: var(--color-bg);
 }
+
+/* Room for the fixed mobile contact bar (platform/contact-bar.tsx). */
+@media (max-width: 767px) {
+  body.has-contact-bar {
+    padding-bottom: calc(56px + env(safe-area-inset-bottom));
+  }
+}

@@ -9,6 +9,7 @@ compatibility_flags = ["nodejs_compat"]
 [vars]
 # Public sites are served at <slug>.<BASE_DOMAIN>. Local dev uses *.localhost.
 BASE_DOMAIN = "localhost"
+PUBLIC_SCHEME = "http"
 # ADMIN_TOKEN comes from .dev.vars locally and a secret in production.
 
 [[d1_databases]]
@@ -36,6 +37,7 @@ routes = [{ pattern = "api.dsites.kr/*", zone_name = "dsites.kr" }]
 
 [env.staging.vars]
 BASE_DOMAIN = "dsites.kr"
+PUBLIC_SCHEME = "https"
 # ADMIN_TOKEN: `wrangler secret put ADMIN_TOKEN --env staging`
 
 [[env.staging.d1_databases]]

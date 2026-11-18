@@ -1,4 +1,4 @@
-import { kvHostKey, kvSiteKey, r2PageKey, r2SharedKey, type PublishedPointer } from "./keys.js";
+import { kvHostKey, kvSiteKey, MEDIA_PATH, r2MediaKey, r2PageKey, r2SharedKey, type PublishedPointer } from "./keys.js";
 
 interface Env {
   SITES: R2Bucket;
@@ -42,6 +42,15 @@ export default {
       );
     }
 
+    // Uploaded photos are public and content-addressed.
+    const media = MEDIA_PATH.exec(url.pathname);
+    if (media) {
+      return (
+        (await serveObject(env, r2MediaKey(media[1]!, media[2]!), "public, max-age=31536000, immutable")) ??
+        new Response("not found", { status: 404 })
+      );
+    }
+
     const siteId = await env.ROUTES.get(kvHostKey(hostname), { cacheTtl: KV_CACHE_TTL });
     if (!siteId) return notFound("연결된 사이트가 없습니다.");
     const pointer = await env.ROUTES.get<PublishedPointer>(kvSiteKey(siteId), { type: "json", cacheTtl: KV_CACHE_TTL });
@@ -52,15 +61,21 @@ export default {
         headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "public, max-age=3600" },
       });
     }
+    const pages = pointer.pages ?? ["/"];
     if (url.pathname === "/sitemap.xml") {
       const lastmod = pointer.publishedAt.slice(0, 10);
+      const urls = pages
+        .map((route) => `<url><loc>https://${hostname}${route}</loc><lastmod>${lastmod}</lastmod></url>`)
+        .join("");
       return new Response(
-        `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>https://${hostname}/</loc><lastmod>${lastmod}</lastmod></url></urlset>\n`,
+        `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${urls}</urlset>\n`,
         { headers: { "content-type": "application/xml; charset=utf-8", "cache-control": "public, max-age=3600" } },
       );
     }
-    if (url.pathname === "/" || url.pathname === "/index.html") {
-      const page = await serveObject(env, r2PageKey(siteId, pointer.versionId), "public, max-age=60");
+    const route = url.pathname === "/index.html" ? "/" : url.pathname.replace(/\/(index\.html)?$/, "") || "/";
+    if (pages.includes(route)) {
+      const path = route === "/" ? "index.html" : `${route.slice(1)}/index.html`;
+      const page = await serveObject(env, r2PageKey(siteId, pointer.versionId, path), "public, max-age=60");
       if (page) {
         page.headers.set("x-site-version", String(pointer.number));
         return page;
