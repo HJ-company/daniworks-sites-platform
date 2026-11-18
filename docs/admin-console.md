@@ -103,7 +103,47 @@ M2 실측(mcp-inspector로 먼저, 이후 Claude·ChatGPT 실제 커넥터):
 | Claude 커넥터 연결 | 미실행 |
 | ChatGPT 커넥터 연결(Developer mode 가능 여부 포함) | 미실행 |
 
-## 5. 메뉴와 화면
+## 5. MCP 도구
+
+### 제작 지침 문서
+
+context7처럼 MCP를 연결하면 제작에 필요한 지침을 바로 찾아 읽게 한다.
+
+| 문서 | 원본 | 수정 방식 |
+| --- | --- | --- |
+| 블록·사이트 설정 스키마 | `@dani-builder/blocks`, `packages/renderer` 코드 | 빌드 때 자동 생성. MCP로 고치지 않는다 |
+| 상품·계약 지침 | 노션 정책서 | 요약본 등록 |
+| 업종별 지침(음식점, 시공·설비, 뷰티, B2B) | 이 플랫폼 | MCP로 추가·편집 |
+| 디자인 지침(색, 사진 톤, 섹션 구성) | 이 플랫폼 | MCP로 추가·편집 |
+| 작성 규칙(카피 톤, 금지 표현, 구조화 데이터, 이미지 용도) | 이 플랫폼 | MCP로 추가·편집 |
+
+| 도구 | 하는 일 | 권한 |
+| --- | --- | --- |
+| `guide_list` | 문서 목록(주제, 종류, 요약, 버전) | 전체 |
+| `guide_get` | 주제·질문으로 관련 섹션만 반환 | 전체 |
+| `guide_create` | 새 문서 등록 | operator |
+| `guide_update` | 섹션 단위 수정, 새 버전으로 쌓임 | operator |
+
+- D1에 문서·섹션을 append-only 버전으로 저장한다. 검색은 제목·키워드로 시작하고 문서가 늘면 Vectorize를 붙인다.
+- 문서마다 공개 범위(`operator`/`customer`)를 둔다.
+- 사이트 버전 저장 시 참고한 지침 버전을 함께 기록한다.
+- MCP 서버 설명에 "제작 전에 `guide_get`으로 스키마와 업종 지침부터 읽는다"를 넣는다. resources·prompts는 클라이언트 지원이 고르지 않아 도구로 제공한다.
+
+### 이미지
+
+| 도구 | 하는 일 |
+| --- | --- |
+| `image_generate` | 프롬프트·비율·site_id → OpenAI 이미지 API로 생성 → WebP 변환 → R2 저장 → asset 키·CDN 주소 반환 |
+| `asset_import_url` | 블로그·플레이스의 고객 사진 URL을 서버가 받아 R2에 저장 |
+| `asset_upload` | 작은 파일 직접 업로드(base64) |
+| `asset_list`, `asset_delete` | 사이트별 자산 관리 |
+
+- CDN 주소: `dsites.daniworks.kr/assets/<siteId>/<hash>.webp`. 내용 해시 경로라 영구 캐시. 설정에는 키만 저장한다.
+- 생성 이미지는 배경·일러스트·분위기 이미지에만 쓴다. 시공 사례·음식·매장 등 실제 작업물은 고객 사진만 쓴다. 자산에 `ai_generated`를 기록한다.
+- 생성마다 비용을 기록한다. 셀프서비스에서는 크레딧으로 차감한다.
+- 환경 변수: `OPENAI_API_KEY`(secret), `OPENAI_IMAGE_MODEL`. 로컬은 `apps/api/.dev.vars`, 운영은 `wrangler secret put`.
+
+## 6. 메뉴와 화면
 
 ### 홈
 
@@ -133,6 +173,8 @@ M2 실측(mcp-inspector로 먼저, 이후 Claude·ChatGPT 실제 커넥터):
 
 ### 운영
 
+- 지침 문서: 목록, 버전 이력·변경 비교, 공개 범위. 작성·수정은 MCP로 한다
+- 이미지: 사이트별 자산, AI 생성 여부, 생성 비용 합계
 - 도메인: 전체 호스트네임 상태, 오류 목록, SaaS quota
 - 리포트: 분기 리포트 생성·발송 현황(M3)
 
@@ -141,7 +183,7 @@ M2 실측(mcp-inspector로 먼저, 이후 Claude·ChatGPT 실제 커넥터):
 - 요금제
 - 템플릿 버전, 전체 재게시
 
-## 6. 데이터 모델 추가·변경
+## 7. 데이터 모델 추가·변경
 
 | 테이블 | 주요 필드 |
 | --- | --- |
@@ -149,17 +191,21 @@ M2 실측(mcp-inspector로 먼저, 이후 Claude·ChatGPT 실제 커넥터):
 | `sites` | + preview_token, preview_expires_at |
 | `subscriptions` | id, site_id, 요금제, 금액, 주기, 상태(시안/입금 대기/활성/연체/해지), 다음 결제일 |
 | `payments` | id, subscription_id, 금액, 수단(manual/pg), 입금자명, 결제일, 확인자, pg_tx_id, 세금계산서 발행일 |
+| `guides` | id, 주제, 종류(스키마/계약/업종/디자인/작성 규칙), 공개 범위, 현재 버전 |
+| `guide_versions` | id, guide_id, 본문(섹션 단위 markdown), 작성자, created_at |
+| `site_versions` | + guide_versions(참고한 지침 버전 목록) |
+| `assets` | id, site_id, R2 키, 해시, 크기, 출처(upload/url/ai), ai_generated, 프롬프트, 생성 비용, created_at |
 | `audit_log` | id, 행위자(Authentik 사용자 ID 또는 스크립트), 경로(콘솔/MCP/스크립트), 동작, 대상, created_at |
 
-## 7. 우선순위
+## 8. 우선순위
 
 | 단계 | 범위 |
 | --- | --- |
-| M2 | MCP 서버 + Authentik OAuth(실측 표 완료), MCP 도구(고객·사이트 생성, draft 저장, 사진, 시안 링크), 게시 시 결제 검사, 콘솔: 로그인, 사이트 상세(개요·버전), 입금 확인, 고객 상세 |
+| M2 | MCP 서버 + Authentik OAuth(실측 표 완료), MCP 도구(고객·사이트 생성, draft 저장, 지침 문서 읽기·편집, 이미지 생성·가져오기, 시안 링크), 게시 시 결제 검사, 콘솔: 로그인, 사이트 상세(개요·버전), 입금 확인, 고객 상세 |
 | M3 | 홈(오늘 할 일), 도메인 관제, 연체 처리, 리포트, 통계 |
 | 셀프서비스 | Authentik 고객 그룹·가입, 고객 콘솔, PG |
 
-## 8. 미결 사항
+## 9. 미결 사항
 
 - 연체 유예 기간과 공개 중단 시 방문자에게 보여줄 화면
 - 셀프서비스 고객 가입을 Authentik에서 받을지(가입 플로우, 카카오 로그인 연동)

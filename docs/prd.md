@@ -64,7 +64,7 @@ policy: https://app.notion.com/p/41cecd5a3ac28107820effaeb6cb4fc8
 - 형식: `@dani-builder/site-templates`의 `TemplateSeed` + 플랫폼 메타(연락처, 업종, 도메인, RSS URL 등).
 - 저장 전 `collectSeedValidationErrors`와 플랫폼 스키마로 검증한다. 검증 실패는 저장하지 않는다.
 - 업종 템플릿 4종: 음식점, 시공·설비, 뷰티·서비스, 1인·소규모 B2B.
-- 사진은 R2에 업로드하고 설정에는 키만 저장한다.
+- 사진은 R2에 업로드하고 설정에는 키만 저장한다. AI 생성 이미지는 배경·일러스트에만 쓰고 실제 작업물 사진은 고객 사진만 쓴다.
 
 ### 4-2. 버전과 게시
 
@@ -123,7 +123,7 @@ policy: https://app.notion.com/p/41cecd5a3ac28107820effaeb6cb4fc8
 
 - 사이트 제작은 MCP 도구로 한다. 운영자가 Claude/ChatGPT에서 쓰고, 이후 고객 쪽 에이전트에 붙여 셀프서비스로 쓴다. 도구는 하나로 두고 Authentik 그룹(`operator`/`customer`)으로 접근을 나눈다.
 - MCP 인증: Authentik OAuth. Claude·ChatGPT 원격 커넥터에서 Authentik으로 로그인하고, MCP 서버가 토큰을 JWKS로 검증한다.
-- 도구: `customer_create`, `customer_get`, `site_create`, `site_get`, `site_update_draft`, `site_validate`, `site_preview_url`, `site_publish`, `site_rollback`, `asset_upload`, `site_preview_link`(사이트 시안 링크 발급·재발급).
+- 도구: `customer_create`, `customer_get`, `site_create`, `site_get`, `site_update_draft`, `site_validate`, `site_preview_url`, `site_publish`, `site_rollback`, `site_preview_link`(사이트 시안 링크 발급·재발급), `guide_list`, `guide_get`, `guide_create`, `guide_update`(제작 지침 문서), `image_generate`(OpenAI), `asset_import_url`, `asset_upload`, `asset_list`, `asset_delete`. 상세는 [관리자 콘솔 5절](admin-console.md#5-mcp-도구).
 - 관리자 콘솔: `dsites-console.daniworks.kr`, Authentik OIDC(`authentik.daniworks.kr`) 로그인. 화면은 [관리자 콘솔](admin-console.md).
 - 해지: 공개 중단(라우터에서 차단), 데이터·정적 파일은 보관 후 인출 가능.
 - AI 홈페이지 전환: 사이트 설정(TemplateSeed)을 Strapi로 가져오는 스크립트. `create-daniworks-app` importer를 고객 seed를 받도록 확장하는 방향.
@@ -156,6 +156,7 @@ packages/
 
 - `@dani-builder/blocks`, `@dani-builder/site-templates`, `@dani-builder/strapi-client` (npm 공개 패키지, 버전 고정)
 - Cloudflare: Workers, D1, KV, R2, Cloudflare for SaaS, Turnstile, Analytics Engine
+- OpenAI 이미지 API (`OPENAI_API_KEY`, `OPENAI_IMAGE_MODEL`)
 
 ### 데이터 모델 (초안)
 
@@ -190,7 +191,7 @@ packages/
 | Advanced Certificate Manager (`*.dsites.daniworks.kr`) | $10 | $10 |
 | 합계 | 약 $15 | 약 $35~55 |
 
-- 변동비: AI 초안 생성(시안 1건당 수백~1천원대 추정). 결제 전 시안도 포함된다.
+- 변동비: AI 초안 생성(시안 1건당 수백~1천원대 추정), OpenAI 이미지 생성(장당 과금, 연동 시 단가 확인). 결제 전 시안도 포함된다.
 - Workers·메일 요금은 구현 시점에 재확인한다.
 
 ## 8. 위험과 검증 항목

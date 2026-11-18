@@ -7,7 +7,8 @@ compatibility_flags = ["nodejs_compat"]
 [vars]
 # Public sites are served at <slug>.<BASE_DOMAIN>. Local dev uses *.localhost.
 BASE_DOMAIN = "localhost"
-# ADMIN_TOKEN comes from .dev.vars locally and a secret in production.
+# Secrets: ADMIN_TOKEN, OPENAI_API_KEY. From .dev.vars locally, `wrangler secret put` in production.
+# OPENAI_IMAGE_MODEL is also set in .dev.vars until the model is fixed.
 
 [[d1_databases]]
 binding = "DB"
