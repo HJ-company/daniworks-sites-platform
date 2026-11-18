@@ -16,6 +16,12 @@ export interface Env {
   MAIL_FROM?: string;
   MAIL_PIT_URL?: string;
   EMAIL?: SendEmail;
+  /** Cloudflare for SaaS custom hostnames. Locally CF_API_BASE is the cf-mock container. */
+  CF_API_BASE?: string;
+  CF_ZONE_ID?: string;
+  CF_API_TOKEN?: string;
+  /** CNAME target customers point their domain at (the SaaS fallback origin host). */
+  DOMAIN_CNAME_TARGET?: string;
   /** Pepper for hashing visitor IPs (rate limiting without storing addresses). */
   HASH_PEPPER?: string;
 }

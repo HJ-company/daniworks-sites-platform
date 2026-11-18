@@ -1,8 +1,12 @@
 // Storage layout shared by api (writer) and router (reader). Keep in sync with apps/router/src/keys.ts.
 export const kvHostKey = (hostname: string) => `host:${hostname.toLowerCase()}`;
 export const kvSiteKey = (siteId: string) => `site:${siteId}`;
-/** `path` is `index.html` or `privacy/index.html`. */
-export const r2PageKey = (siteId: string, versionId: string, path = "index.html") => `sites/${siteId}/${versionId}/${path}`;
+/**
+ * `path` is `index.html` or `privacy/index.html`. With a renderId (since M2) every render has its
+ * own immutable prefix; without one it is the M1 layout, still served for old pointers.
+ */
+export const r2PageKey = (siteId: string, versionId: string, path = "index.html", renderId?: string | null) =>
+  renderId ? `sites/${siteId}/${versionId}/r/${renderId}/${path}` : `sites/${siteId}/${versionId}/${path}`;
 export const r2SharedKey = (path: string) => `shared/${path}`;
 /** Uploaded photos, content-addressed: `sites/<siteId>/media/<sha>.jpg`. Served at `/_media/<siteId>/<file>`. */
 export const r2MediaKey = (siteId: string, file: string) => `sites/${siteId}/media/${file}`;
@@ -15,6 +19,8 @@ export interface PublishedPointer {
   publishedAt: string;
   /** Routes rendered for this version. Missing on M1 pointers, which only had `/`. */
   pages?: string[];
+  /** Immutable render of this version to serve. Missing on M1 pointers (legacy layout). */
+  renderId?: string | null;
 }
 
 /**

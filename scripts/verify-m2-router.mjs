@@ -96,6 +96,26 @@ check("M1 형식 레코드(문자열 siteId)도 서빙", legacy.status === 200 &
   version: legacy.headers["x-site-version"],
 });
 
+// M1 R2 layout: a pointer without renderId reads sites/<id>/<version>/index.html
+{
+  const legacyId = `legacy-${run}`;
+  const html = "<!doctype html><title>M1 레이아웃</title>";
+  execFileSync("pnpm", ["exec", "wrangler", "r2", "object", "put", `daniworks-sites/sites/${legacyId}/v1/index.html`, "--pipe", "--local", "--persist-to", "/state", "--content-type", "text/html"], {
+    cwd: "apps/router",
+    input: html,
+    stdio: ["pipe", "ignore", "pipe"],
+  });
+  const legacyR2Host = `m1layout-${run}.localhost`;
+  localKv("put", `host:${legacyR2Host}`, JSON.stringify({ siteId: legacyId, status: "active", pointer: { versionId: "v1", number: 1, publishedAt: "2026-01-01T00:00:00Z" }, redirectTo: null }));
+  let res;
+  for (let i = 0; i < 20; i++) {
+    res = await routerRequest(legacyR2Host, "/");
+    if (res.status === 200) break;
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  check("renderId 없는 M1 포인터는 예전 R2 경로를 서빙", res.status === 200 && res.body.includes("M1 레이아웃"));
+}
+
 // methods
 check("POST /는 405", (await routerRequest(host, "/", { method: "POST", body: "" })).status === 405);
 

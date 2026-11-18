@@ -1,0 +1,97 @@
+// Stand-in for the Cloudflare for SaaS custom hostnames API (same paths and envelope), so the
+// api Worker's real client runs unchanged in Docker. In-memory; restart clears it.
+// Control (tests only): POST /__mock/:hostname/activate | /fail | /pending | /delete, GET /__mock/calls
+import http from "node:http";
+import { randomUUID } from "node:crypto";
+
+const TOKEN = process.env.CF_API_TOKEN ?? "mock-token";
+const hostnames = new Map();
+let outage = false;
+const calls = [];
+
+const send = (res, status, body) => {
+  res.writeHead(status, { "content-type": "application/json" });
+  res.end(JSON.stringify(body));
+};
+const ok = (res, result, extra = {}) => send(res, 200, { success: true, errors: [], messages: [], result, ...extra });
+const fail = (res, status, code, message) => send(res, status, { success: false, errors: [{ code, message }], result: null });
+
+function view(h) {
+  return {
+    id: h.id,
+    hostname: h.hostname,
+    status: h.status,
+    ssl: { method: h.sslMethod, type: "dv", status: h.sslStatus, validation_records: [] },
+    ownership_verification: { type: "txt", name: `_cf-custom-hostname.${h.hostname}`, value: h.token },
+    verification_errors: h.status === "pending" ? ["custom hostname does not CNAME to this zone."] : [],
+    created_at: h.createdAt,
+  };
+}
+
+http
+  .createServer(async (req, res) => {
+    const url = new URL(req.url, "http://cf-mock");
+    let raw = "";
+    for await (const chunk of req) raw += chunk;
+    calls.push({ method: req.method, path: url.pathname + url.search });
+
+    const control = url.pathname.match(/^\/__mock\/([^/]+)\/(activate|fail|pending|delete)$/);
+    if (control && req.method === "POST") {
+      const h = [...hostnames.values()].find((x) => x.hostname === control[1]);
+      if (!h) return fail(res, 404, 1436, "not found");
+      if (control[2] === "activate") Object.assign(h, { status: "active", sslStatus: "active" });
+      if (control[2] === "fail") Object.assign(h, { status: "moved", sslStatus: "pending_validation" });
+      if (control[2] === "pending") Object.assign(h, { status: "pending", sslStatus: "pending_validation" });
+      if (control[2] === "delete") hostnames.delete(h.id);
+      return ok(res, view(h));
+    }
+    if (url.pathname === "/__mock/calls") return ok(res, calls);
+    if (url.pathname === "/__mock/outage" && req.method === "POST") {
+      outage = url.searchParams.get("on") === "1";
+      return ok(res, { outage });
+    }
+    if (url.pathname === "/health") return ok(res, { ok: true });
+
+    const m = url.pathname.match(/^\/client\/v4\/zones\/([^/]+)\/custom_hostnames(?:\/([^/]+))?$/);
+    if (!m) return fail(res, 404, 7000, "No route for that URI");
+    if (req.headers.authorization !== `Bearer ${TOKEN}`) return fail(res, 403, 10000, "Authentication error");
+    if (outage) return fail(res, 503, 10001, "Service unavailable (mock outage)");
+    const id = m[2];
+
+    if (req.method === "POST" && !id) {
+      const body = JSON.parse(raw || "{}");
+      if ([...hostnames.values()].some((h) => h.hostname === body.hostname)) {
+        return fail(res, 409, 1406, "Duplicate custom hostname found.");
+      }
+      const h = {
+        id: randomUUID(),
+        hostname: body.hostname,
+        status: "pending",
+        sslStatus: "initializing",
+        sslMethod: body.ssl?.method ?? "http",
+        token: randomUUID(),
+        createdAt: new Date().toISOString(),
+      };
+      hostnames.set(h.id, h);
+      return ok(res, view(h));
+    }
+    if (req.method === "GET" && !id) {
+      // Same constraint as the real API: per_page 5–50.
+      const perPage = Number(url.searchParams.get("per_page") ?? 20);
+      if (!Number.isInteger(perPage) || perPage < 5 || perPage > 50) return fail(res, 400, 1004, "per_page must be between 5 and 50");
+      const all = [...hostnames.values()];
+      return ok(res, all.slice(0, perPage).map(view), { result_info: { total_count: all.length } });
+    }
+    const h = hostnames.get(id);
+    if (!h) return fail(res, 404, 1436, "The custom hostname was not found.");
+    if (req.method === "GET") {
+      if (h.sslStatus === "initializing") h.sslStatus = "pending_validation";
+      return ok(res, view(h));
+    }
+    if (req.method === "DELETE") {
+      hostnames.delete(id);
+      return ok(res, { id });
+    }
+    return fail(res, 405, 7001, "Method not allowed");
+  })
+  .listen(8790, () => console.log("cf-mock on :8790"));

@@ -17,6 +17,9 @@ services:
       TURNSTILE_SECRET: 1x0000000000000000000000000000000AA
       HASH_PEPPER: dev-pepper
       MAIL_PIT_URL: http://mailpit:8025
+      CF_API_BASE: http://cf-mock:8790/client/v4
+      CF_ZONE_ID: mock-zone
+      CF_API_TOKEN: mock-token
     ports:
       - "8787:8787" # router: http://<slug>.localhost:8787
       - "8788:8788" # api
@@ -31,6 +34,13 @@ services:
       interval: 3s
       timeout: 3s
       retries: 60
+
+  # Cloudflare for SaaS custom hostname API stand-in (docker/cf-mock.mjs).
+  cf-mock:
+    <<: *app
+    command: ["node", "docker/cf-mock.mjs"]
+    ports:
+      - "8790:8790"
 
   mailpit:
     image: axllent/mailpit:v1.27
@@ -50,6 +60,7 @@ services:
       API_URL: http://127.0.0.1:8788
       ADMIN_TOKEN: dev-admin-token
       MAILPIT_URL: http://mailpit:8025
+      CF_MOCK_URL: http://cf-mock:8790
     volumes:
       - ./evidence:/app/evidence
       # Same local D1/R2/KV state as the workers, for checks that read or seed storage directly.

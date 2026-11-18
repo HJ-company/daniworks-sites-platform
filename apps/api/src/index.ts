@@ -6,6 +6,7 @@ import { turnstileFrame } from "./turnstile.js";
 import type { Env } from "./env.js";
 import { HttpError, json, readJson, requireAdmin } from "./http.js";
 import { MEDIA_PATH, r2MediaKey, r2SharedKey } from "./keys.js";
+import { addDomain, auditOrigins, domainQuota, listDomains, maintainDomains, refreshDomain, removeDomain, type DomainRow } from "./domains.js";
 import { handleMcp } from "./mcp.js";
 import { assetBase, publish, rollback, siteOrigin } from "./publish.js";
 import { auditHostRecords, reconcileHostRecords, syncHostRecordsNow } from "./routes.js";
@@ -85,6 +86,9 @@ async function handle(request: Request, env: Env): Promise<Response> {
     return json({ key }, 201);
   }
 
+  // GET /domains/quota: custom hostnames on the zone vs. the 100 included.
+  if (method === "GET" && url.pathname === "/domains/quota") return json(await domainQuota(env));
+
   if (parts[0] !== "sites") throw new HttpError(404, "없는 경로입니다");
 
   // POST /sites {config, createdBy}
@@ -112,6 +116,24 @@ async function handle(request: Request, env: Env): Promise<Response> {
       await env.DB.prepare("UPDATE sites SET notify_email = ? WHERE id = ?").bind(requireEmail(body.notifyEmail), site.id).run();
     }
     return json({ site: await getSite(env.DB, site.id) });
+  }
+
+  // Custom domains: GET list, POST {hostname}, POST /:host/refresh, DELETE /:host
+  if (parts[2] === "domains") {
+    if (method === "GET" && parts.length === 3) return json({ domains: await listDomains(env, site.id) });
+    if (method === "POST" && parts.length === 3) {
+      const body = await readJson<{ hostname?: unknown }>(request);
+      return json(await addDomain(env, site, body.hostname), 201);
+    }
+    const hostname = decodeURIComponent(parts[3] ?? "");
+    if (method === "POST" && parts[4] === "refresh" && parts.length === 5) {
+      const row = await env.DB.prepare("SELECT * FROM domains WHERE hostname = ? AND site_id = ? AND kind = 'custom'")
+        .bind(hostname, site.id)
+        .first<DomainRow>();
+      if (!row) throw new HttpError(404, "연결된 커스텀 도메인이 아닙니다");
+      return json({ hostname, status: await refreshDomain(env, row) });
+    }
+    if (method === "DELETE" && parts.length === 4) return json(await removeDomain(env, site.id, hostname));
   }
 
   // GET /sites/:id/metrics?from=YYYY-MM-DD&to=YYYY-MM-DD (Korean dates, inclusive; default last 30 days)
@@ -187,7 +209,12 @@ export default {
   async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext) {
     ctx.waitUntil(
       (async () => {
-        if (controller.cron === AUDIT_CRON) console.log("[routes] audit", JSON.stringify(await auditHostRecords(env)));
+        // Audits only mark work; maintenance and reconcile then do it in the same run.
+        if (controller.cron === AUDIT_CRON) {
+          console.log("[routes] audit", JSON.stringify(await auditHostRecords(env)));
+          console.log("[domains] origin audit", JSON.stringify(await auditOrigins(env)));
+        }
+        console.log("[domains] maintain", JSON.stringify(await maintainDomains(env)));
         console.log("[routes] reconcile", JSON.stringify(await reconcileHostRecords(env)));
       })(),
     );

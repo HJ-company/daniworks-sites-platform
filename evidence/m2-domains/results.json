@@ -1,0 +1,158 @@
+{
+  "siteId": "00067dd3-3e0e-4d0f-99f5-b538cad95e1f",
+  "custom": "www.verify-mwmj6fsy.co.kr",
+  "results": [
+    {
+      "name": "등록: 201 pending, CNAME 안내(fallback 대상), www라 루트 아님",
+      "pass": true,
+      "hostname": "www.verify-mwmj6fsy.co.kr",
+      "status": "pending",
+      "instructions": {
+        "cname": {
+          "type": "CNAME",
+          "name": "www.verify-mwmj6fsy.co.kr",
+          "value": "fallback.dsites.kr"
+        },
+        "optionalTxt": {
+          "type": "TXT",
+          "name": "_cf-custom-hostname.www.verify-mwmj6fsy.co.kr",
+          "value": "952a0b62-799a-4ef8-bece-bb22ed559e9e"
+        },
+        "apex": false,
+        "note": null
+      }
+    },
+    {
+      "name": "루트 도메인은 apex 표시와 www+포워딩 안내",
+      "pass": true
+    },
+    {
+      "name": "같은 도메인 중복 409",
+      "pass": true
+    },
+    {
+      "name": "다른 사이트가 쓰는 도메인 409",
+      "pass": true
+    },
+    {
+      "name": "형식 오류 422",
+      "pass": true
+    },
+    {
+      "name": "플랫폼 도메인 422",
+      "pass": true
+    },
+    {
+      "name": "quota: 호스트네임 2개 증가, 포함 100개",
+      "pass": true,
+      "quota0": {
+        "used": 0,
+        "included": 100,
+        "overage": 0
+      },
+      "quota1": {
+        "used": 2,
+        "included": 100,
+        "overage": 0
+      }
+    },
+    {
+      "name": "검증 전 커스텀 도메인은 404",
+      "pass": true
+    },
+    {
+      "name": "검증 전 서브도메인은 그대로 200",
+      "pass": true
+    },
+    {
+      "name": "cron이 활성화를 반영",
+      "pass": true
+    },
+    {
+      "name": "커스텀 도메인 200, canonical이 커스텀 도메인",
+      "pass": true
+    },
+    {
+      "name": "서브도메인은 경로를 유지해 301",
+      "pass": true,
+      "location": "http://www.verify-mwmj6fsy.co.kr/privacy?x=1"
+    },
+    {
+      "name": "KV: 커스텀 레코드는 redirect 없음, 서브도메인은 커스텀으로",
+      "pass": true
+    },
+    {
+      "name": "사이트 목록의 대표 호스트가 커스텀 도메인",
+      "pass": true
+    },
+    {
+      "name": "브라우저: 커스텀 도메인에서 열리고 하이드레이션",
+      "pass": true,
+      "errors": []
+    },
+    {
+      "name": "도메인 변경 전 버전으로 롤백해도 canonical은 현재 도메인",
+      "pass": true
+    },
+    {
+      "name": "중단된 재렌더는 cron이 다시 해서 origin_pending 0",
+      "pass": true,
+      "rendered_origin": "{\"origin\":\"http://www.verify-mwmj6fsy.co.kr\",\"turnstileFrame\":\"http://127.0.0.1:8788/turnstile-frame\"}"
+    },
+    {
+      "name": "검증 실패는 failed, 서빙 안 함",
+      "pass": true
+    },
+    {
+      "name": "활성 도메인이 나중에 실패하면 cron이 찾아 서브도메인으로 복귀",
+      "pass": true
+    },
+    {
+      "name": "Cloudflare에서 지워진 호스트네임(404)은 failed, 서브도메인 복귀",
+      "pass": true
+    },
+    {
+      "name": "한 번 활성이던 도메인은 오래돼도 계속 확인해 자동 복구",
+      "pass": true
+    },
+    {
+      "name": "removing 행은 새로고침으로 되살아나지 않음",
+      "pass": true
+    },
+    {
+      "name": "매시간 origin 점검이 틀린 렌더를 찾아 다시 렌더",
+      "pass": true
+    },
+    {
+      "name": "도메인 행 없는 고아 KV 레코드는 매시간 점검이 삭제",
+      "pass": true
+    },
+    {
+      "name": "Cloudflare 장애 중 삭제: 요청은 실패해도 cron이 서브도메인으로 즉시 복귀",
+      "pass": true
+    },
+    {
+      "name": "Cloudflare 복구 후 cron이 삭제 마무리",
+      "pass": true
+    },
+    {
+      "name": "중단된 삭제는 cron이 마무리(행·KV 정리)",
+      "pass": true
+    },
+    {
+      "name": "삭제: 커스텀 404, 서브도메인 다시 200·canonical 복귀",
+      "pass": true
+    },
+    {
+      "name": "삭제하면 Cloudflare 호스트네임도 삭제(quota 원복)",
+      "pass": true,
+      "used": 0,
+      "included": 100,
+      "overage": 0
+    },
+    {
+      "name": "없는 도메인 삭제 404",
+      "pass": true
+    }
+  ]
+}

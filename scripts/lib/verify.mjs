@@ -154,7 +154,15 @@ export async function lighthouse(url) {
 export function localKv(action, key, value) {
   const args = ["exec", "wrangler", "kv", "key", action, key, ...(value !== undefined ? [value] : []), "--binding", "ROUTES", "--local", "--persist-to", process.env.STATE_DIR ?? "/state"];
   if (action === "get") args.push("--text");
-  return execFileSync("pnpm", args, { cwd: "apps/router", encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+  try {
+    const out = execFileSync("pnpm", args, { cwd: "apps/router", encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+    // wrangler prints this and exits 0 for a missing key.
+    return action === "get" && out === "Value not found" ? "" : out;
+  } catch (error) {
+    // A missing key exits non-zero; reads report it as empty.
+    if (action === "get" && /not found/i.test(String(error.stderr ?? error.stdout ?? ""))) return "";
+    throw error;
+  }
 }
 
 /** Runs SQL against the API's local D1 (Docker: shared /state volume). Returns result rows. */

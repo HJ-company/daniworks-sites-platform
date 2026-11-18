@@ -184,7 +184,7 @@ export default {
     const route = url.pathname === "/index.html" ? "/" : url.pathname.replace(/\/(index\.html)?$/, "") || "/";
     if (pages.includes(route)) {
       const path = route === "/" ? "index.html" : `${route.slice(1)}/index.html`;
-      const response = await serveObject(env, r2PageKey(host.siteId, pointer.versionId, path), "public, max-age=60");
+      const response = await serveObject(env, r2PageKey(host.siteId, pointer.versionId, path, pointer.renderId), "public, max-age=60");
       if (response) {
         response.headers.set("x-site-version", String(pointer.number));
         return response;

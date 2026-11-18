@@ -13,6 +13,7 @@ export interface SiteRow {
   cancelled_at: string | null;
   published_at: string | null;
   routes_synced_at: string | null;
+  origin_pending: number;
   created_at: string;
   updated_at: string;
 }
@@ -28,6 +29,7 @@ export interface VersionRow {
   asset_version: string | null;
   rendered_at: string | null;
   rendered_origin: string | null;
+  render_id: string | null;
   first_published_at: string | null;
   created_at: string;
 }
@@ -115,11 +117,14 @@ export async function addVersion(
   return { versionId, number: latest.number + 1 };
 }
 
-/** `renderKey` (stored in rendered_origin): origin and other render inputs outside the config. */
-export async function markRendered(db: D1Database, versionId: string, assetVersion: string, renderKey: string) {
+/**
+ * Records a finished render in one statement: its id, assets and `renderKey` (stored in
+ * rendered_origin: origin and other render inputs outside the config) always match its pages.
+ */
+export async function markRendered(db: D1Database, versionId: string, assetVersion: string, renderKey: string, renderId: string) {
   await db
-    .prepare("UPDATE site_versions SET rendered_at = ?, asset_version = ?, rendered_origin = ? WHERE id = ?")
-    .bind(now(), assetVersion, renderKey, versionId)
+    .prepare("UPDATE site_versions SET rendered_at = ?, asset_version = ?, rendered_origin = ?, render_id = ? WHERE id = ?")
+    .bind(now(), assetVersion, renderKey, renderId, versionId)
     .run();
 }
 
@@ -165,9 +170,9 @@ export async function servingState(db: D1Database, siteId: string) {
   const site = await getSite(db, siteId);
   const version = site.published_version_id
     ? await db
-        .prepare("SELECT id, number, config FROM site_versions WHERE id = ?")
+        .prepare("SELECT id, number, config, render_id FROM site_versions WHERE id = ?")
         .bind(site.published_version_id)
-        .first<{ id: string; number: number; config: string }>()
+        .first<{ id: string; number: number; config: string; render_id: string | null }>()
     : null;
   return { site, version };
 }

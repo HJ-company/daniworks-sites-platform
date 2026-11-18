@@ -19,6 +19,8 @@ API_ORIGIN = "http://127.0.0.1:8788"
 TURNSTILE_SITE_KEY = "1x00000000000000000000AA"
 MAIL_MODE = "mailpit"
 MAIL_FROM = "noreply@dsites.kr"
+DOMAIN_CNAME_TARGET = "fallback.dsites.kr"
+# Custom domains locally: CF_API_BASE / CF_ZONE_ID / CF_API_TOKEN in .dev.vars (Docker: cf-mock).
 # ADMIN_TOKEN comes from .dev.vars locally and a secret in production.
 
 [[d1_databases]]
@@ -55,6 +57,9 @@ API_ORIGIN = "https://api.dsites.kr"
 # TURNSTILE_SECRET, HASH_PEPPER: `wrangler secret put ... --env staging`
 MAIL_MODE = "binding"
 MAIL_FROM = "noreply@dsites.kr"
+CF_API_BASE = "https://api.cloudflare.com/client/v4"
+DOMAIN_CNAME_TARGET = "fallback.dsites.kr"
+# CF_ZONE_ID (dsites.kr) and CF_API_TOKEN (SSL and Certificates: Edit): wrangler secret put
 # ADMIN_TOKEN: `wrangler secret put ADMIN_TOKEN --env staging`
 
 # Cloudflare Email Service; dsites.kr must be onboarded for sending (wrangler email sending enable).

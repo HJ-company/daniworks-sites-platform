@@ -1,10 +1,10 @@
 {
-  "siteId": "de0f8af8-76c6-4c9d-a3ce-e10f6f075847",
+  "siteId": "ef6b4953-8f45-4d6f-b81e-be110eface14",
   "results": [
     {
       "name": "생성 직후 호스트 레코드: 상태 active, 포인터 없음",
       "pass": true,
-      "siteId": "de0f8af8-76c6-4c9d-a3ce-e10f6f075847",
+      "siteId": "ef6b4953-8f45-4d6f-b81e-be110eface14",
       "status": "active",
       "pointer": null,
       "redirectTo": null
@@ -16,16 +16,17 @@
     {
       "name": "게시 후 호스트 레코드에 포인터·페이지 목록",
       "pass": true,
-      "siteId": "de0f8af8-76c6-4c9d-a3ce-e10f6f075847",
+      "siteId": "ef6b4953-8f45-4d6f-b81e-be110eface14",
       "status": "active",
       "pointer": {
-        "versionId": "7ef795db-149c-46d8-9744-470ae743a394",
+        "versionId": "96792854-4198-4c60-9c13-806c2592d804",
         "number": 1,
-        "publishedAt": "2026-11-18T18:52:06.817Z",
+        "publishedAt": "2026-11-18T19:42:16.275Z",
         "pages": [
           "/",
           "/privacy"
-        ]
+        ],
+        "renderId": "711a6c92533e4ed4"
       },
       "redirectTo": null
     },
@@ -50,11 +51,11 @@
       "pass": true,
       "d1": {
         "status": "suspended",
-        "published": "d7228c27-7b3a-4b95-b09e-236669d6e025"
+        "published": "ae8c1eea-74cb-46d4-b346-93b785dba6b4"
       },
       "kv": {
         "status": "suspended",
-        "pointer": "d7228c27-7b3a-4b95-b09e-236669d6e025"
+        "pointer": "ae8c1eea-74cb-46d4-b346-93b785dba6b4"
       }
     },
     {
@@ -62,20 +63,24 @@
       "pass": true,
       "kv": "suspended",
       "synced": {
-        "routes_synced_at": "2026-11-18T18:52:08.951Z",
-        "updated_at": "2026-11-18T18:52:08.951Z"
+        "routes_synced_at": "2026-11-18T19:42:18.605Z",
+        "updated_at": "2026-11-18T19:42:18.605Z"
       }
     },
     {
       "name": "매시간 점검: 동기화 표시가 있어도 KV가 틀리면 찾아서 복구",
       "pass": true,
-      "marker": "2026-11-18T18:52:12.249Z",
+      "marker": "2026-11-18T19:42:22.134Z",
       "kv": "active"
     },
     {
       "name": "M1 형식 레코드(문자열 siteId)도 서빙",
       "pass": true,
       "version": "2"
+    },
+    {
+      "name": "renderId 없는 M1 포인터는 예전 R2 경로를 서빙",
+      "pass": true
     },
     {
       "name": "POST /는 405",

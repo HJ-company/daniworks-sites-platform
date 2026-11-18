@@ -15,7 +15,7 @@ import {
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** KV allows one write per key per second; retry rate-limited writes a few times. */
-async function kvWrite(op: () => Promise<void>) {
+export async function kvWrite(op: () => Promise<void>) {
   for (let attempt = 0; ; attempt++) {
     try {
       return await op();
@@ -61,6 +61,7 @@ async function snapshot(env: Env, siteId: string) {
           // Rows from before migration 0003 are backfilled; never drop a live pointer over a missing time.
           publishedAt: site.published_at ?? site.updated_at,
           pages: routesOf(JSON.parse(version.config) as { version?: unknown }),
+          renderId: version.render_id,
         }
       : null;
   const primary = await primaryHostname(env.DB, site, env.BASE_DOMAIN);
@@ -68,7 +69,7 @@ async function snapshot(env: Env, siteId: string) {
     .bind(site.id)
     .all<{ hostname: string; kind: string; status: string }>();
   const status = hostStatus(site);
-  const key = JSON.stringify([status, pointer?.versionId, pointer?.publishedAt, primary, domains]);
+  const key = JSON.stringify([status, pointer?.versionId, pointer?.publishedAt, pointer?.renderId, primary, domains]);
   return { site, pointer, primary, domains, status, key };
 }
 
@@ -148,6 +149,26 @@ export async function reconcileHostRecords(env: Env) {
 export async function auditHostRecords(env: Env) {
   const { results } = await env.DB.prepare("SELECT id FROM sites").all<{ id: string }>();
   let dirty = 0;
+  // Orphans: host records whose hostname no longer exists in D1 (a race recreated one after
+  // removal). Routing must never outlive the domain row, so they are deleted here.
+  const known = new Set(
+    (await env.DB.prepare("SELECT hostname FROM domains").all<{ hostname: string }>()).results.map((row) => row.hostname),
+  );
+  let orphans = 0;
+  let cursor: string | undefined;
+  do {
+    const page = await env.ROUTES.list({ prefix: "host:", cursor });
+    for (const key of page.keys) {
+      const hostname = key.name.slice("host:".length);
+      if (known.has(hostname)) continue;
+      // The snapshot may predate a site created during this audit: confirm against D1 now.
+      const exists = await env.DB.prepare("SELECT 1 AS n FROM domains WHERE hostname = ?").bind(hostname).first();
+      if (exists) continue;
+      await kvWrite(() => env.ROUTES.delete(key.name));
+      orphans++;
+    }
+    cursor = page.list_complete ? undefined : page.cursor;
+  } while (cursor);
   for (const { id } of results) {
     const state = await snapshot(env, id);
     for (const domain of state.domains) {
@@ -160,5 +181,5 @@ export async function auditHostRecords(env: Env) {
       }
     }
   }
-  return { sites: results.length, dirty };
+  return { sites: results.length, dirty, orphans };
 }
