@@ -32,6 +32,7 @@ function chrome(config: SiteConfig): SiteChrome | null {
     mapUrl: business.mapUrl ?? null,
     bookingUrl: business.bookingUrl ?? null,
     inquiryLabel: presets[config.preset].inquiryCta,
+    blogUrl: business.blogUrl ?? null,
   };
 }
 

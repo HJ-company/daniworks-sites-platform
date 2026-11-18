@@ -1,47 +1,47 @@
 {
   "sites": {
     "lesson": {
-      "siteId": "b02d93f4-aa97-4860-b5a0-d2bbd38c169b",
-      "versionId": "dd52bf42-56cc-4b95-b16e-8011433173be",
-      "hostname": "jefes-mwmk9ktx.localhost",
-      "slug": "jefes-mwmk9ktx",
-      "token": "aaa7766529f14900a4b493d3dfa09143"
+      "siteId": "9fada000-872a-488b-896a-78ee8f50fa9f",
+      "versionId": "dff8ff41-9dbd-4dbb-9c7c-0ee5ee50200d",
+      "hostname": "jefes-mwmktfz4.localhost",
+      "slug": "jefes-mwmktfz4",
+      "token": "0859590e5b824f91bf8458de07cf726a"
     },
     "field": {
-      "siteId": "5e73d3d2-c4d8-4e78-91f2-566baf9f827a",
-      "versionId": "f17eadbb-bf17-4227-ad88-afbd40f1a4b9",
-      "hostname": "sangkwae-mwmk9ktx.localhost",
-      "slug": "sangkwae-mwmk9ktx",
-      "token": "1f951a05a2064be5b3dedee8f00d7001"
+      "siteId": "39832f99-9186-4137-a2b7-43824b8420d6",
+      "versionId": "5c8cd491-5bde-49b2-8577-bddf31cee9e4",
+      "hostname": "sangkwae-mwmktfz4.localhost",
+      "slug": "sangkwae-mwmktfz4",
+      "token": "f936f0a49e6e4d61860adf41d12442b9"
     }
   },
   "scores": {
     "lesson": {
-      "performance": 97,
+      "performance": 100,
       "accessibility": 100,
       "bestPractices": 96,
       "seo": 92,
-      "lcpMs": 1118,
+      "lcpMs": 1065,
       "cls": 0,
-      "tbtMs": 202,
+      "tbtMs": 58,
       "runs": [
-        99,
-        97,
-        93
+        "TARGET_CRASHED",
+        100,
+        100
       ]
     },
     "field": {
-      "performance": 96,
+      "performance": 100,
       "accessibility": 100,
       "bestPractices": 96,
       "seo": 92,
-      "lcpMs": 1255,
+      "lcpMs": 1891,
       "cls": 0,
-      "tbtMs": 217,
+      "tbtMs": 23,
       "runs": [
-        96,
-        96,
-        83
+        100,
+        100,
+        96
       ]
     }
   },
@@ -57,7 +57,7 @@
     {
       "name": "lesson: 사이트 생성 201",
       "pass": true,
-      "hostname": "jefes-mwmk9ktx.localhost"
+      "hostname": "jefes-mwmktfz4.localhost"
     },
     {
       "name": "lesson: 저장된 설정은 v2",
@@ -74,14 +74,14 @@
     {
       "name": "lesson: 게시 200",
       "pass": true,
-      "versionId": "dd52bf42-56cc-4b95-b16e-8011433173be",
+      "versionId": "dff8ff41-9dbd-4dbb-9c7c-0ee5ee50200d",
       "number": 1,
-      "publishedAt": "2026-11-18T20:15:40.599Z",
+      "publishedAt": "2026-11-18T20:31:07.389Z",
       "pages": [
         "/",
         "/privacy"
       ],
-      "renderId": "182a40a2dee94ed8"
+      "renderId": "2374cc4a81c3452b"
     },
     {
       "name": "lesson: 공개 홈 200 + canonical + JSON-LD + 연락 바",
@@ -102,7 +102,7 @@
     {
       "name": "field: 사이트 생성 201",
       "pass": true,
-      "hostname": "sangkwae-mwmk9ktx.localhost"
+      "hostname": "sangkwae-mwmktfz4.localhost"
     },
     {
       "name": "field: 저장된 설정은 v2",
@@ -119,14 +119,14 @@
     {
       "name": "field: 게시 200",
       "pass": true,
-      "versionId": "f17eadbb-bf17-4227-ad88-afbd40f1a4b9",
+      "versionId": "5c8cd491-5bde-49b2-8577-bddf31cee9e4",
       "number": 1,
-      "publishedAt": "2026-11-18T20:15:40.820Z",
+      "publishedAt": "2026-11-18T20:31:07.582Z",
       "pages": [
         "/",
         "/privacy"
       ],
-      "renderId": "8935f38e1a4d4080"
+      "renderId": "a19706b685b148f2"
     },
     {
       "name": "field: 공개 홈 200 + canonical + JSON-LD + 연락 바",
@@ -148,7 +148,7 @@
       "name": "프리뷰: 하이드레이션 오류 없음, 링크가 프리뷰 안, 문의 전송 차단",
       "pass": true,
       "errors": [],
-      "privacyHref": "/preview/aaa7766529f14900a4b493d3dfa09143/privacy",
+      "privacyHref": "/preview/0859590e5b824f91bf8458de07cf726a/privacy",
       "blocked": "프리뷰에서는 문의가 전송되지 않습니다."
     },
     {
@@ -190,65 +190,65 @@
     {
       "name": "lesson: Lighthouse 모바일 성능 90 이상, LCP 2.5초 이하",
       "pass": true,
-      "performance": 97,
+      "performance": 100,
       "accessibility": 100,
       "bestPractices": 96,
       "seo": 92,
-      "lcpMs": 1118,
+      "lcpMs": 1065,
       "cls": 0,
-      "tbtMs": 202,
+      "tbtMs": 58,
       "runs": [
-        99,
-        97,
-        93
+        "TARGET_CRASHED",
+        100,
+        100
       ]
     },
     {
       "name": "lesson: Lighthouse SEO 90 이상, 접근성 90 이상",
       "pass": true,
-      "performance": 97,
+      "performance": 100,
       "accessibility": 100,
       "bestPractices": 96,
       "seo": 92,
-      "lcpMs": 1118,
+      "lcpMs": 1065,
       "cls": 0,
-      "tbtMs": 202,
+      "tbtMs": 58,
       "runs": [
-        99,
-        97,
-        93
+        "TARGET_CRASHED",
+        100,
+        100
       ]
     },
     {
       "name": "field: Lighthouse 모바일 성능 90 이상, LCP 2.5초 이하",
       "pass": true,
-      "performance": 96,
+      "performance": 100,
       "accessibility": 100,
       "bestPractices": 96,
       "seo": 92,
-      "lcpMs": 1255,
+      "lcpMs": 1891,
       "cls": 0,
-      "tbtMs": 217,
+      "tbtMs": 23,
       "runs": [
-        96,
-        96,
-        83
+        100,
+        100,
+        96
       ]
     },
     {
       "name": "field: Lighthouse SEO 90 이상, 접근성 90 이상",
       "pass": true,
-      "performance": 96,
+      "performance": 100,
       "accessibility": 100,
       "bestPractices": 96,
       "seo": 92,
-      "lcpMs": 1255,
+      "lcpMs": 1891,
       "cls": 0,
-      "tbtMs": 217,
+      "tbtMs": 23,
       "runs": [
-        96,
-        96,
-        83
+        100,
+        100,
+        96
       ]
     }
   ]

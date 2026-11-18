@@ -117,6 +117,10 @@ importers:
         version: 4.164.0(@cloudflare/workers-types@5.20261118.1)(@types/node@26.6.6)
 
   apps/router:
+    dependencies:
+      '@sites/renderer':
+        specifier: workspace:*
+        version: link:../../packages/renderer
     devDependencies:
       '@cloudflare/workers-types':
         specifier: ^5.20261118.1

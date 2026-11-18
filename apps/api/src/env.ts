@@ -22,6 +22,8 @@ export interface Env {
   CF_API_TOKEN?: string;
   /** CNAME target customers point their domain at (the SaaS fallback origin host). */
   DOMAIN_CNAME_TARGET?: string;
+  /** Naver blog RSS base (`https://rss.blog.naver.com`); Docker points it at fixtures. */
+  BLOG_RSS_BASE?: string;
   /** Pepper for hashing visitor IPs (rate limiting without storing addresses). */
   HASH_PEPPER?: string;
 }

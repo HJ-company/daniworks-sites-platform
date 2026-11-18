@@ -1,12 +1,12 @@
 {
-  "at": "2026-11-18T20:18:04.787Z",
+  "at": "2026-11-18T20:32:53.880Z",
   "summary": [
     {
       "step": "m1",
       "ok": true,
       "passed": 18,
       "total": 18,
-      "seconds": 7,
+      "seconds": 6,
       "failed": []
     },
     {
@@ -14,15 +14,7 @@
       "ok": true,
       "passed": 28,
       "total": 28,
-      "seconds": 78,
-      "failed": []
-    },
-    {
-      "step": "m2-assets",
-      "ok": true,
-      "passed": 26,
-      "total": 26,
-      "seconds": 5,
+      "seconds": 91,
       "failed": []
     },
     {
@@ -30,47 +22,7 @@
       "ok": true,
       "passed": 14,
       "total": 14,
-      "seconds": 18,
-      "failed": []
-    },
-    {
-      "step": "m2-inquiry",
-      "ok": true,
-      "passed": 24,
-      "total": 24,
-      "seconds": 11,
-      "failed": []
-    },
-    {
-      "step": "m2-track",
-      "ok": true,
-      "passed": 8,
-      "total": 8,
-      "seconds": 6,
-      "failed": []
-    },
-    {
-      "step": "m2-mcp",
-      "ok": true,
-      "passed": 19,
-      "total": 19,
-      "seconds": 1,
-      "failed": []
-    },
-    {
-      "step": "m2-domains",
-      "ok": true,
-      "passed": 30,
-      "total": 30,
-      "seconds": 20,
-      "failed": []
-    },
-    {
-      "step": "m2-console",
-      "ok": true,
-      "passed": 20,
-      "total": 20,
-      "seconds": 5,
+      "seconds": 16,
       "failed": []
     }
   ]

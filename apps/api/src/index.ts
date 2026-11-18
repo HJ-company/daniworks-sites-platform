@@ -1,5 +1,6 @@
 import { parseSiteConfig, renderSite, SiteConfigError, type SiteConfig } from "@sites/renderer";
 import { listAssets, uploadAsset } from "./assets.js";
+import { refreshBlog, refreshDueBlogs } from "./blog.js";
 import { allInquiries, inquiriesCsv, listInquiries, requireEmail } from "./inquiries.js";
 import { kstDay, metricsReport } from "./metrics.js";
 import { turnstileFrame } from "./turnstile.js";
@@ -144,6 +145,11 @@ async function handle(request: Request, env: Env): Promise<Response> {
     if (method === "DELETE" && parts.length === 4) return json(await removeDomain(env, site.id, hostname));
   }
 
+  // POST /sites/:id/blog/refresh: fetch the blog RSS now (normally every 3 hours by cron)
+  if (method === "POST" && parts[2] === "blog" && parts[3] === "refresh" && parts.length === 4) {
+    return json(await refreshBlog(env, site.id));
+  }
+
   // GET /sites/:id/metrics?from=YYYY-MM-DD&to=YYYY-MM-DD (Korean dates, inclusive; default last 30 days)
   if (method === "GET" && parts[2] === "metrics" && parts.length === 3) {
     const today = kstDay(new Date());
@@ -237,6 +243,7 @@ export default {
           console.log("[domains] origin audit", JSON.stringify(await auditOrigins(env)));
         }
         console.log("[domains] maintain", JSON.stringify(await maintainDomains(env)));
+        console.log("[blog] refresh", JSON.stringify(await refreshDueBlogs(env)));
         console.log("[routes] reconcile", JSON.stringify(await reconcileHostRecords(env)));
       })(),
     );

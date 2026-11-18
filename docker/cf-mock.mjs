@@ -52,6 +52,21 @@ http
     }
     if (url.pathname === "/health") return ok(res, { ok: true });
 
+    // Naver blog RSS fixtures: /fixtures/naver-rss/<id>.xml. "missing" answers 404.
+    const rss = url.pathname.match(/^\/fixtures\/naver-rss\/([A-Za-z0-9_-]+)\.xml$/);
+    if (rss) {
+      if (rss[1] === "missing") return send(res, 404, { error: "not found" });
+      const items = [1, 2, 3, 4]
+        .map(
+          (n) => `<item><title><![CDATA[${rss[1]} 글 ${n} & 소식]]></title><link><![CDATA[https://blog.naver.com/${rss[1]}/${100 + n}?fromRss=true]]></link>
+<description><![CDATA[<img src="https://blogthumb.pstatic.net/fixture/${rss[1]}-${n}.jpg?type=s3"> ${rss[1]} 블로그의 ${n}번째 글 요약입니다.]]></description>
+<pubDate>${new Date(Date.UTC(2026, 10, 20 - n, 1)).toUTCString()}</pubDate></item>`,
+        )
+        .join("");
+      res.writeHead(200, { "content-type": "text/xml; charset=utf-8" });
+      return res.end(`<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"><channel><title>${rss[1]}</title>${items}</channel></rss>`);
+    }
+
     const m = url.pathname.match(/^\/client\/v4\/zones\/([^/]+)\/custom_hostnames(?:\/([^/]+))?$/);
     if (!m) return fail(res, 404, 7000, "No route for that URI");
     if (req.headers.authorization !== `Bearer ${TOKEN}`) return fail(res, 403, 10000, "Authentication error");

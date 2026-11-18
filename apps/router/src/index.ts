@@ -1,3 +1,4 @@
+import { blogCardsHtml, type BlogFeed } from "@sites/renderer/blog";
 import {
   kvHostKey,
   kvSiteKey,
@@ -187,7 +188,21 @@ export default {
       const response = await serveObject(env, r2PageKey(host.siteId, pointer.versionId, path, pointer.renderId), "public, max-age=60");
       if (response) {
         response.headers.set("x-site-version", String(pointer.number));
-        return response;
+        if (route !== "/") return response;
+        // Latest blog posts, filled at request time from the cron's KV cache. The body now
+        // changes without the object changing, so the R2 ETag no longer describes it.
+        response.headers.delete("etag");
+        const siteId = host.siteId;
+        return new HTMLRewriter()
+          .on("[data-blog-feed]", {
+            async element(element) {
+              const feed = await env.ROUTES.get<BlogFeed>(`blog:${siteId}`, { type: "json", cacheTtl: 300 });
+              // Edge caches can lag a blog change: only posts from the blog this page links to.
+              const html = feed && feed.source === element.getAttribute("data-blog-feed") ? blogCardsHtml(feed.posts) : "";
+              if (html) element.setInnerContent(html, { html: true });
+            },
+          })
+          .transform(response);
       }
       return page(404, "페이지 파일을 찾지 못했습니다.");
     }

@@ -1,0 +1,63 @@
+{
+  "siteId": "d939f8dc-a046-4a94-a186-cf5485b662a5",
+  "results": [
+    {
+      "name": "게시 직후: 블로그 섹션(주소 식별자 포함)은 있고 글은 아직 없음",
+      "pass": true
+    },
+    {
+      "name": "피드 행이 생기고 수집 대기",
+      "pass": true
+    },
+    {
+      "name": "cron 수집 후 최신 글 3개가 HTML에 들어감(재게시 없이)",
+      "pass": true,
+      "cards": 3
+    },
+    {
+      "name": "글 링크·날짜·이스케이프(& → &amp;)",
+      "pass": true
+    },
+    {
+      "name": "블로그 HTML이 바뀌므로 ETag 없음",
+      "pass": true
+    },
+    {
+      "name": "개인정보처리방침 페이지는 그대로(재작성 없음)",
+      "pass": true
+    },
+    {
+      "name": "하이드레이션 후에도 카드 3개 유지, 오류 없음",
+      "pass": true,
+      "visibleCards": 3,
+      "errors": []
+    },
+    {
+      "name": "네이버 이미지 요청에 Referer 없음",
+      "pass": true,
+      "imageRequests": [
+        null,
+        null,
+        null
+      ]
+    },
+    {
+      "name": "RSS 실패 시 오류 기록, 같은 블로그의 이전 글은 유지",
+      "pass": true,
+      "status": "error",
+      "error": "RSS 404"
+    },
+    {
+      "name": "블로그 주소를 바꾸면 이전 블로그 글은 즉시 사라짐(새 피드 실패해도)",
+      "pass": true
+    },
+    {
+      "name": "블로그 주소를 빼고 게시하면 섹션·피드 행·캐시 제거",
+      "pass": true
+    },
+    {
+      "name": "블로그 없는 사이트는 새로고침 404",
+      "pass": true
+    }
+  ]
+}

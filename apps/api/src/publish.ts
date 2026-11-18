@@ -2,6 +2,7 @@ import { ASSET_VERSION, renderSite, type SiteConfig } from "@sites/renderer";
 import type { Env } from "./env.js";
 import { HttpError } from "./http.js";
 import { kvSiteKey, r2PageKey, r2SharedKey, type PublishedPointer } from "./keys.js";
+import { syncBlogFeed } from "./blog.js";
 import { routesOf, syncHostRecordsNow } from "./routes.js";
 import {
   getSite,
@@ -70,6 +71,7 @@ async function pointTo(env: Env, site: SiteRow, version: VersionRow, pages: stri
   const pointer: PublishedPointer = { versionId: version.id, number: version.number, publishedAt, pages, renderId };
   await env.ROUTES.put(kvSiteKey(site.id), JSON.stringify(pointer));
   await syncHostRecordsNow(env, site.id);
+  await syncBlogFeed(env, site.id, JSON.parse(version.config) as { business?: { blogUrl?: string } });
   return pointer;
 }
 

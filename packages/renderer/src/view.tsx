@@ -16,6 +16,7 @@ import type {
 } from "@dani-builder/strapi-client/types";
 import { srcSetFor } from "./images.js";
 import { RenderContext, useSiteHref } from "./render-context.js";
+import { BlogFeed } from "./platform/blog-feed.js";
 import { ContactBar } from "./platform/contact-bar.js";
 import { InquiryForm } from "./platform/inquiry-form.js";
 
@@ -27,6 +28,8 @@ export interface SiteChrome {
   mapUrl: string | null;
   bookingUrl: string | null;
   inquiryLabel: string;
+  /** Naver blog home; the router fills the latest posts at request time. */
+  blogUrl?: string | null;
   /** Platform-hosted Turnstile frame; null when spam checks are not configured. */
   turnstileFrame?: string | null;
 }
@@ -99,6 +102,9 @@ export function SiteView({ data }: { data: PageData }) {
   const first = page.blocks[0];
   const route = data.route ?? "/";
   const linkPrefix = data.linkPrefix ?? "";
+  const renderers = { "blocks.inquiry-form": site ? InquiryForm : InquiryPlaceholder };
+  const found = page.blocks.findIndex((block) => block.__component === "blocks.inquiry-form");
+  const inquiryAt = found === -1 ? page.blocks.length : found;
   return (
     <RenderContext.Provider
       value={{ linkPrefix, preview: data.preview ?? false, turnstileFrame: site?.turnstileFrame ?? null }}
@@ -114,10 +120,16 @@ export function SiteView({ data }: { data: PageData }) {
         firstHero={first?.__component === "blocks.hero" ? first : null}
         colors={brandColors}
       >
-        <BlockRenderer
-          blocks={page.blocks}
-          renderers={{ "blocks.inquiry-form": site ? InquiryForm : InquiryPlaceholder }}
-        />
+        {site?.blogUrl && route === "/" ? (
+          // Latest blog posts sit just before the inquiry form.
+          <>
+            <BlockRenderer blocks={page.blocks.slice(0, inquiryAt)} renderers={renderers} />
+            <BlogFeed blogUrl={site.blogUrl} />
+            <BlockRenderer blocks={page.blocks.slice(inquiryAt)} renderers={renderers} />
+          </>
+        ) : (
+          <BlockRenderer blocks={page.blocks} renderers={renderers} />
+        )}
       </SiteShell>
       {site ? <ContactBar site={site} /> : null}
     </BlocksProvider>
