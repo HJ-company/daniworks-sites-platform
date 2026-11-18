@@ -1,0 +1,28 @@
+@import "tailwindcss";
+@import "@dani-builder/blocks/styles.css";
+@source "../node_modules/@dani-builder/blocks/dist";
+@source "./";
+
+@theme {
+  --color-primary: #157a5c;
+  --color-primary-light: #6fcfb2;
+  --color-cta: #0e5f47;
+  --color-cta-hover: #0b4c39;
+  --color-bg: #f4f3ed;
+  --color-text: #17241f;
+  --color-text-muted: #56655d;
+}
+
+/* M0: system fonts. Webfont subsetting is a separate decision. */
+:root {
+  --font-body: "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+  --font-heading: var(--font-body);
+  --font-brand: var(--font-body);
+}
+
+.sites-inquiry-placeholder {
+  padding: 48px 24px;
+  text-align: center;
+  color: var(--color-text-muted);
+  background: var(--color-bg);
+}
