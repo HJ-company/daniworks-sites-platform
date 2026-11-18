@@ -43,6 +43,21 @@ function escapeHtml(value: string) {
   return value.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
 }
 
+/**
+ * Preload for the LCP image, copied from the rendered `<img fetchpriority="high">` itself so
+ * src, srcset and sizes always match what the image will pick (no double download).
+ */
+export function lcpPreload(body: string): string {
+  const img = body.match(/<img\b[^>]*fetchPriority="high"[^>]*>|<img\b[^>]*fetchpriority="high"[^>]*>/i)?.[0];
+  if (!img) return "";
+  const attr = (name: string) => img.match(new RegExp(`\\s${name}="([^"]*)"`, "i"))?.[1];
+  const src = attr("src");
+  if (!src) return "";
+  const srcset = attr("srcSet") ?? attr("srcset");
+  const sizes = attr("sizes");
+  return `<link rel="preload" as="image" href="${src}"${srcset ? ` imagesrcset="${srcset}"` : ""}${sizes ? ` imagesizes="${sizes}"` : ""} fetchpriority="high">`;
+}
+
 const absolute = (origin: string | undefined, url: string | undefined | null) =>
   !url ? undefined : /^https?:\/\//.test(url) ? url : origin ? `${origin}${url}` : undefined;
 
@@ -125,6 +140,7 @@ async function renderPage(config: SiteConfig, sitePage: SitePage, options: Rende
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 ${head}
+${lcpPreload(body)}
 <link rel="stylesheet" href="${options.assetBase}/_assets/site.css">
 </head>
 <body${page.data.site ? ' class="has-contact-bar"' : ""}>

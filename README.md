@@ -3,7 +3,7 @@
 스타터 홈페이지 플랫폼. 사이트 설정(JSON)을 D1에 버전으로 쌓고, 게시할 때 HTML로 렌더해 R2에 올린다. 라우터 Worker가 접속 도메인을 보고 해당 사이트 파일을 서빙한다.
 
 - 요구사항: [docs/prd.md](docs/prd.md)
-- 결과: [M0 렌더 PoC](docs/m0-render-poc.md), [M1 게시 PoC](docs/m1-publish-poc.md), [스테이징 배포](docs/staging-deploy.md)
+- 결과: [M0 렌더 PoC](docs/m0-render-poc.md), [M1 게시 PoC](docs/m1-publish-poc.md), [스테이징 배포](docs/staging-deploy.md), [M2 첫 고객](docs/m2-first-customer.md)
 
 ```bash
 pnpm install
@@ -20,12 +20,16 @@ pnpm test && pnpm check-types
 호스트 node_modules와 무관하게 Linux 컨테이너에서 Workers·브라우저 검증을 돌린다. 단계마다 이 경로로 확인한다.
 
 ```bash
-docker compose up -d --build                      # workers(api :8788, router :8787), mailpit(:8025)
-docker compose run --rm verify node scripts/verify-m1.mjs   # 결과는 evidence/<단계>/
+docker compose up -d --build                      # api :8788, router :8787, 콘솔 :8789, mailpit :8025, cf-mock :8790
+docker compose run --rm verify node scripts/verify-all.mjs  # 전체 검증. 단계별: verify-m2-<단계>.mjs, 결과는 evidence/<단계>/
 docker compose down -v                            # 로컬 D1·R2·KV 상태까지 지움
 ```
 
 `verify`는 workers 컨테이너의 네트워크를 함께 써서, 스크립트가 `127.0.0.1`·`*.localhost`로 Workers에 닿는다.
+
+- 운영자 콘솔: http://127.0.0.1:8789 (로컬은 Access 검사 생략)
+- MCP: `http://127.0.0.1:8788/mcp`, `Authorization: Bearer dev-admin-token`
+- 메일 확인: http://127.0.0.1:8025 (Mailpit)
 
 스테이징(`*.dsites.kr`, `api.dsites.kr`)은 [docs/staging-deploy.md](docs/staging-deploy.md)를 따른다.
 

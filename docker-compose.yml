@@ -54,6 +54,8 @@ services:
     <<: *app
     profiles: [tools]
     network_mode: "service:workers"
+    # Chrome needs more than Docker's 64 MB /dev/shm (Lighthouse tabs crashed without it).
+    shm_size: 1gb
     depends_on:
       workers:
         condition: service_healthy

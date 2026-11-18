@@ -118,13 +118,24 @@ export async function inspectPage(browser, url, viewport, { screenshot, allowExt
   return { page, errors, failed, external, ...state };
 }
 
-/** Lighthouse (mobile, simulated throttling) with Playwright's Chromium. */
-export async function lighthouse(url) {
+/**
+ * Lighthouse (mobile, simulated throttling), median of `runs` by performance score as
+ * Lighthouse recommends: single runs vary with host CPU load (TBT especially).
+ */
+export async function lighthouse(url, runs = 3) {
+  const all = [];
+  for (let i = 0; i < runs; i++) all.push(await lighthouseOnce(url));
+  const ok = all.filter((r) => !r.error).sort((a, b) => a.performance - b.performance);
+  const median = ok[Math.floor(ok.length / 2)] ?? all[0];
+  return { ...median, runs: all.map((r) => r.error ?? r.performance) };
+}
+
+async function lighthouseOnce(url) {
   const { default: run } = await import("lighthouse");
   const chromeLauncher = await import("chrome-launcher");
   const chrome = await chromeLauncher.launch({
     chromePath: chromium().executablePath(),
-    chromeFlags: ["--headless=new", "--no-sandbox", "--disable-gpu"],
+    chromeFlags: ["--headless=new", "--no-sandbox", "--disable-gpu", "--disable-dev-shm-usage"],
   });
   try {
     const result = await run(url, {
@@ -134,6 +145,7 @@ export async function lighthouse(url) {
       onlyCategories: ["performance", "accessibility", "best-practices", "seo"],
     });
     const lhr = result.lhr;
+    if (lhr.runtimeError) return { error: lhr.runtimeError.code, performance: 0, report: lhr };
     const score = (c) => Math.round((lhr.categories[c]?.score ?? 0) * 100);
     return {
       performance: score("performance"),

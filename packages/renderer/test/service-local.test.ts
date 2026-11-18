@@ -85,6 +85,18 @@ describe("service-local template", () => {
     expect(privacy!.html).not.toContain("application/ld+json");
   });
 
+  it("preloads the LCP image with the same srcset and sizes as the image", async () => {
+    const { html } = await renderSite(lessonFixture, { assetBase: "/a" });
+    const preload = html.match(/<link rel="preload" as="image"[^>]*>/)?.[0] ?? "";
+    const img = html.match(/<img[^>]*fetchpriority="high"[^>]*>/i)?.[0] ?? "";
+    const attr = (tag: string, name: string) => tag.match(new RegExp(`\\s${name}="([^"]*)"`, "i"))?.[1];
+    expect(preload).toContain('fetchpriority="high"');
+    expect(attr(preload, "href")).toBe(attr(img, "src"));
+    expect(attr(preload, "imagesrcset")).toBe(attr(img, "srcset"));
+    expect(attr(preload, "imagesizes")).toBe(attr(img, "sizes"));
+    expect(html.indexOf("rel=\"preload\"")).toBeLessThan(html.indexOf("site.css"));
+  });
+
   it("marks previews noindex without canonical", async () => {
     const { html } = await renderSite(fieldFixture, { assetBase: "/a", origin: "https://x.dsites.kr", preview: true });
     expect(html).toContain('<meta name="robots" content="noindex, nofollow">');
