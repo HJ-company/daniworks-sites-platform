@@ -1,0 +1,117 @@
+{
+  "ids": {
+    "rp-same-mwmm6ui9": "5193c295-a4d8-45b2-a671-4397e71660db",
+    "rp-changed-mwmm6ui9": "cbf4794a-5a37-4a6b-97bd-ab6ad4892f22"
+  },
+  "run": "2026-11-18T21-09-36-212Z",
+  "results": [
+    {
+      "name": "공개 화면에는 블로그 카드가 있음(비교 조건)",
+      "pass": true
+    },
+    {
+      "name": "계획: 두 사이트가 outdated",
+      "pass": true
+    },
+    {
+      "name": "스테이지 HTML은 관리자만",
+      "pass": true
+    },
+    {
+      "name": "관리자 토큰은 스테이지 HTML 요청에만(외부 요청에 없음)",
+      "pass": true,
+      "leaks": []
+    },
+    {
+      "name": "같은 화면인 사이트는 홈·개인정보처리방침 × 모바일·데스크톱 모두 차이 0으로 적용",
+      "pass": true,
+      "home-mobile": {
+        "ratio": 0
+      },
+      "home-desktop": {
+        "ratio": 0
+      },
+      "privacy-mobile": {
+        "ratio": 0
+      },
+      "privacy-desktop": {
+        "ratio": 0
+      }
+    },
+    {
+      "name": "화면이 바뀐 사이트는 보류(review)와 diff 이미지",
+      "pass": true,
+      "home-mobile": {
+        "ratio": 0.00257485585034392
+      },
+      "home-desktop": {
+        "ratio": 0.0020036604020979023
+      },
+      "privacy-mobile": {
+        "ratio": 0
+      },
+      "privacy-desktop": {
+        "ratio": 0
+      }
+    },
+    {
+      "name": "높이가 바뀐 레이아웃 변경도 보류하고 diff 이미지를 남김",
+      "pass": true,
+      "home-mobile": {
+        "ratio": 1,
+        "reason": "size 390x6915 → 390x6940"
+      },
+      "home-desktop": {
+        "ratio": 1,
+        "reason": "size 1280x5720 → 1280x5801"
+      },
+      "privacy-mobile": {
+        "ratio": 0
+      },
+      "privacy-desktop": {
+        "ratio": 0
+      }
+    },
+    {
+      "name": "개인정보처리방침만 바뀌어도 보류",
+      "pass": true,
+      "home-mobile": {
+        "ratio": 0.00016426571741105363
+      },
+      "home-desktop": {
+        "ratio": 0.00006050590034965035
+      },
+      "privacy-mobile": {
+        "ratio": 0.002777402250161477
+      },
+      "privacy-desktop": {
+        "ratio": 0.0012348233995584988
+      }
+    },
+    {
+      "name": "적용된 사이트: 새 render_id로 서빙, 자산 버전 현재값",
+      "pass": true
+    },
+    {
+      "name": "보류된 사이트: 공개 화면 그대로",
+      "pass": true
+    },
+    {
+      "name": "그사이 새 버전이 게시되면 적용 거부(409)",
+      "pass": true
+    },
+    {
+      "name": "이전 배포에서 만든 스테이지는 적용 거부(409)",
+      "pass": true
+    },
+    {
+      "name": "스테이지 뒤 공개 렌더가 바뀌었으면 적용 거부(409)",
+      "pass": true,
+      "error": "그사이 게시나 주소 변경이 있었습니다. 다시 스테이지하세요"
+    },
+    {
+      "name": "없는 스테이지 적용은 404",
+      "pass": true
+    }
+  ]
+}

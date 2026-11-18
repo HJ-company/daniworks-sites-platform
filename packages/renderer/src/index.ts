@@ -5,7 +5,7 @@ export { isServiceConfig } from "./site-config.js";
 export type { PageData, SiteChrome } from "./view.js";
 export { parseSiteConfig, validateSiteConfig } from "./validate.js";
 export { allowedPickerIcons } from "./icons/allowlist.js";
-export { ASSET_VERSION } from "./generated/asset-version.js";
+export { ASSET_VERSION, RENDER_VERSION } from "./generated/asset-version.js";
 export { compileServiceSeed, SAMPLE_PHOTOS, mediaPath } from "./templates/service-local/compile.js";
 export { presets } from "./templates/service-local/presets.js";
 export { lessonFixture, fieldFixture } from "./templates/service-local/fixtures.js";

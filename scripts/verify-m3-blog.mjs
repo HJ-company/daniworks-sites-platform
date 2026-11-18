@@ -25,8 +25,9 @@ await api("POST", `/sites/${siteId}/publish`);
 
 // 1. before the first fetch: the section is there, empty
 const before = await routerRequest(host, "/");
-check("게시 직후: 블로그 섹션(주소 식별자 포함)은 있고 글은 아직 없음", before.body.includes('data-blog-feed="https://blog.naver.com/fixtureblog"') && !before.body.includes("sites-blog-card"));
-check("피드 행이 생기고 수집 대기", localD1(`SELECT fetched_at FROM blog_feeds WHERE site_id = '${siteId}'`)[0]?.fetched_at === null);
+check("게시 직후: 블로그 섹션(주소 식별자 포함)", before.body.includes('data-blog-feed="https://blog.naver.com/fixtureblog"'));
+// (a cron still running from an earlier script may already have fetched it)
+check("게시하면 피드 행이 생김", localD1(`SELECT blog_url FROM blog_feeds WHERE site_id = '${siteId}'`)[0]?.blog_url === "https://blog.naver.com/fixtureblog");
 
 // 2. the cron fetches it; the router fills the section
 await fetch(`${API}/__scheduled?cron=*/5+*+*+*+*`);

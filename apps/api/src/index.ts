@@ -11,6 +11,7 @@ import { addDomain, auditOrigins, domainQuota, listDomains, maintainDomains, ref
 import { handleMcp } from "./mcp.js";
 import { assetBase, publish, rollback, siteOrigin } from "./publish.js";
 import { auditHostRecords, reconcileHostRecords, syncHostRecordsNow } from "./routes.js";
+import { commitRepublish, republishPlan, stagedPage, stageRepublish } from "./republish.js";
 import { addDraft, configFromBody, createSiteFromInput, creator, previewUrl } from "./sites.js";
 import { getSite, listSites, listVersions, setSiteStatus, versionByPreviewToken, type CreatedBy } from "./store.js";
 
@@ -101,6 +102,12 @@ async function handle(request: Request, env: Env): Promise<Response> {
     return json(report);
   }
 
+  // Full republish: GET /republish/plan; staged HTML at GET /staged/:siteId/:renderId[/privacy]
+  if (method === "GET" && url.pathname === "/republish/plan") return json(await republishPlan(env));
+  if (method === "GET" && parts[0] === "staged" && (parts.length === 3 || parts.length === 4)) {
+    return stagedPage(env, parts[1]!, parts[2]!, parts[3] ?? "");
+  }
+
   // GET /domains/quota: custom hostnames on the zone vs. the 100 included.
   if (method === "GET" && url.pathname === "/domains/quota") return json(await domainQuota(env));
 
@@ -150,6 +157,16 @@ async function handle(request: Request, env: Env): Promise<Response> {
       return json({ hostname, status: await refreshDomain(env, row) });
     }
     if (method === "DELETE" && parts.length === 4) return json(await removeDomain(env, site.id, hostname));
+  }
+
+  // POST /sites/:id/republish/stage | /republish/commit {renderId}
+  if (method === "POST" && parts[2] === "republish" && parts.length === 4) {
+    if (parts[3] === "stage") return json(await stageRepublish(env, site.id), 201);
+    if (parts[3] === "commit") {
+      const body = await readJson<{ renderId?: string }>(request);
+      if (!body.renderId) throw new HttpError(400, "renderId가 필요합니다");
+      return json(await commitRepublish(env, site.id, body.renderId));
+    }
   }
 
   // POST /sites/:id/blog/refresh: fetch the blog RSS now (normally every 3 hours by cron)

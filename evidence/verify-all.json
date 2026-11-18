@@ -1,28 +1,20 @@
 {
-  "at": "2026-11-18T20:39:15.696Z",
+  "at": "2026-11-18T21:13:11.203Z",
   "summary": [
     {
-      "step": "m2-track",
+      "step": "m2-domains",
       "ok": true,
-      "passed": 8,
-      "total": 8,
-      "seconds": 7,
+      "passed": 30,
+      "total": 30,
+      "seconds": 21,
       "failed": []
     },
     {
-      "step": "m2-console",
+      "step": "m3-blog",
       "ok": true,
-      "passed": 20,
-      "total": 20,
-      "seconds": 5,
-      "failed": []
-    },
-    {
-      "step": "m3-reports",
-      "ok": true,
-      "passed": 9,
-      "total": 9,
-      "seconds": 63,
+      "passed": 12,
+      "total": 12,
+      "seconds": 8,
       "failed": []
     }
   ]

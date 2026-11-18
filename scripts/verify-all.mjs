@@ -1,7 +1,7 @@
 // Runs every verification script in order and prints one summary. Docker:
 // docker compose run --rm verify node scripts/verify-all.mjs
 import { spawnSync } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, rmSync, writeFileSync } from "node:fs";
 
 const steps = [
   ["m1", "verify-m1.mjs"],
@@ -15,12 +15,15 @@ const steps = [
   ["m2-console", "verify-m2-console.mjs"],
   ["m3-blog", "verify-m3-blog.mjs"],
   ["m3-reports", "verify-m3-reports.mjs"],
+  ["m3-republish", "verify-m3-republish.mjs"],
 ];
 const only = process.argv.slice(2);
 const summary = [];
 for (const [step, script] of steps) {
   if (only.length && !only.includes(step)) continue;
   const started = Date.now();
+  // A stale results file from an earlier run must never stand in for this one.
+  rmSync(`evidence/${step}/results.json`, { force: true });
   const run = spawnSync("node", [`scripts/${script}`], { encoding: "utf8", env: process.env });
   const results = (() => {
     try {
@@ -33,7 +36,7 @@ for (const [step, script] of steps) {
   const ok = run.status === 0;
   summary.push({ step, ok, passed: results.length - failed.length, total: results.length, seconds: Math.round((Date.now() - started) / 1000), failed });
   console.log(`${ok ? "PASS" : "FAIL"} ${step} ${results.length - failed.length}/${results.length}${failed.length ? ` — ${failed.join("; ")}` : ""}`);
-  if (!ok && !results.length) console.log(run.stdout.slice(-2000), run.stderr.slice(-2000));
+  if (!ok) console.log(run.stdout.slice(-1500), run.stderr.slice(-1500));
 }
 writeFileSync("evidence/verify-all.json", JSON.stringify({ at: new Date().toISOString(), summary }, null, 2));
 const total = summary.reduce((n, s) => n + s.total, 0);

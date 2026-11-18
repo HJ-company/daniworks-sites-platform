@@ -1,4 +1,4 @@
-import { ASSET_VERSION, renderSite, type SiteConfig } from "@sites/renderer";
+import { ASSET_VERSION, RENDER_VERSION, renderSite, type SiteConfig } from "@sites/renderer";
 import type { Env } from "./env.js";
 import { HttpError } from "./http.js";
 import { kvSiteKey, r2PageKey, r2SharedKey, type PublishedPointer } from "./keys.js";
@@ -34,39 +34,46 @@ async function requireSharedAssets(env: Env) {
   }
 }
 
-/**
- * Renders every page of a version to R2 unless it is already rendered against the current
- * shared assets and origin.
- */
 /** Everything outside the config that changes the HTML (stored in rendered_origin). */
 export const renderKeyOf = (env: Env, origin: string) => JSON.stringify({ origin, turnstileFrame: turnstileFrameUrl(env) });
 
-async function ensureRendered(env: Env, version: VersionRow, origin: string, { keepAssets = false } = {}) {
+/**
+ * Renders every page of a version with the current renderer and shared assets under a fresh,
+ * immutable render_id. Nothing points at it yet: concurrent renders never mix pages.
+ */
+export async function renderToR2(env: Env, version: VersionRow, origin: string) {
   const config = JSON.parse(version.config) as SiteConfig;
-  const turnstileFrame = turnstileFrameUrl(env);
-  const renderKey = renderKeyOf(env, origin);
-  // Rollback keeps the version's own shared assets; publish moves it to the current ones.
-  const assetsOk = keepAssets || version.asset_version === ASSET_VERSION;
-  if (version.rendered_at && assetsOk && version.rendered_origin === renderKey) {
-    return routesOf(config);
-  }
   // HTML comes from the current renderer, so it must point at the current client bundle.
   await requireSharedAssets(env);
-  const { pages } = await renderSite(config, { assetBase: assetBase(), origin, turnstileFrame });
-  // A fresh, immutable prefix per render: concurrent renders never mix pages, and the pointer
-  // switches to a complete set only after markRendered.
+  const { pages } = await renderSite(config, { assetBase: assetBase(), origin, turnstileFrame: turnstileFrameUrl(env) });
   const renderId = crypto.randomUUID().replace(/-/g, "").slice(0, 16);
   for (const page of pages) {
     await env.SITES.put(r2PageKey(version.site_id, version.id, page.path, renderId), page.html, {
       httpMetadata: { contentType: "text/html; charset=utf-8" },
     });
   }
-  await markRendered(env.DB, version.id, ASSET_VERSION, renderKey, renderId);
-  return pages.map((page) => page.route);
+  return { renderId, renderKey: renderKeyOf(env, origin), routes: pages.map((page) => page.route) };
+}
+
+/**
+ * Renders a version unless it is already rendered against the current shared assets and
+ * origin, then records the render (the pointer follows it on the next sync).
+ */
+async function ensureRendered(env: Env, version: VersionRow, origin: string, { keepAssets = false } = {}) {
+  const config = JSON.parse(version.config) as SiteConfig;
+  // Rollback keeps the version's own render; publish moves it to the current renderer and assets.
+  // (site_versions.asset_version holds RENDER_VERSION: assets plus server renderer.)
+  const assetsOk = keepAssets || version.asset_version === RENDER_VERSION;
+  if (version.rendered_at && assetsOk && version.rendered_origin === renderKeyOf(env, origin)) {
+    return routesOf(config);
+  }
+  const render = await renderToR2(env, version, origin);
+  await markRendered(env.DB, version.id, RENDER_VERSION, render.renderKey, render.renderId);
+  return render.routes;
 }
 
 async function pointTo(env: Env, site: SiteRow, version: VersionRow, pages: string[]) {
-  const publishedAt = await markPublished(env.DB, site.id, version.id, ASSET_VERSION);
+  const publishedAt = await markPublished(env.DB, site.id, version.id, RENDER_VERSION);
   const renderId = (await getVersion(env.DB, site.id, version.id)).render_id;
   const pointer: PublishedPointer = { versionId: version.id, number: version.number, publishedAt, pages, renderId };
   await env.ROUTES.put(kvSiteKey(site.id), JSON.stringify(pointer));
