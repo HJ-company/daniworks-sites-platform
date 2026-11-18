@@ -52,7 +52,7 @@ product: 스타터 홈페이지
 - 형식: `https://dsites.daniworks.kr/preview/{token}`
 - 사이트 단위 토큰이다. 항상 최신 draft를 보여주므로 시안을 고쳐도 링크가 바뀌지 않는다.
 - 내부 검수용으로는 버전 단위 프리뷰 링크를 따로 둔다(M1의 `/preview/:token`).
-- 유효기간은 30일. 콘솔에서 폐기·재발급한다. 만료되면 안내 페이지를 보여준다.
+- 유효기간은 30일(확정). 콘솔에서 폐기·재발급한다. 만료되면 안내 페이지를 보여준다.
 - 시안 화면에서만 달라지는 것:
   - 상단 고정 배너: "시안입니다. 아직 공개되지 않은 페이지입니다."
   - 문의 폼 전송 차단, "시안에서는 문의가 전송되지 않습니다" 표시
@@ -71,7 +71,11 @@ product: 스타터 홈페이지
 
 - 콘솔 로그인은 Authentik OIDC(Authorization Code + PKCE)다. 운영자 계정은 Authentik에서 관리하고 콘솔에는 두지 않는다.
 - API는 Authentik 액세스 토큰을 JWKS로 검증해 운영자를 식별한다. 게시·롤백·입금 확인 기록에 운영자 ID를 남긴다.
-- MCP 도구는 `api_tokens`의 토큰으로 인증한다. 범위는 `operator`(전체)와 `customer`(본인 사이트만). 지금은 운영자 토큰만 발급한다.
+- MCP 서버(Claude/ChatGPT 원격 커넥터)도 Authentik OAuth로 인증한다. 커넥터를 추가하면 Authentik 로그인 창이 뜨고, MCP 서버는 받은 액세스 토큰을 JWKS로 검증한다.
+- MCP 서버는 보호 리소스 메타데이터(`/.well-known/oauth-protected-resource`)로 Authentik을 인가 서버로 알린다.
+- 권한은 Authentik 그룹으로 나눈다. `operator` 그룹은 전체, 이후 셀프서비스 고객은 `customer` 그룹 + customer_id 클레임으로 본인 사이트만 접근한다. 도구는 하나로 둔다.
+- 스크립트용 고정 토큰(`ADMIN_TOKEN`)은 배포·공용 에셋 업로드 등 사람이 없는 작업에만 쓴다.
+- 확인할 것: Claude·ChatGPT 커넥터가 요구하는 클라이언트 등록 방식(동적 등록 또는 사전 등록 client ID)과 Authentik 지원 범위. M2 착수 전에 실측한다.
 - `*.dsites.daniworks.kr`은 2단계 와일드카드라 Cloudflare 기본 인증서(Universal SSL, `*.daniworks.kr`까지만)로 덮이지 않는다. Advanced Certificate Manager(월 $10)가 필요하다.
 
 ## 5. 메뉴와 화면
@@ -110,7 +114,6 @@ product: 스타터 홈페이지
 ### 설정
 
 - 요금제
-- MCP 토큰 발급·폐기
 - 템플릿 버전, 전체 재게시
 
 ## 6. 데이터 모델 추가·변경
@@ -121,19 +124,17 @@ product: 스타터 홈페이지
 | `sites` | + preview_token, preview_expires_at |
 | `subscriptions` | id, site_id, 요금제, 금액, 주기, 상태(시안/입금 대기/활성/연체/해지), 다음 결제일 |
 | `payments` | id, subscription_id, 금액, 수단(manual/pg), 입금자명, 결제일, 확인자, pg_tx_id, 세금계산서 발행일 |
-| `api_tokens` | id, 범위(operator/customer), customer_id, 이름, 해시, 만료일, 폐기일 |
-| `audit_log` | id, 행위자(운영자/토큰), 동작, 대상, created_at |
+| `audit_log` | id, 행위자(Authentik 사용자 ID 또는 스크립트), 경로(콘솔/MCP/스크립트), 동작, 대상, created_at |
 
 ## 7. 우선순위
 
 | 단계 | 범위 |
 | --- | --- |
-| M2 | MCP 도구(고객·사이트 생성, draft 저장, 사진, 시안 링크), 게시 시 결제 검사, 콘솔: 로그인, 사이트 상세(개요·버전), 입금 확인, 고객 상세 |
+| M2 | MCP 서버 + Authentik OAuth, MCP 도구(고객·사이트 생성, draft 저장, 사진, 시안 링크), 게시 시 결제 검사, 콘솔: 로그인, 사이트 상세(개요·버전), 입금 확인, 고객 상세 |
 | M3 | 홈(오늘 할 일), 도메인 관제, 연체 처리, 리포트, 통계 |
-| 셀프서비스 | 고객 토큰 발급, 고객 콘솔, PG |
+| 셀프서비스 | Authentik 고객 그룹·가입, 고객 콘솔, PG |
 
 ## 8. 미결 사항
 
 - 연체 유예 기간과 공개 중단 시 방문자에게 보여줄 화면
-- 시안 링크 유효기간 30일이 영업 주기에 맞는지
-- Claude/ChatGPT 원격 MCP 커넥터 인증을 토큰으로 할지 Authentik OAuth로 할지
+- 셀프서비스 고객 가입을 Authentik에서 받을지(가입 플로우, 카카오 로그인 연동)

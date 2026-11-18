@@ -121,7 +121,8 @@ policy: https://app.notion.com/p/41cecd5a3ac28107820effaeb6cb4fc8
 
 ### 4-9. 운영·AI 도구
 
-- 사이트 제작은 MCP 도구로 한다. 운영자가 Claude/ChatGPT에서 쓰고, 이후 고객 쪽 에이전트에 붙여 셀프서비스로 쓴다. 도구는 하나로 두고 토큰 범위(`operator`/`customer`)로 접근을 나눈다.
+- 사이트 제작은 MCP 도구로 한다. 운영자가 Claude/ChatGPT에서 쓰고, 이후 고객 쪽 에이전트에 붙여 셀프서비스로 쓴다. 도구는 하나로 두고 Authentik 그룹(`operator`/`customer`)으로 접근을 나눈다.
+- MCP 인증: Authentik OAuth. Claude·ChatGPT 원격 커넥터에서 Authentik으로 로그인하고, MCP 서버가 토큰을 JWKS로 검증한다.
 - 도구: `customer_create`, `customer_get`, `site_create`, `site_get`, `site_update_draft`, `site_validate`, `site_preview_url`, `site_publish`, `site_rollback`, `asset_upload`, `site_preview_link`(사이트 시안 링크 발급·재발급).
 - 관리자 콘솔: `dsites-console.daniworks.kr`, Authentik OIDC(`authentik.daniworks.kr`) 로그인. 화면은 [관리자 콘솔](admin-console.md).
 - 해지: 공개 중단(라우터에서 차단), 데이터·정적 파일은 보관 후 인출 가능.
@@ -163,7 +164,6 @@ packages/
 | `customers` | id, 업체명, 담당자 연락처, external_ref(외부 리드), 사업자번호, 계산서 메일, 상태 |
 | `subscriptions` | id, site_id, 요금제, 금액, 주기, 상태, 다음 결제일. 사이트당 정액 |
 | `payments` | id, subscription_id, 금액, 수단(manual/pg), 입금자명, 결제일, 확인자, pg_tx_id, 세금계산서 발행일 |
-| `api_tokens` | id, 범위(operator/customer), customer_id, 해시, 만료일, 폐기일 |
 | `sites` | id, customer_id, slug, 업종 템플릿, 템플릿 버전, published_version_id, 상태 |
 | `site_versions` | id, site_id, config(JSON), status, created_by(ai/operator), created_at, published_at |
 | `domains` | id, site_id, hostname, cf_hostname_id, 검증 상태, 인증서 상태 |
@@ -211,7 +211,7 @@ packages/
 | --- | --- | --- |
 | M0 렌더 PoC (완료, [결과](m0-render-poc.md)) | `packages/renderer`: 샘플 설정 → HTML(Worker 실행) | 샘플 사이트가 Worker 렌더 결과로 브라우저에서 정상 표시 |
 | M1 게시 PoC (로컬 완료, [결과](m1-publish-poc.md)) | `apps/api` 사이트·버전 CRUD, 게시·롤백, `apps/router` 서브도메인 서빙 | `<slug>.dsites.daniworks.kr`에서 게시·롤백 동작 |
-| M2 첫 고객 | 템플릿 1~2종, 문의, 클릭 수집, MCP 도구, 시안 링크, 입금 확인·게시 검사, 관리자 콘솔(로그인·사이트·입금), 커스텀 도메인(내부 등록) | 실제 리드 1곳 오픈 |
+| M2 첫 고객 | 템플릿 1~2종, 문의, 클릭 수집, MCP 도구, 시안 링크(30일), MCP Authentik OAuth, 입금 확인·게시 검사, 관리자 콘솔(로그인·사이트·입금), 커스텀 도메인(내부 등록) | 실제 리드 1곳 오픈 |
 | M3 운영 | 템플릿 4종, RSS, 분기 리포트 집계, 전체 재게시 | 10곳 운영 |
 | M4 고객 콘솔 | 도메인 셀프 연결, 문의, 리포트, 수정 요청, zip 다운로드 | 고객이 도움 없이 도메인 연결 |
 
