@@ -3,7 +3,7 @@
 스타터 홈페이지 플랫폼. 사이트 설정(JSON)을 D1에 버전으로 쌓고, 게시할 때 HTML로 렌더해 R2에 올린다. 라우터 Worker가 접속 도메인을 보고 해당 사이트 파일을 서빙한다.
 
 - 요구사항: [docs/prd.md](docs/prd.md)
-- 결과: [M0 렌더 PoC](docs/m0-render-poc.md), [M1 게시 PoC](docs/m1-publish-poc.md), [스테이징 배포](docs/staging-deploy.md), [M2 첫 고객](docs/m2-first-customer.md)
+- 결과: [M0 렌더 PoC](docs/m0-render-poc.md), [M1 게시 PoC](docs/m1-publish-poc.md), [스테이징 배포](docs/staging-deploy.md), [M2 첫 고객](docs/m2-first-customer.md), [M3 운영](docs/m3-operations.md)
 
 ```bash
 pnpm install
@@ -30,6 +30,13 @@ docker compose down -v                            # 로컬 D1·R2·KV 상태까�
 - 운영자 콘솔: http://127.0.0.1:8789 (로컬은 Access 검사 생략)
 - MCP: `http://127.0.0.1:8788/mcp`, `Authorization: Bearer dev-admin-token`
 - 메일 확인: http://127.0.0.1:8025 (Mailpit)
+
+### 운영 명령
+
+```bash
+API_URL=... ADMIN_TOKEN=... node scripts/republish-all.mjs [--apply]               # 렌더러 변경 뒤 전체 재게시(시각 비교)
+API_URL=... ADMIN_TOKEN=... node scripts/handoff-to-strapi.mjs --site=<slug> --into=<프로젝트>  # AI 홈페이지 전환
+```
 
 스테이징(`*.dsites.kr`, `api.dsites.kr`)은 [docs/staging-deploy.md](docs/staging-deploy.md)를 따른다.
 

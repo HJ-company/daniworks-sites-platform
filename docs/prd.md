@@ -81,7 +81,7 @@ policy: https://app.notion.com/p/41cecd5a3ac28107820effaeb6cb4fc8
 - 템플릿 버전마다 한 번: CSS와 클라이언트 JS 번들(슬라이더·FAQ·문의 폼 등 인터랙션)을 빌드해 R2 공용 경로에 둔다.
 - 게시마다: `@dani-builder/blocks`로 `renderToString`해 HTML 한 장을 만든다. 빌드 서버 없이 Worker에서 실행하는 것이 목표.
 - 출력에 포함: 구조화 데이터(업체·영업시간·서비스·지역), 메타·OG, 사이트맵, robots, 개인정보처리방침 페이지.
-- 템플릿 업데이트 시 전체 사이트를 재게시하는 운영 명령을 둔다.
+- 템플릿 업데이트 시 전체 사이트를 재게시하는 운영 명령을 둔다(`scripts/republish-all.mjs`). 새 렌더를 공개 화면과 픽셀 비교해 같을 때만 적용하고, 달라진 사이트는 차이 이미지와 함께 보류한다.
 
 ### 4-4. 라우팅·도메인
 
@@ -108,7 +108,7 @@ policy: https://app.notion.com/p/41cecd5a3ac28107820effaeb6cb4fc8
 
 ### 4-7. 블로그 최신 글
 
-- 네이버 블로그 RSS를 Worker cron이 수집해 KV에 캐시하고, 페이지는 런타임에 읽어 표시한다. 글이 올라와도 재게시하지 않는다.
+- 네이버 블로그 RSS를 Worker cron이 3시간마다 수집해 KV에 캐시하고, 라우터가 요청 때 홈 페이지에 최신 글 3개를 채운다. 글이 올라와도 재게시하지 않는다.
 - 네이버 이미지: 외부 도메인 Referer가 붙으면 403, Referer가 없으면 200이다(2026-11-19 실측). `<img referrerpolicy="no-referrer">`로 표시하고 프록시는 두지 않는다.
 - 인스타 최신 게시물: 1차 범위 제외. Graph API는 비즈니스 계정·페이스북 페이지 연결·고객별 토큰 갱신이 필요하다.
 
@@ -132,8 +132,8 @@ policy: https://app.notion.com/p/41cecd5a3ac28107820effaeb6cb4fc8
 ### 4-10. 운영·AI 도구
 
 - 플랫폼 API를 MCP 도구로도 노출: `site_create`, `site_get`, `site_update_draft`, `site_validate`, `site_preview_url`, `site_publish`, `site_rollback`, `asset_upload`, `template_list`, `template_get`(작성 지침 포함).
-- 해지: 공개 중단(라우터에서 차단), 데이터·정적 파일은 보관 후 인출 가능.
-- AI 홈페이지 전환: 사이트 설정(TemplateSeed)을 Strapi로 가져오는 스크립트. `create-daniworks-app` importer를 고객 seed를 받도록 확장하는 방향.
+- 해지: 공개 중단(410), 커스텀 도메인 즉시 삭제(과금 중단), 데이터·정적 파일은 보관 기간(기본 90일) 동안 보관하고 zip으로 인출 가능. 완전 삭제는 보관 기간 뒤 운영자가 slug를 입력해야 한다.
+- AI 홈페이지 전환: `GET /sites/:id/template-seed`와 `scripts/handoff-to-strapi.mjs`로 create-daniworks-app 프로젝트의 `template-data`를 사이트 내용으로 바꾼 뒤 기존 `template:import`를 쓴다. importer 수정은 필요 없다.
 
 ## 5. 아키텍처
 
@@ -224,7 +224,7 @@ packages/
 | M0 렌더 PoC (완료, [결과](m0-render-poc.md)) | `packages/renderer`: 샘플 설정 → HTML(Worker 실행) | 샘플 사이트가 Worker 렌더 결과로 브라우저에서 정상 표시 |
 | M1 게시 PoC (완료, [로컬](m1-publish-poc.md)·[스테이징](staging-deploy.md)) | `apps/api` 사이트·버전 CRUD, 게시·롤백, `apps/router` 서브도메인 서빙 | `<slug>.dsites.kr`에서 게시·롤백 동작 |
 | M2 첫 고객 (로컬 완료, [결과](m2-first-customer.md)) | 업종 템플릿 1번(레슨·교육·출장), 문의, 측정, MCP 도구, 사진, 커스텀 도메인(내부 등록), 운영자 콘솔 v1 | 실제 리드 1곳 오픈 (스테이징 설정 후) |
-| M3 운영 | 나머지 업종 템플릿, RSS, 분기 리포트 집계, 전체 재게시, 해지·인출 | 10곳 운영 |
+| M3 운영 (로컬 완료, [결과](m3-operations.md). 업종 템플릿 2~4번은 데이터 대기) | 나머지 업종 템플릿, RSS, 분기 리포트 집계, 전체 재게시, 해지·인출 | 10곳 운영 |
 | M4 고객 콘솔(보류) | 도메인 셀프 연결, 문의, 리포트, 수정 요청, zip 다운로드 | 고객이 도움 없이 도메인 연결 |
 
 ## 10. 미결 사항
@@ -241,4 +241,5 @@ packages/
 - 2026-11-19: 라우터 KV `cacheTtl`을 30초로 낮추고, 호스트 키에 게시 포인터를 함께 둬 조회를 1회로 줄인다.
 - 2026-11-19: 콘솔은 운영자 전용으로 먼저 만들고 고객 콘솔은 보류한다.
 - 2026-11-19: 로컬 검증은 Docker(`docker-compose.yml`)에서 한다. 단계마다 `codex review`를 거친다.
+- 2026-11-19: M3 로컬 완료(업종 템플릿 2~4번 제외). 렌더 버전(RENDER_VERSION)으로 재게시 대상 판정, 완전 삭제는 수동·보관 기간 뒤.
 - 2026-11-19: M2 로컬 완료. Turnstile 프레임 방식, 사진 3MP 한도, 렌더 불변화(render_id), 운영자 콘솔은 Access + 서버 측 토큰 프록시.
