@@ -2,6 +2,7 @@ import { ASSET_VERSION, renderSite, type SiteConfig } from "@sites/renderer";
 import type { Env } from "./env.js";
 import { HttpError } from "./http.js";
 import { kvSiteKey, r2PageKey, r2SharedKey, type PublishedPointer } from "./keys.js";
+import { routesOf, syncHostRecordsNow } from "./routes.js";
 import {
   getVersion,
   latestVersion,
@@ -27,9 +28,6 @@ async function requireSharedAssets(env: Env) {
   }
 }
 
-/** Routes a stored version renders to. M1 versions (v1 configs) have only the home page. */
-const routesOf = (config: SiteConfig) => (config.version === 2 ? ["/", "/privacy"] : ["/"]);
-
 /**
  * Renders every page of a version to R2 unless it is already rendered against the current
  * shared assets and origin.
@@ -53,6 +51,7 @@ async function pointTo(env: Env, site: SiteRow, version: VersionRow, pages: stri
   const publishedAt = await markPublished(env.DB, site.id, version.id, ASSET_VERSION);
   const pointer: PublishedPointer = { versionId: version.id, number: version.number, publishedAt, pages };
   await env.ROUTES.put(kvSiteKey(site.id), JSON.stringify(pointer));
+  await syncHostRecordsNow(env, site.id);
   return pointer;
 }
 

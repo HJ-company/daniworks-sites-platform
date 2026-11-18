@@ -149,3 +149,20 @@ export async function lighthouse(url) {
     await chrome.kill();
   }
 }
+
+/** Reads or writes the router's local KV namespace (Docker: shared /state volume). */
+export function localKv(action, key, value) {
+  const args = ["exec", "wrangler", "kv", "key", action, key, ...(value !== undefined ? [value] : []), "--binding", "ROUTES", "--local", "--persist-to", process.env.STATE_DIR ?? "/state"];
+  if (action === "get") args.push("--text");
+  return execFileSync("pnpm", args, { cwd: "apps/router", encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+}
+
+/** Runs SQL against the API's local D1 (Docker: shared /state volume). Returns result rows. */
+export function localD1(sql) {
+  const out = execFileSync(
+    "pnpm",
+    ["exec", "wrangler", "d1", "execute", "DB", "--local", "--persist-to", process.env.STATE_DIR ?? "/state", "--command", sql, "--json"],
+    { cwd: "apps/api", encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
+  );
+  return JSON.parse(out)[0]?.results ?? [];
+}

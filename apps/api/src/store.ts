@@ -11,6 +11,8 @@ export interface SiteRow {
   notify_email: string | null;
   template_version: string | null;
   cancelled_at: string | null;
+  published_at: string | null;
+  routes_synced_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -127,8 +129,10 @@ export async function markPublished(db: D1Database, siteId: string, versionId: s
       .prepare("UPDATE site_versions SET first_published_at = COALESCE(first_published_at, ?) WHERE id = ?")
       .bind(at, versionId),
     db
-      .prepare("UPDATE sites SET published_version_id = ?, template_version = ?, updated_at = ? WHERE id = ?")
-      .bind(versionId, templateVersion, at, siteId),
+      .prepare(
+        "UPDATE sites SET published_version_id = ?, published_at = ?, template_version = ?, updated_at = ? WHERE id = ?",
+      )
+      .bind(versionId, at, templateVersion, at, siteId),
   ]);
   return at;
 }
@@ -149,4 +153,71 @@ export async function versionByPreviewToken(db: D1Database, previewToken: string
     .first<VersionRow>();
   if (!row) throw new HttpError(404, "프리뷰가 없습니다");
   return row;
+}
+
+export async function setSiteStatus(db: D1Database, siteId: string, status: "active" | "suspended") {
+  await db.prepare("UPDATE sites SET status = ?, updated_at = ? WHERE id = ?").bind(status, now(), siteId).run();
+}
+
+/** Authoritative serving state from D1: site row plus the published version, if any. */
+export async function servingState(db: D1Database, siteId: string) {
+  const site = await getSite(db, siteId);
+  const version = site.published_version_id
+    ? await db
+        .prepare("SELECT id, number, config FROM site_versions WHERE id = ?")
+        .bind(site.published_version_id)
+        .first<{ id: string; number: number; config: string }>()
+    : null;
+  return { site, version };
+}
+
+/** Records that KV host records reflect the site as of `updatedAt` (no-op if the row moved on). */
+export async function markRoutesSynced(db: D1Database, siteId: string, updatedAt: string) {
+  await db
+    .prepare("UPDATE sites SET routes_synced_at = ? WHERE id = ? AND updated_at = ?")
+    .bind(updatedAt, siteId, updatedAt)
+    .run();
+}
+
+/** Sites whose KV host records may lag D1. */
+export async function sitesNeedingRouteSync(db: D1Database, limit = 100) {
+  const { results } = await db
+    .prepare("SELECT id FROM sites WHERE routes_synced_at IS NULL OR routes_synced_at < updated_at ORDER BY updated_at LIMIT ?")
+    .bind(limit)
+    .all<{ id: string }>();
+  return results.map((row) => row.id);
+}
+
+export async function clearRoutesSynced(db: D1Database, siteId: string) {
+  await db.prepare("UPDATE sites SET routes_synced_at = NULL WHERE id = ?").bind(siteId).run();
+}
+
+const LEASE_MS = 60_000;
+
+/** Takes the per-site route-sync lease; null when another writer holds it. */
+export async function acquireRoutesLease(db: D1Database, siteId: string): Promise<string | null> {
+  const token = crypto.randomUUID();
+  const now = new Date();
+  const result = await db
+    .prepare(
+      "UPDATE sites SET routes_lock_token = ?, routes_lock_until = ? WHERE id = ? AND (routes_lock_until IS NULL OR routes_lock_until < ?)",
+    )
+    .bind(token, new Date(now.getTime() + LEASE_MS).toISOString(), siteId, now.toISOString())
+    .run();
+  return result.meta.changes === 1 ? token : null;
+}
+
+export async function holdsRoutesLease(db: D1Database, siteId: string, token: string) {
+  const row = await db
+    .prepare("SELECT 1 AS held FROM sites WHERE id = ? AND routes_lock_token = ? AND routes_lock_until >= ?")
+    .bind(siteId, token, new Date().toISOString())
+    .first<{ held: number }>();
+  return Boolean(row);
+}
+
+export async function releaseRoutesLease(db: D1Database, siteId: string, token: string) {
+  await db
+    .prepare("UPDATE sites SET routes_lock_token = NULL, routes_lock_until = NULL WHERE id = ? AND routes_lock_token = ?")
+    .bind(siteId, token)
+    .run();
 }

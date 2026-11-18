@@ -49,6 +49,8 @@ services:
       MAILPIT_URL: http://mailpit:8025
     volumes:
       - ./evidence:/app/evidence
+      # Same local D1/R2/KV state as the workers, for checks that read or seed storage directly.
+      - state:/state
 
 volumes:
   state:

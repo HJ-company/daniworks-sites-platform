@@ -6,6 +6,10 @@ account_id = "358a1b6caabcf91741109efca1ec0547"
 compatibility_date = "2026-11-01"
 compatibility_flags = ["nodejs_compat"]
 
+# Safety net: re-sync router KV records that lag D1 (see src/routes.ts).
+[triggers]
+crons = ["*/5 * * * *", "17 * * * *"]
+
 [vars]
 # Public sites are served at <slug>.<BASE_DOMAIN>. Local dev uses *.localhost.
 BASE_DOMAIN = "localhost"
@@ -34,6 +38,9 @@ workers_dev = false
 preview_urls = false
 # More specific than the router's `*/*`, so it wins for this host.
 routes = [{ pattern = "api.dsites.kr/*", zone_name = "dsites.kr" }]
+
+[env.staging.triggers]
+crons = ["*/5 * * * *", "17 * * * *"]
 
 [env.staging.vars]
 BASE_DOMAIN = "dsites.kr"

@@ -1,0 +1,90 @@
+{
+  "siteId": "90f7b40e-2087-40f3-ba01-b4ef86afef76",
+  "results": [
+    {
+      "name": "생성 직후 호스트 레코드: 상태 active, 포인터 없음",
+      "pass": true,
+      "siteId": "90f7b40e-2087-40f3-ba01-b4ef86afef76",
+      "status": "active",
+      "pointer": null,
+      "redirectTo": null
+    },
+    {
+      "name": "게시 전 404",
+      "pass": true
+    },
+    {
+      "name": "게시 후 호스트 레코드에 포인터·페이지 목록",
+      "pass": true,
+      "siteId": "90f7b40e-2087-40f3-ba01-b4ef86afef76",
+      "status": "active",
+      "pointer": {
+        "versionId": "e456921e-42bf-48bd-97cf-2f62f244a0f6",
+        "number": 1,
+        "publishedAt": "2026-11-18T18:29:25.347Z",
+        "pages": [
+          "/",
+          "/privacy"
+        ]
+      },
+      "redirectTo": null
+    },
+    {
+      "name": "게시 후 200",
+      "pass": true
+    },
+    {
+      "name": "정지: 503 + Retry-After + noindex",
+      "pass": true
+    },
+    {
+      "name": "정지 중에도 레코드에 포인터 유지",
+      "pass": true
+    },
+    {
+      "name": "재개: 다시 200",
+      "pass": true
+    },
+    {
+      "name": "게시·정지 동시 요청 후 호스트 레코드 = D1 (상태·게시 버전)",
+      "pass": true,
+      "d1": {
+        "status": "suspended",
+        "published": "c4b85ad9-2c29-4be2-a2c0-8d88923014d3"
+      },
+      "kv": {
+        "status": "suspended",
+        "pointer": "c4b85ad9-2c29-4be2-a2c0-8d88923014d3"
+      }
+    },
+    {
+      "name": "cron 재조정: 틀린 KV 레코드를 D1 상태(정지)로 복구, 동기화 표시 갱신",
+      "pass": true,
+      "kv": "suspended",
+      "synced": {
+        "routes_synced_at": "2026-11-18T18:29:27.766Z",
+        "updated_at": "2026-11-18T18:29:27.766Z"
+      }
+    },
+    {
+      "name": "매시간 점검: 동기화 표시가 있어도 KV가 틀리면 찾아서 복구",
+      "pass": true,
+      "marker": "2026-11-18T18:29:31.263Z",
+      "kv": "active"
+    },
+    {
+      "name": "M1 형식 레코드(문자열 siteId)도 서빙",
+      "pass": true,
+      "version": "2"
+    },
+    {
+      "name": "POST /는 405",
+      "pass": true
+    },
+    {
+      "name": "0002까지 적용된 DB에 0003: 게시된 사이트 published_at 채움",
+      "pass": true,
+      "value": "2026-01-01T10:00:00Z"
+    }
+  ]
+}

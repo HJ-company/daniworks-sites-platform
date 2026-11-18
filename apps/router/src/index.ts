@@ -1,4 +1,13 @@
-import { kvHostKey, kvSiteKey, MEDIA_PATH, r2MediaKey, r2PageKey, r2SharedKey, type PublishedPointer } from "./keys.js";
+import {
+  kvHostKey,
+  kvSiteKey,
+  MEDIA_PATH,
+  r2MediaKey,
+  r2PageKey,
+  r2SharedKey,
+  type HostRecord,
+  type PublishedPointer,
+} from "./keys.js";
 
 interface Env {
   SITES: R2Bucket;
@@ -6,13 +15,13 @@ interface Env {
   BASE_DOMAIN: string;
 }
 
-// KV values are cached at the edge for this long; publish/rollback propagate within about a minute.
-const KV_CACHE_TTL = 60;
+// KV values are cached at the edge for this long (KV minimum); publish/rollback propagate within it.
+const KV_CACHE_TTL = 30;
 
-function notFound(message: string) {
+function page(status: number, message: string, headers: Record<string, string> = {}) {
   return new Response(
-    `<!doctype html><html lang="ko"><meta charset="utf-8"><title>페이지 없음</title><body style="font-family:system-ui;padding:48px"><p>${message}</p></body></html>`,
-    { status: 404, headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } },
+    `<!doctype html><html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>${message}</title><body style="font-family:system-ui;padding:48px"><p>${message}</p></body></html>`,
+    { status, headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", ...headers } },
   );
 }
 
@@ -24,6 +33,15 @@ async function serveObject(env: Env, key: string, cacheControl: string) {
   headers.set("etag", object.httpEtag);
   headers.set("cache-control", cacheControl);
   return new Response(object.body, { headers });
+}
+
+/** One KV read for M2 records; M1 records (bare siteId) need a second read for the pointer. */
+async function resolveHost(env: Env, hostname: string): Promise<HostRecord | null> {
+  const raw = await env.ROUTES.get(kvHostKey(hostname), { cacheTtl: KV_CACHE_TTL });
+  if (!raw) return null;
+  if (raw.startsWith("{")) return JSON.parse(raw) as HostRecord;
+  const pointer = await env.ROUTES.get<PublishedPointer>(kvSiteKey(raw), { type: "json", cacheTtl: KV_CACHE_TTL });
+  return { siteId: raw, status: "active", pointer, redirectTo: null };
 }
 
 export default {
@@ -41,7 +59,6 @@ export default {
         new Response("not found", { status: 404 })
       );
     }
-
     // Uploaded photos are public and content-addressed.
     const media = MEDIA_PATH.exec(url.pathname);
     if (media) {
@@ -51,10 +68,15 @@ export default {
       );
     }
 
-    const siteId = await env.ROUTES.get(kvHostKey(hostname), { cacheTtl: KV_CACHE_TTL });
-    if (!siteId) return notFound("연결된 사이트가 없습니다.");
-    const pointer = await env.ROUTES.get<PublishedPointer>(kvSiteKey(siteId), { type: "json", cacheTtl: KV_CACHE_TTL });
-    if (!pointer) return notFound("아직 공개되지 않은 사이트입니다.");
+    const host = await resolveHost(env, hostname);
+    if (!host) return page(404, "연결된 사이트가 없습니다.");
+    if (host.status === "cancelled") return page(410, "운영이 종료된 사이트입니다.");
+    if (host.status === "suspended") return page(503, "잠시 운영을 멈춘 사이트입니다.", { "retry-after": "86400" });
+    if (host.redirectTo) {
+      return Response.redirect(`${url.protocol}//${host.redirectTo}${url.pathname}${url.search}`, 301);
+    }
+    const pointer = host.pointer;
+    if (!pointer) return page(404, "아직 공개되지 않은 사이트입니다.");
 
     if (url.pathname === "/robots.txt") {
       return new Response(`User-agent: *\nAllow: /\nSitemap: https://${hostname}/sitemap.xml\n`, {
@@ -75,13 +97,13 @@ export default {
     const route = url.pathname === "/index.html" ? "/" : url.pathname.replace(/\/(index\.html)?$/, "") || "/";
     if (pages.includes(route)) {
       const path = route === "/" ? "index.html" : `${route.slice(1)}/index.html`;
-      const page = await serveObject(env, r2PageKey(siteId, pointer.versionId, path), "public, max-age=60");
-      if (page) {
-        page.headers.set("x-site-version", String(pointer.number));
-        return page;
+      const response = await serveObject(env, r2PageKey(host.siteId, pointer.versionId, path), "public, max-age=60");
+      if (response) {
+        response.headers.set("x-site-version", String(pointer.number));
+        return response;
       }
-      return notFound("페이지 파일을 찾지 못했습니다.");
+      return page(404, "페이지 파일을 찾지 못했습니다.");
     }
-    return notFound("없는 주소입니다.");
+    return page(404, "없는 주소입니다.");
   },
 };

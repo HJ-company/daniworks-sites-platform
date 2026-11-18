@@ -2,13 +2,18 @@ import { parseSiteConfig, renderSite, SiteConfigError, type SiteConfig } from "@
 import { listAssets, uploadAsset } from "./assets.js";
 import type { Env } from "./env.js";
 import { HttpError, json, readJson, requireAdmin } from "./http.js";
-import { kvHostKey, MEDIA_PATH, r2MediaKey, r2SharedKey } from "./keys.js";
+import { MEDIA_PATH, r2MediaKey, r2SharedKey } from "./keys.js";
+import { auditHostRecords, reconcileHostRecords, syncHostRecordsNow } from "./routes.js";
+
+/** Must match wrangler.toml [triggers]: the hourly audit; the 5-minute cron only reconciles. */
+const AUDIT_CRON = "17 * * * *";
 import { assetBase, publish, rollback, siteOrigin } from "./publish.js";
 import {
   addVersion,
   createSite,
   getSite,
   listVersions,
+  setSiteStatus,
   versionByPreviewToken,
   type CreatedBy,
 } from "./store.js";
@@ -90,7 +95,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
     const config = validated(body.config);
     const hostname = `${config.slug}.${env.BASE_DOMAIN}`;
     const { siteId, versionId } = await createSite(env.DB, config, creator(body.createdBy), hostname);
-    await env.ROUTES.put(kvHostKey(hostname), siteId);
+    await syncHostRecordsNow(env, siteId);
     return json({ siteId, versionId, hostname }, 201);
   }
 
@@ -119,6 +124,15 @@ async function handle(request: Request, env: Env): Promise<Response> {
     return json(await publish(env, site, body.versionId));
   }
 
+  // POST /sites/:id/suspend | /resume: stop or restart public serving (non-payment, requests).
+  if (method === "POST" && (parts[2] === "suspend" || parts[2] === "resume") && parts.length === 3) {
+    if (site.cancelled_at) throw new HttpError(409, "해지된 사이트입니다");
+    const status = parts[2] === "suspend" ? "suspended" : "active";
+    await setSiteStatus(env.DB, site.id, status);
+    await syncHostRecordsNow(env, site.id);
+    return json({ siteId: site.id, status });
+  }
+
   // POST /sites/:id/rollback {versionId}
   if (method === "POST" && parts[2] === "rollback") {
     const body = await readJson<{ versionId: string }>(request);
@@ -130,6 +144,15 @@ async function handle(request: Request, env: Env): Promise<Response> {
 }
 
 export default {
+  async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext) {
+    ctx.waitUntil(
+      (async () => {
+        if (controller.cron === AUDIT_CRON) console.log("[routes] audit", JSON.stringify(await auditHostRecords(env)));
+        console.log("[routes] reconcile", JSON.stringify(await reconcileHostRecords(env)));
+      })(),
+    );
+  },
+
   async fetch(request: Request, env: Env): Promise<Response> {
     try {
       return await handle(request, env);

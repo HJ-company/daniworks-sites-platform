@@ -16,3 +16,17 @@ export interface PublishedPointer {
   /** Routes rendered for this version. Missing on M1 pointers, which only had `/`. */
   pages?: string[];
 }
+
+/**
+ * Value of kvHostKey since M2: everything the router needs in one read. M1 stored the bare
+ * siteId string there and the pointer under kvSiteKey; the router still accepts that form.
+ */
+export interface HostRecord {
+  siteId: string;
+  /** `suspended`: 503 (temporary). `cancelled`: 410. */
+  status: "active" | "suspended" | "cancelled";
+  /** Missing until the first publish. */
+  pointer: PublishedPointer | null;
+  /** 301 target host, e.g. the default subdomain once a custom domain is active. */
+  redirectTo: string | null;
+}
