@@ -14,6 +14,11 @@ crons = ["*/5 * * * *", "17 * * * *"]
 # Public sites are served at <slug>.<BASE_DOMAIN>. Local dev uses *.localhost.
 BASE_DOMAIN = "localhost"
 PUBLIC_SCHEME = "http"
+API_ORIGIN = "http://127.0.0.1:8788"
+# Cloudflare's always-pass test key; the matching test secret goes in .dev.vars.
+TURNSTILE_SITE_KEY = "1x00000000000000000000AA"
+MAIL_MODE = "mailpit"
+MAIL_FROM = "noreply@dsites.kr"
 # ADMIN_TOKEN comes from .dev.vars locally and a secret in production.
 
 [[d1_databases]]
@@ -45,7 +50,16 @@ crons = ["*/5 * * * *", "17 * * * *"]
 [env.staging.vars]
 BASE_DOMAIN = "dsites.kr"
 PUBLIC_SCHEME = "https"
+API_ORIGIN = "https://api.dsites.kr"
+# TURNSTILE_SITE_KEY: widget whose hostnames include api.dsites.kr (the frame host).
+# TURNSTILE_SECRET, HASH_PEPPER: `wrangler secret put ... --env staging`
+MAIL_MODE = "binding"
+MAIL_FROM = "noreply@dsites.kr"
 # ADMIN_TOKEN: `wrangler secret put ADMIN_TOKEN --env staging`
+
+# Cloudflare Email Service; dsites.kr must be onboarded for sending (wrangler email sending enable).
+[[env.staging.send_email]]
+name = "EMAIL"
 
 [[env.staging.d1_databases]]
 binding = "DB"

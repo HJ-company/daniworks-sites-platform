@@ -1,5 +1,5 @@
 {
-  "siteId": "750339d6-f55a-48cc-b455-63f0ee2e30af",
+  "siteId": "179ea112-acc5-4224-b5c5-dc1c823edefd",
   "results": [
     {
       "name": "사이트 생성",
@@ -8,8 +8,8 @@
     {
       "name": "EXIF 회전 사진: 201, 세로 1200×1600으로 줄임",
       "pass": true,
-      "key": "m:750339d6-f55a-48cc-b455-63f0ee2e30af/9fe9b1b39f4c0f3c9841.jpg",
-      "url": "/_media/750339d6-f55a-48cc-b455-63f0ee2e30af/9fe9b1b39f4c0f3c9841.jpg",
+      "key": "m:179ea112-acc5-4224-b5c5-dc1c823edefd/9fe9b1b39f4c0f3c9841.jpg",
+      "url": "/_media/179ea112-acc5-4224-b5c5-dc1c823edefd/9fe9b1b39f4c0f3c9841.jpg",
       "width": 1200,
       "height": 1600,
       "bytes": 59575
@@ -55,8 +55,8 @@
     {
       "name": "PNG 입력 → JPEG 800×600",
       "pass": true,
-      "key": "m:750339d6-f55a-48cc-b455-63f0ee2e30af/fd01cdfe411e6ef75a87.jpg",
-      "url": "/_media/750339d6-f55a-48cc-b455-63f0ee2e30af/fd01cdfe411e6ef75a87.jpg",
+      "key": "m:179ea112-acc5-4224-b5c5-dc1c823edefd/fd01cdfe411e6ef75a87.jpg",
+      "url": "/_media/179ea112-acc5-4224-b5c5-dc1c823edefd/fd01cdfe411e6ef75a87.jpg",
       "width": 800,
       "height": 600,
       "bytes": 17252
@@ -76,8 +76,8 @@
     {
       "name": "WebP 입력 → 1000×500",
       "pass": true,
-      "key": "m:750339d6-f55a-48cc-b455-63f0ee2e30af/958920e45667d042dd7e.jpg",
-      "url": "/_media/750339d6-f55a-48cc-b455-63f0ee2e30af/958920e45667d042dd7e.jpg",
+      "key": "m:179ea112-acc5-4224-b5c5-dc1c823edefd/958920e45667d042dd7e.jpg",
+      "url": "/_media/179ea112-acc5-4224-b5c5-dc1c823edefd/958920e45667d042dd7e.jpg",
       "width": 1000,
       "height": 500,
       "bytes": 19366
@@ -112,8 +112,8 @@
     {
       "name": "1×4000 같은 좁은 사진도 처리(폭 최소 1px)",
       "pass": true,
-      "key": "m:750339d6-f55a-48cc-b455-63f0ee2e30af/72fd6769060abbcfbd08.jpg",
-      "url": "/_media/750339d6-f55a-48cc-b455-63f0ee2e30af/72fd6769060abbcfbd08.jpg",
+      "key": "m:179ea112-acc5-4224-b5c5-dc1c823edefd/72fd6769060abbcfbd08.jpg",
+      "url": "/_media/179ea112-acc5-4224-b5c5-dc1c823edefd/72fd6769060abbcfbd08.jpg",
       "width": 1,
       "height": 1600,
       "bytes": 978
@@ -146,7 +146,7 @@
     {
       "name": "브라우저: 이미지 모두 로드, 히어로는 WebP 변형",
       "pass": true,
-      "heroSrc": "http://assets-mwmgdxpa.localhost:8787/_media/750339d6-f55a-48cc-b455-63f0ee2e30af/9fe9b1b39f4c0f3c9841.w480.webp",
+      "heroSrc": "http://assets-mwmgz4sm.localhost:8787/_media/179ea112-acc5-4224-b5c5-dc1c823edefd/9fe9b1b39f4c0f3c9841.w480.webp",
       "failed": [],
       "errors": []
     }

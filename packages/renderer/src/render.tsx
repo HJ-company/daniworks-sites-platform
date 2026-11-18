@@ -15,6 +15,8 @@ export interface RenderOptions {
   preview?: boolean;
   /** Prefix for root-relative site links (previews: `/preview/<token>`). */
   linkPrefix?: string;
+  /** Turnstile frame the inquiry form embeds (`https://api.dsites.kr/turnstile-frame`). */
+  turnstileFrame?: string | null;
 }
 
 export interface RenderedPage {
@@ -81,7 +83,11 @@ function structuredData(config: SiteConfig, origin: string | undefined, heroImag
 
 async function renderPage(config: SiteConfig, sitePage: SitePage, options: RenderOptions): Promise<RenderedPage> {
   // Serialized for hydration too, so server and client agree on every link.
-  const page = { ...sitePage, data: { ...sitePage.data, linkPrefix: options.linkPrefix, preview: options.preview } };
+  const site = sitePage.data.site ? { ...sitePage.data.site, turnstileFrame: options.turnstileFrame ?? null } : sitePage.data.site;
+  const page = {
+    ...sitePage,
+    data: { ...sitePage.data, site, linkPrefix: options.linkPrefix, preview: options.preview },
+  };
   const stream = await renderToReadableStream(<SiteView data={page.data} />);
   await stream.allReady;
   const body = await new Response(stream).text();

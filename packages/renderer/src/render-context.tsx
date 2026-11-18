@@ -1,6 +1,13 @@
 import { createContext, useContext } from "react";
 
-export const RenderContext = createContext<{ linkPrefix: string; preview: boolean }>({ linkPrefix: "", preview: false });
+export interface RenderContextValue {
+  linkPrefix: string;
+  preview: boolean;
+  /** Platform-hosted Turnstile frame URL; null when spam checks are not configured. */
+  turnstileFrame: string | null;
+}
+
+export const RenderContext = createContext<RenderContextValue>({ linkPrefix: "", preview: false, turnstileFrame: null });
 
 /** Applies the page's link prefix to a root-relative site link; asset paths stay untouched. */
 export function useSiteHref() {
@@ -12,3 +19,5 @@ export function useSiteHref() {
 }
 
 export const useIsPreview = () => useContext(RenderContext).preview;
+
+export const useTurnstileFrame = () => useContext(RenderContext).turnstileFrame;

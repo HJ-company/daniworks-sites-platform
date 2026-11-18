@@ -1,5 +1,7 @@
 import { parseSiteConfig, renderSite, SiteConfigError, type SiteConfig } from "@sites/renderer";
 import { listAssets, uploadAsset } from "./assets.js";
+import { allInquiries, inquiriesCsv, listInquiries, requireEmail } from "./inquiries.js";
+import { turnstileFrame } from "./turnstile.js";
 import type { Env } from "./env.js";
 import { HttpError, json, readJson, requireAdmin } from "./http.js";
 import { MEDIA_PATH, r2MediaKey, r2SharedKey } from "./keys.js";
@@ -12,6 +14,7 @@ import {
   addVersion,
   createSite,
   getSite,
+  listSites,
   listVersions,
   setSiteStatus,
   versionByPreviewToken,
@@ -53,6 +56,16 @@ async function handle(request: Request, env: Env): Promise<Response> {
   const media = method === "GET" ? MEDIA_PATH.exec(url.pathname) : null;
   if (media) return serveImmutable(env, r2MediaKey(media[1]!, media[2]!));
 
+  // Turnstile widget frame embedded by public sites (see turnstile.ts).
+  if (method === "GET" && url.pathname === "/turnstile-frame") {
+    if (!env.TURNSTILE_SITE_KEY) return new Response("turnstile not configured", { status: 404 });
+    const parent = url.searchParams.get("parent") ?? "";
+    if (!/^https?:\/\/[a-z0-9.-]+(:\d+)?$/i.test(parent)) return new Response("bad parent", { status: 400 });
+    return new Response(turnstileFrame(env.TURNSTILE_SITE_KEY, parent), {
+      headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "x-robots-tag": "noindex" },
+    });
+  }
+
   // Preview: anyone with the token can view a version. Never indexed. /preview/<token>[/privacy]
   if (method === "GET" && parts[0] === "preview" && (parts.length === 2 || parts.length === 3)) {
     const version = await versionByPreviewToken(env.DB, parts[1]!);
@@ -61,6 +74,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
       assetBase: assetBase(),
       origin: await siteOrigin(env, site),
       preview: true,
+      turnstileFrame: null,
       // Site links are root-relative (`/#inquiry`, `/privacy`); keep them inside this preview.
       linkPrefix: `/preview/${parts[1]}`,
     });
@@ -99,10 +113,45 @@ async function handle(request: Request, env: Env): Promise<Response> {
     return json({ siteId, versionId, hostname }, 201);
   }
 
+  // GET /sites: every site with its published version number and primary hostname.
+  if (method === "GET" && parts.length === 1) {
+    return json({ sites: await listSites(env.DB, env.BASE_DOMAIN) });
+  }
+  if (parts.length < 2) throw new HttpError(404, "없는 경로입니다");
+
   const site = await getSite(env.DB, parts[1]!);
 
   if (method === "GET" && parts.length === 2) {
     return json({ site, versions: await listVersions(env.DB, site.id) });
+  }
+
+  // PATCH /sites/:id {notifyEmail}: operational settings outside the versioned config.
+  if (method === "PATCH" && parts.length === 2) {
+    const body = await readJson<{ notifyEmail?: unknown }>(request);
+    if ("notifyEmail" in body) {
+      await env.DB.prepare("UPDATE sites SET notify_email = ? WHERE id = ?").bind(requireEmail(body.notifyEmail), site.id).run();
+    }
+    return json({ site: await getSite(env.DB, site.id) });
+  }
+
+  // GET /sites/:id/inquiries[.csv]?from=&to= (ISO dates)
+  if (method === "GET" && (parts[2] === "inquiries" || parts[2] === "inquiries.csv") && parts.length === 3) {
+    const range = { from: url.searchParams.get("from") ?? undefined, to: url.searchParams.get("to") ?? undefined };
+    if (parts[2] === "inquiries") {
+      return json(
+        await listInquiries(env, site.id, {
+          ...range,
+          before: url.searchParams.get("before") ?? undefined,
+          limit: Number(url.searchParams.get("limit") ?? 200),
+        }),
+      );
+    }
+    return new Response(inquiriesCsv(await allInquiries(env, site.id, range)), {
+      headers: {
+        "content-type": "text/csv; charset=utf-8",
+        "content-disposition": `attachment; filename="inquiries-${site.slug}.csv"`,
+      },
+    });
   }
 
   // POST /sites/:id/versions {config, createdBy, note}: new draft version
@@ -142,6 +191,8 @@ async function handle(request: Request, env: Env): Promise<Response> {
 
   throw new HttpError(404, "없는 경로입니다");
 }
+
+export { PublicApi } from "./public.js";
 
 export default {
   async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext) {

@@ -10,6 +10,12 @@ compatibility_date = "2026-11-01"
 [vars]
 BASE_DOMAIN = "localhost"
 
+# api Worker's RPC entrypoint (inquiry, tracking). Not reachable over HTTP.
+[[services]]
+binding = "API"
+service = "sites-api"
+entrypoint = "PublicApi"
+
 [[r2_buckets]]
 binding = "SITES"
 bucket_name = "daniworks-sites"
@@ -29,6 +35,11 @@ routes = [{ pattern = "*/*", zone_name = "dsites.kr" }]
 
 [env.staging.vars]
 BASE_DOMAIN = "dsites.kr"
+
+[[env.staging.services]]
+binding = "API"
+service = "sites-api-staging"
+entrypoint = "PublicApi"
 
 [[env.staging.r2_buckets]]
 binding = "SITES"

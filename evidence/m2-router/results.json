@@ -1,10 +1,10 @@
 {
-  "siteId": "90f7b40e-2087-40f3-ba01-b4ef86afef76",
+  "siteId": "f87646ff-39ef-46d1-a532-357bff0d8fa6",
   "results": [
     {
       "name": "생성 직후 호스트 레코드: 상태 active, 포인터 없음",
       "pass": true,
-      "siteId": "90f7b40e-2087-40f3-ba01-b4ef86afef76",
+      "siteId": "f87646ff-39ef-46d1-a532-357bff0d8fa6",
       "status": "active",
       "pointer": null,
       "redirectTo": null
@@ -16,12 +16,12 @@
     {
       "name": "게시 후 호스트 레코드에 포인터·페이지 목록",
       "pass": true,
-      "siteId": "90f7b40e-2087-40f3-ba01-b4ef86afef76",
+      "siteId": "f87646ff-39ef-46d1-a532-357bff0d8fa6",
       "status": "active",
       "pointer": {
-        "versionId": "e456921e-42bf-48bd-97cf-2f62f244a0f6",
+        "versionId": "454704c0-37af-42a6-8bc2-fd4915f117dc",
         "number": 1,
-        "publishedAt": "2026-11-18T18:29:25.347Z",
+        "publishedAt": "2026-11-18T18:43:16.210Z",
         "pages": [
           "/",
           "/privacy"
@@ -50,11 +50,11 @@
       "pass": true,
       "d1": {
         "status": "suspended",
-        "published": "c4b85ad9-2c29-4be2-a2c0-8d88923014d3"
+        "published": "532315bc-73f6-49b2-81e0-9ba88b77a424"
       },
       "kv": {
         "status": "suspended",
-        "pointer": "c4b85ad9-2c29-4be2-a2c0-8d88923014d3"
+        "pointer": "532315bc-73f6-49b2-81e0-9ba88b77a424"
       }
     },
     {
@@ -62,14 +62,14 @@
       "pass": true,
       "kv": "suspended",
       "synced": {
-        "routes_synced_at": "2026-11-18T18:29:27.766Z",
-        "updated_at": "2026-11-18T18:29:27.766Z"
+        "routes_synced_at": "2026-11-18T18:43:18.690Z",
+        "updated_at": "2026-11-18T18:43:18.690Z"
       }
     },
     {
       "name": "매시간 점검: 동기화 표시가 있어도 KV가 틀리면 찾아서 복구",
       "pass": true,
-      "marker": "2026-11-18T18:29:31.263Z",
+      "marker": "2026-11-18T18:43:22.604Z",
       "kv": "active"
     },
     {

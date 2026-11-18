@@ -27,6 +27,8 @@ export interface SiteChrome {
   mapUrl: string | null;
   bookingUrl: string | null;
   inquiryLabel: string;
+  /** Platform-hosted Turnstile frame; null when spam checks are not configured. */
+  turnstileFrame?: string | null;
 }
 
 /** Everything the page needs at render and hydration time. Serialized into the HTML. */
@@ -98,7 +100,9 @@ export function SiteView({ data }: { data: PageData }) {
   const route = data.route ?? "/";
   const linkPrefix = data.linkPrefix ?? "";
   return (
-    <RenderContext.Provider value={{ linkPrefix, preview: data.preview ?? false }}>
+    <RenderContext.Provider
+      value={{ linkPrefix, preview: data.preview ?? false, turnstileFrame: site?.turnstileFrame ?? null }}
+    >
     <BlocksProvider value={adapters}>
       <SiteShell
         navigation={navigation}

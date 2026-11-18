@@ -15,6 +15,10 @@ import {
 
 export const assetBase = () => `/_shared/${ASSET_VERSION}`;
 
+/** Turnstile frame URL baked into published pages; null when Turnstile is not configured. */
+export const turnstileFrameUrl = (env: Env) =>
+  env.TURNSTILE_SITE_KEY && env.API_ORIGIN ? `${env.API_ORIGIN}/turnstile-frame` : null;
+
 /** Public origin a site is served from: its active custom domain, else `<slug>.<BASE_DOMAIN>`. */
 export async function siteOrigin(env: Env, site: SiteRow) {
   const host = await primaryHostname(env.DB, site, env.BASE_DOMAIN);
@@ -34,16 +38,19 @@ async function requireSharedAssets(env: Env) {
  */
 async function ensureRendered(env: Env, version: VersionRow, origin: string) {
   const config = JSON.parse(version.config) as SiteConfig;
-  if (version.rendered_at && version.asset_version === ASSET_VERSION && version.rendered_origin === origin) {
+  const turnstileFrame = turnstileFrameUrl(env);
+  // Everything outside the config that changes the HTML; a change re-renders on publish.
+  const renderKey = JSON.stringify({ origin, turnstileFrame });
+  if (version.rendered_at && version.asset_version === ASSET_VERSION && version.rendered_origin === renderKey) {
     return routesOf(config);
   }
-  const { pages } = await renderSite(config, { assetBase: assetBase(), origin });
+  const { pages } = await renderSite(config, { assetBase: assetBase(), origin, turnstileFrame });
   for (const page of pages) {
     await env.SITES.put(r2PageKey(version.site_id, version.id, page.path), page.html, {
       httpMetadata: { contentType: "text/html; charset=utf-8" },
     });
   }
-  await markRendered(env.DB, version.id, ASSET_VERSION, origin);
+  await markRendered(env.DB, version.id, ASSET_VERSION, renderKey);
   return pages.map((page) => page.route);
 }
 

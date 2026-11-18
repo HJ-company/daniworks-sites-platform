@@ -115,10 +115,11 @@ export async function addVersion(
   return { versionId, number: latest.number + 1 };
 }
 
-export async function markRendered(db: D1Database, versionId: string, assetVersion: string, origin: string) {
+/** `renderKey` (stored in rendered_origin): origin and other render inputs outside the config. */
+export async function markRendered(db: D1Database, versionId: string, assetVersion: string, renderKey: string) {
   await db
     .prepare("UPDATE site_versions SET rendered_at = ?, asset_version = ?, rendered_origin = ? WHERE id = ?")
-    .bind(now(), assetVersion, origin, versionId)
+    .bind(now(), assetVersion, renderKey, versionId)
     .run();
 }
 
@@ -220,4 +221,18 @@ export async function releaseRoutesLease(db: D1Database, siteId: string, token: 
     .prepare("UPDATE sites SET routes_lock_token = NULL, routes_lock_until = NULL WHERE id = ? AND routes_lock_token = ?")
     .bind(siteId, token)
     .run();
+}
+
+export async function listSites(db: D1Database, baseDomain: string) {
+  const { results } = await db
+    .prepare(
+      `SELECT s.id, s.slug, s.template_id, s.status, s.cancelled_at, s.published_version_id, s.published_at,
+              s.notify_email, s.created_at, s.updated_at,
+              (SELECT number FROM site_versions WHERE id = s.published_version_id) AS published_number,
+              (SELECT MAX(number) FROM site_versions WHERE site_id = s.id) AS latest_number,
+              (SELECT hostname FROM domains WHERE site_id = s.id AND kind = 'custom' AND status = 'active' ORDER BY created_at LIMIT 1) AS custom_hostname
+       FROM sites s ORDER BY s.updated_at DESC`,
+    )
+    .all<{ slug: string; custom_hostname: string | null }>();
+  return results.map((row) => ({ ...row, hostname: row.custom_hostname ?? `${row.slug}.${baseDomain}` }));
 }

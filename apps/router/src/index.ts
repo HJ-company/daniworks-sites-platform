@@ -9,10 +9,52 @@ import {
   type PublishedPointer,
 } from "./keys.js";
 
+/** RPC surface of the api Worker's `PublicApi` entrypoint (apps/api/src/public.ts). */
+interface PublicApi {
+  submitInquiry(request: { siteId: string; hostname: string; ip: string | null; body: unknown }): Promise<{
+    status: number;
+    body: unknown;
+  }>;
+}
+
 interface Env {
   SITES: R2Bucket;
   ROUTES: KVNamespace;
   BASE_DOMAIN: string;
+  API: PublicApi;
+}
+
+const MAX_FORM_BYTES = 16 * 1024;
+
+const jsonResponse = (status: number, body: unknown) =>
+  new Response(JSON.stringify(body), {
+    status,
+    headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" },
+  });
+
+/** Reads a small JSON body, refusing anything larger than the limit while streaming. */
+async function readSmallJson(request: Request, limit: number): Promise<unknown> {
+  const reader = request.body?.getReader();
+  if (!reader) return null;
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > limit) {
+      await reader.cancel();
+      throw new Error("too large");
+    }
+    chunks.push(value);
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return JSON.parse(new TextDecoder().decode(bytes));
 }
 
 // KV values are cached at the edge for this long (KV minimum); publish/rollback propagate within it.
@@ -46,11 +88,37 @@ async function resolveHost(env: Env, hostname: string): Promise<HostRecord | nul
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
+    const url = new URL(request.url);
+    const hostname = url.hostname.toLowerCase();
+
+    // Visitor inquiry: the site is identified by Host here, then handed to the api by RPC.
+    if (url.pathname === "/api/inquiry") {
+      if (request.method !== "POST") return jsonResponse(405, { ok: false, error: "method not allowed" });
+      const host = await resolveHost(env, hostname);
+      if (!host || host.status !== "active" || !host.pointer) {
+        return jsonResponse(404, { ok: false, error: "문의를 받을 수 없는 사이트입니다" });
+      }
+      if (!(request.headers.get("content-type") ?? "").startsWith("application/json")) {
+        return jsonResponse(415, { ok: false, error: "JSON으로 보내 주세요" });
+      }
+      let body: unknown;
+      try {
+        body = await readSmallJson(request, MAX_FORM_BYTES);
+      } catch {
+        return jsonResponse(400, { ok: false, error: "요청을 읽지 못했습니다" });
+      }
+      const result = await env.API.submitInquiry({
+        siteId: host.siteId,
+        hostname,
+        ip: request.headers.get("cf-connecting-ip"),
+        body,
+      });
+      return jsonResponse(result.status, result.body);
+    }
+
     if (request.method !== "GET" && request.method !== "HEAD") {
       return new Response("method not allowed", { status: 405 });
     }
-    const url = new URL(request.url);
-    const hostname = url.hostname.toLowerCase();
 
     // Shared assets are content-addressed by version, so any host may serve them.
     if (url.pathname.startsWith("/_shared/")) {

@@ -2,7 +2,8 @@ import { variantUrl } from "@sites/renderer";
 import type { Env } from "./env.js";
 import { HttpError } from "./http.js";
 import { r2MediaKey } from "./keys.js";
-import { MAX_INPUT_BYTES, processPhotoExclusive, sha256Hex } from "./media.js";
+import { sha256Hex } from "./hash.js";
+import { MAX_INPUT_BYTES, processPhotoExclusive } from "./media.js";
 import type { SiteRow } from "./store.js";
 
 export interface AssetResult {

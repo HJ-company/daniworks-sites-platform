@@ -1,6 +1,6 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import type { InquiryFormBlock } from "@dani-builder/strapi-client/types";
-import { useIsPreview, useSiteHref } from "../render-context.js";
+import { useIsPreview, useSiteHref, useTurnstileFrame } from "../render-context.js";
 
 export const INQUIRY_ENDPOINT = "/api/inquiry";
 
@@ -10,20 +10,61 @@ const field =
   "w-full rounded-lg border border-black/15 bg-white px-4 py-3 text-base text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]";
 
 /**
+ * Turnstile token from the platform-hosted frame. The frame loads only after the visitor starts
+ * filling the form, so the challenge script never weighs on page load.
+ */
+function useTurnstile(frameUrl: string | null, active: boolean) {
+  const [token, setToken] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [round, setRound] = useState(0);
+  useEffect(() => {
+    if (!frameUrl || !active) return;
+    const frameOrigin = new URL(frameUrl, location.href).origin;
+    function onMessage(event: MessageEvent) {
+      if (event.origin !== frameOrigin || event.data?.type !== "dsites-turnstile") return;
+      if (event.data.error) setFailed(true);
+      else setToken(event.data.token ?? null);
+    }
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [frameUrl, active]);
+  const src = frameUrl && active ? `${frameUrl}?parent=${encodeURIComponent(location.origin)}&round=${round}` : null;
+  // Tokens are single-use: reloading the frame issues a fresh one.
+  const reset = () => {
+    setToken(null);
+    setFailed(false);
+    setRound((n) => n + 1);
+  };
+  return { token, failed, src, required: Boolean(frameUrl), reset };
+}
+
+/**
  * Platform inquiry form for local businesses: name, phone and message. It posts to the shared
  * `/api/inquiry` endpoint on the site's own host, which identifies the site by Host header.
  */
 export function InquiryForm({ block }: { block: InquiryFormBlock }) {
   const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState<string | null>(null);
+  const [touched, setTouched] = useState(false);
+  const mountedAt = useRef<number>(0);
   const section = block.section;
   const siteHref = useSiteHref();
   const preview = useIsPreview();
+  const turnstile = useTurnstile(useTurnstileFrame(), touched && !preview);
+
+  useEffect(() => {
+    mountedAt.current = Date.now();
+  }, []);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (preview) {
       setError("프리뷰에서는 문의가 전송되지 않습니다.");
+      setStatus("error");
+      return;
+    }
+    if (turnstile.required && !turnstile.token) {
+      setError(turnstile.failed ? "스팸 방지 확인을 불러오지 못했습니다. 전화로 문의해 주세요." : "스팸 방지 확인이 끝나면 다시 눌러 주세요.");
       setStatus("error");
       return;
     }
@@ -35,7 +76,13 @@ export function InquiryForm({ block }: { block: InquiryFormBlock }) {
       const res = await fetch(INQUIRY_ENDPOINT, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ ...data, consent: data.consent === "on", page: location.pathname }),
+        body: JSON.stringify({
+          ...data,
+          consent: data.consent === "on",
+          page: location.pathname,
+          elapsedMs: Date.now() - mountedAt.current,
+          turnstileToken: turnstile.token ?? undefined,
+        }),
       });
       if (!res.ok) {
         const body = (await res.json().catch(() => null)) as { error?: string } | null;
@@ -44,6 +91,8 @@ export function InquiryForm({ block }: { block: InquiryFormBlock }) {
       form.reset();
       setStatus("done");
     } catch (e) {
+      // A Turnstile token is single-use; the frame issues a new one.
+      turnstile.reset();
       setError(e instanceof Error ? e.message : String(e));
       setStatus("error");
     }
@@ -62,7 +111,7 @@ export function InquiryForm({ block }: { block: InquiryFormBlock }) {
             {block.successMessage ?? "문의가 접수되었습니다."}
           </p>
         ) : (
-          <form onSubmit={submit} className="mt-8 grid gap-4" noValidate={false}>
+          <form onSubmit={submit} onFocus={() => setTouched(true)} className="mt-8 grid gap-4">
             <label className="grid gap-1.5 text-sm font-medium">
               이름
               <input name="name" required maxLength={30} autoComplete="name" className={field} />
@@ -94,6 +143,14 @@ export function InquiryForm({ block }: { block: InquiryFormBlock }) {
                 </a>
               </span>
             </label>
+            {turnstile.src ? (
+              <iframe
+                title="스팸 방지 확인"
+                src={turnstile.src}
+                className="h-[70px] w-full max-w-[320px] border-0"
+                data-turnstile-frame=""
+              />
+            ) : null}
             {status === "error" && error ? (
               <p role="alert" className="text-sm text-red-700">
                 {error}

@@ -1,1 +1,4 @@
 ADMIN_TOKEN=dev-admin-token
+# Cloudflare Turnstile test secret: always passes (pairs with the test site key in wrangler.toml).
+TURNSTILE_SECRET=1x0000000000000000000000000000000AA
+HASH_PEPPER=dev-pepper
