@@ -2,11 +2,16 @@
   "name": "daniworks-sites-platform",
   "private": true,
   "packageManager": "pnpm@10.28.0",
-  "engines": { "node": ">=22.13" },
+  "engines": {
+    "node": ">=22.13"
+  },
   "scripts": {
-    "build": "pnpm -r build",
+    "build": "pnpm --filter @sites/renderer build",
+    "test": "pnpm -r test",
     "check-types": "pnpm -r check-types",
-    "dev": "pnpm --filter router dev",
-    "verify:m0": "node scripts/verify-m0.mjs"
+    "dev:api": "pnpm --filter api dev",
+    "dev:router": "pnpm --filter router dev",
+    "upload:shared": "node scripts/upload-shared.mjs",
+    "verify:m1": "node scripts/verify-m1.mjs"
   }
 }

@@ -16,7 +16,9 @@ milestone: M0
 - `apps/router`: M0 전용. 요청마다 샘플 사이트 3개(`sample`, `logistics`, `ceramics`)를 렌더한다. M1에서 렌더는 게시 시점으로 옮기고, 이 Worker는 R2 서빙만 한다.
 - 의존성: `@dani-builder/blocks` 2.2.0, `site-templates` 0.8.0, `strapi-client` 2.5.0, React 19.3.
 
-## 재현
+## 재현 (M0 당시)
+
+M1에서 라우터가 서빙 전용으로 바뀌어 아래 명령과 `verify-m0`는 더 이상 없다. 현재 재현은 [M1 결과](m1-publish-poc.md)를 따른다.
 
 ```bash
 pnpm install

@@ -1,11 +1,17 @@
-# M0: render-on-request PoC. M1 moves rendering to publish time (api) and this
-# Worker to Host → KV pointer → R2 serving.
-name = "sites-router-m0"
+# Public router: Host → KV (site, published version) → R2. Serves files only; never renders.
+# Production: attach to the platform zone with a `*/*` route so Cloudflare for SaaS
+# custom hostnames and <slug>.<BASE_DOMAIN> both reach this Worker.
+name = "sites-router"
 main = "src/index.ts"
 compatibility_date = "2026-11-01"
-compatibility_flags = ["nodejs_compat"]
 
-[assets]
-# Template-versioned shared assets built by @sites/renderer.
-directory = "../../packages/renderer/dist/public"
-binding = "ASSETS"
+[vars]
+BASE_DOMAIN = "localhost"
+
+[[r2_buckets]]
+binding = "SITES"
+bucket_name = "daniworks-sites"
+
+[[kv_namespaces]]
+binding = "ROUTES"
+id = "00000000000000000000000000000000"

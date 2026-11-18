@@ -1,0 +1,24 @@
+# Platform API: site/version CRUD, preview, publish (render → R2 → KV), rollback.
+name = "sites-api"
+main = "src/index.ts"
+compatibility_date = "2026-11-01"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+# Public sites are served at <slug>.<BASE_DOMAIN>. Local dev uses *.localhost.
+BASE_DOMAIN = "localhost"
+# ADMIN_TOKEN comes from .dev.vars locally and a secret in production.
+
+[[d1_databases]]
+binding = "DB"
+database_name = "daniworks-sites"
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "migrations"
+
+[[r2_buckets]]
+binding = "SITES"
+bucket_name = "daniworks-sites"
+
+[[kv_namespaces]]
+binding = "ROUTES"
+id = "00000000000000000000000000000000"

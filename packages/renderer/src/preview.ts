@@ -1,6 +1,7 @@
-import { businessBasicTemplate, collectSeedValidationErrors } from "@dani-builder/site-templates";
+import { businessBasicTemplate } from "@dani-builder/site-templates";
 import { createTemplatePreview } from "@dani-builder/site-templates/preview";
 import type { SiteConfig } from "./site-config.js";
+import { validateSiteConfig } from "./validate.js";
 import type { PageData } from "./view.js";
 
 /** Builder release the blocks package targets; seeds are validated against it. */
@@ -15,10 +16,8 @@ export class SiteConfigError extends Error {
 /** Validates a site config and projects it into the props the view renders. */
 export function toPageData(config: SiteConfig, assetBase: string): PageData {
   const manifest = businessBasicTemplate;
-  if (config.seed) {
-    const errors = collectSeedValidationErrors(manifest, config.compositionId as never, config.seed);
-    if (errors.length) throw new SiteConfigError(errors.map(String));
-  }
+  const errors = validateSiteConfig(config);
+  if (errors.length) throw new SiteConfigError(errors);
   const preview = createTemplatePreview({
     manifest,
     selection: {
