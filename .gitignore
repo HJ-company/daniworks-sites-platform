@@ -5,3 +5,5 @@ dist/
 *.log
 evidence/
 packages/*/src/generated/
+.dev.vars.*
+!.dev.vars.example

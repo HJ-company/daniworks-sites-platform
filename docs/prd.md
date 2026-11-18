@@ -51,7 +51,7 @@ policy: https://app.notion.com/p/41cecd5a3ac28107820effaeb6cb4fc8
 2. 초안: AI가 업종 템플릿을 고르고 사이트 설정을 작성해 `draft` 버전으로 저장
 3. 검수: 스키마 검증 통과 후 운영자가 프리뷰 URL에서 확인·수정
 4. 시안: 프리뷰 링크를 카톡으로 발송
-5. 오픈: 결제 확인 후 게시. `<slug>.dsites.co.kr`로 즉시 공개
+5. 오픈: 결제 확인 후 게시. `<slug>.dsites.kr`로 즉시 공개
 6. 도메인: 고객이 콘솔에서 커스텀 도메인 등록 → DNS 안내 → 연결 확인
 7. 운영: 카톡 수정 요청을 AI가 `draft`로 반영 → 운영자 검수 → 게시
 
@@ -70,8 +70,8 @@ policy: https://app.notion.com/p/41cecd5a3ac28107820effaeb6cb4fc8
 - 상태: `draft` → `published`. 게시된 버전은 사이트당 하나다.
 - 게시 = 검증 → HTML 렌더 → R2 `sites/<siteId>/<versionId>/` 업로드 → KV 포인터 교체.
 - 롤백 = KV 포인터를 이전 버전으로 교체. 재렌더하지 않는다.
-- KV는 최종적 일관성이라 게시·롤백이 전 세계에 반영되기까지 최대 1분 정도 걸린다. 프리뷰 URL은 KV를 거치지 않고 버전을 직접 읽어, 운영자는 게시 직후 결과를 확인할 수 있다.
-- 프리뷰: `draft` 버전도 렌더해 `preview-<token>.dsites.co.kr`(또는 경로)로 볼 수 있다. 검색엔진 차단.
+- KV는 최종적 일관성이라 게시·롤백이 전 세계에 반영되기까지 최대 1분 정도 걸린다. 스테이징 실측 최대 60.2초로, 라우터의 KV 엣지 캐시(`cacheTtl` 60초)가 상한을 정한다([스테이징 결과](staging-deploy.md)). 프리뷰 URL은 KV를 거치지 않고 버전을 직접 읽어, 운영자는 게시 직후 결과를 확인할 수 있다.
+- 프리뷰: `draft` 버전도 렌더해 `api.dsites.kr/preview/<token>` 경로로 볼 수 있다. 검색엔진 차단.
 
 ### 4-3. 렌더링
 
@@ -82,7 +82,7 @@ policy: https://app.notion.com/p/41cecd5a3ac28107820effaeb6cb4fc8
 
 ### 4-4. 라우팅·도메인
 
-- 기본 도메인: `*.dsites.co.kr` 와일드카드. slug는 사이트 생성 시 확정.
+- 기본 도메인: `*.dsites.kr` 와일드카드. slug는 사이트 생성 시 확정.
 - 커스텀 도메인: Cloudflare for SaaS 커스텀 호스트네임. 콘솔에서 등록하면 API로 호스트네임을 만들고, 고객에게 CNAME·TXT 값을 보여주고, 상태를 확인해 표시한다.
 - 루트 도메인(example.com)은 국내 등록업체 대부분이 CNAME/ALIAS를 지원하지 않는 것으로 보인다. 고정 IP로 연결하는 Apex Proxying은 Enterprise 전용이다. 안내 기본값은 `www` CNAME 연결 + 등록업체 루트 포워딩(`customer.kr` → `https://www.customer.kr`).
 - 루트 직접 연결은 고객 DNS가 ALIAS/CNAME 평탄화를 지원하거나 네임서버가 Cloudflare일 때만 허용한다. 이 경우 호스트네임을 2개(루트·www) 쓴다.
@@ -129,7 +129,7 @@ policy: https://app.notion.com/p/41cecd5a3ac28107820effaeb6cb4fc8
 [고객 콘솔] ────────────┘        │
                                 └→ 게시: 검증 → packages/renderer → R2 sites/<id>/<ver>/ → KV 포인터
                                                                               ↓
-방문자 → <slug>.dsites.co.kr | 커스텀 도메인 → apps/router (Worker) → R2
+방문자 → <slug>.dsites.kr | 커스텀 도메인 → apps/router (Worker) → R2
                                               └→ /api/inquiry, /api/track
 ```
 
@@ -178,7 +178,7 @@ packages/
 | Cloudflare for SaaS (100개 무료, 이후 개당 $0.10) | $0 | $20 |
 | R2 (무료 10GB) | $0 | $0 |
 | 메일 발송 | $0 | $0~20 |
-| 도메인 `dsites.co.kr` | 약 $1 | 약 $1 |
+| 도메인 `dsites.kr` | 약 $1 | 약 $1 |
 | 합계 | 약 $6 | 약 $26~46 |
 
 - 변동비: AI 초안 생성(시안 1건당 수백~1천원대 추정). 결제 전 시안도 포함된다.
@@ -195,13 +195,16 @@ packages/
 | 네이버 블로그 이미지 외부 표시 차단 | RSS 수집 PoC에서 확인 |
 | 클라이언트 JS(gzip 94 KiB)로 성능 목표 미달 | 아이콘은 허용 목록으로 해소(M1, fa6 청크 7.9 KiB). react-dom 비중은 부분 하이드레이션 검토 |
 | 템플릿 업데이트로 기존 사이트 깨짐 | 템플릿 버전을 사이트별로 기록, 재게시 전 시각 회귀 확인 |
+| 게시·롤백 반영이 1분을 넘음 | 스테이징 실측(2026-11-19): 최대 60.2초. 직전에 읽은 콜로는 KV `cacheTtl` 60초 동안 이전 값을 준다. 목표 경계라 `cacheTtl`을 KV 최솟값 30초로 낮추는 안을 M2에서 결정([결과](staging-deploy.md)) |
+| 방문이 뜸한 사이트는 KV 콜드 조회로 첫 바이트가 느림 | 실측: ICN 콜로 TTFB 콜드 약 600ms, 웜 약 150ms. 라우터가 KV를 두 번(`host:` → `site:`) 순서대로 읽는다. 호스트 키에 포인터를 함께 두어 1회로 줄이거나 HTML을 Cache API로 콜로에 두는 안을 M2에서 비교 |
+| 국내 통신사 회선이 Free 플랜 존을 해외 콜로로 보냄 | 실측: 데이터센터 회선은 ICN, KT는 CMH·LAX(미국), SK브로드밴드는 HKG, LG U+는 NRT. 사무실 회선 TTFB 0.7~1.8초. 통신 3사 모바일·유선에서 Lighthouse를 재고, 플랜별 국내 라우팅 차이를 Cloudflare에 확인(미확인) |
 
 ## 9. 마일스톤
 
 | 단계 | 범위 | 완료 기준 |
 | --- | --- | --- |
 | M0 렌더 PoC (완료, [결과](m0-render-poc.md)) | `packages/renderer`: 샘플 설정 → HTML(Worker 실행) | 샘플 사이트가 Worker 렌더 결과로 브라우저에서 정상 표시 |
-| M1 게시 PoC (로컬 완료, [결과](m1-publish-poc.md)) | `apps/api` 사이트·버전 CRUD, 게시·롤백, `apps/router` 서브도메인 서빙 | `<slug>.dsites.co.kr`에서 게시·롤백 동작 |
+| M1 게시 PoC (완료, [로컬](m1-publish-poc.md)·[스테이징](staging-deploy.md)) | `apps/api` 사이트·버전 CRUD, 게시·롤백, `apps/router` 서브도메인 서빙 | `<slug>.dsites.kr`에서 게시·롤백 동작 |
 | M2 첫 고객 | 템플릿 1~2종, 문의, 클릭 수집, MCP 도구, 커스텀 도메인(내부 등록) | 실제 리드 1곳 오픈 |
 | M3 운영 | 템플릿 4종, RSS, 분기 리포트 집계, 전체 재게시 | 10곳 운영 |
 | M4 고객 콘솔 | 도메인 셀프 연결, 문의, 리포트, 수정 요청, zip 다운로드 | 고객이 도움 없이 도메인 연결 |
@@ -213,4 +216,3 @@ packages/
 - 분기 AI 노출 재측정(geo-prove)과 리포트 생성의 위치: 이 플랫폼 안인지 별도 시스템인지
 - 해지 후 데이터 보관 기간
 - 콘솔 AI 수정: 크레딧 수량·충전, 크레딧 차감 단위(요청 1건·게시 1건 등), 게시 전 운영자 검수 여부. 정책서의 '연 4건 수정'과의 관계도 정책서에 반영 필요
-- `dsites.co.kr`은 예시. 실제 도메인 확정 필요

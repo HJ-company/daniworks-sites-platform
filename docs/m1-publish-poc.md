@@ -85,7 +85,7 @@ pnpm verify:m1                   # 터미널 3. 결과·캡처는 evidence/m1/
 
 ## 확인하지 않은 것
 
-- 실제 Cloudflare 배포. KV 전파 시간, R2·D1 지연, 실제 도메인과 와일드카드 라우트는 배포해야 확인할 수 있다.
+- 실제 Cloudflare 배포 → [스테이징 배포](staging-deploy.md)에서 확인했다.
 - Cloudflare for SaaS 커스텀 호스트네임 등록(M2)
 - 동시 게시 경합(같은 사이트에 게시 요청이 겹칠 때)
 - 사진 업로드(고객 사진을 R2에 올리고 seed에서 참조) — 지금은 템플릿 사진만 쓴다

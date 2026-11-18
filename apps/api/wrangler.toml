@@ -1,6 +1,8 @@
 # Platform API: site/version CRUD, preview, publish (render → R2 → KV), rollback.
 name = "sites-api"
 main = "src/index.ts"
+# Daniworks account (owns the dsites.kr zone). Local dev ignores it.
+account_id = "358a1b6caabcf91741109efca1ec0547"
 compatibility_date = "2026-11-01"
 compatibility_flags = ["nodejs_compat"]
 
@@ -22,3 +24,30 @@ bucket_name = "daniworks-sites"
 [[kv_namespaces]]
 binding = "ROUTES"
 id = "00000000000000000000000000000000"
+
+# Staging on the real zone: `pnpm --filter api deploy:staging`. Until launch dsites.kr doubles as staging.
+# Bindings and vars are not inherited by environments, so every one is repeated here.
+[env.staging]
+name = "sites-api-staging"
+workers_dev = false
+preview_urls = false
+# More specific than the router's `*/*`, so it wins for this host.
+routes = [{ pattern = "api.dsites.kr/*", zone_name = "dsites.kr" }]
+
+[env.staging.vars]
+BASE_DOMAIN = "dsites.kr"
+# ADMIN_TOKEN: `wrangler secret put ADMIN_TOKEN --env staging`
+
+[[env.staging.d1_databases]]
+binding = "DB"
+database_name = "daniworks-sites-staging"
+database_id = "fc09d755-f8b2-43e1-9bcf-55a00786d15a"
+migrations_dir = "migrations"
+
+[[env.staging.r2_buckets]]
+binding = "SITES"
+bucket_name = "daniworks-sites-staging"
+
+[[env.staging.kv_namespaces]]
+binding = "ROUTES"
+id = "81f56d8264ab431ab7ca5da79add2496"
