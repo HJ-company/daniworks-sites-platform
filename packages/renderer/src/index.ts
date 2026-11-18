@@ -10,3 +10,4 @@ export { compileServiceSeed, SAMPLE_PHOTOS, mediaPath } from "./templates/servic
 export { presets } from "./templates/service-local/presets.js";
 export { lessonFixture, fieldFixture } from "./templates/service-local/fixtures.js";
 export { serviceLocalGuide } from "./templates/service-local/guide.js";
+export { VARIANT_WIDTHS, variantUrl, srcSetFor } from "./images.js";

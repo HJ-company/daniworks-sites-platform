@@ -1,4 +1,5 @@
 import { parseSiteConfig, renderSite, SiteConfigError, type SiteConfig } from "@sites/renderer";
+import { listAssets, uploadAsset } from "./assets.js";
 import type { Env } from "./env.js";
 import { HttpError, json, readJson, requireAdmin } from "./http.js";
 import { kvHostKey, MEDIA_PATH, r2MediaKey, r2SharedKey } from "./keys.js";
@@ -104,6 +105,12 @@ async function handle(request: Request, env: Env): Promise<Response> {
     const body = await readJson<{ config: unknown; createdBy?: CreatedBy; note?: string }>(request);
     const result = await addVersion(env.DB, site, validated(body.config), creator(body.createdBy), body.note ?? null);
     return json(result, 201);
+  }
+
+  // POST /sites/:id/assets: raw image body, or JSON {url}. GET lists them.
+  if (parts[2] === "assets" && parts.length === 3) {
+    if (method === "POST") return json(await uploadAsset(env, site, request), 201);
+    if (method === "GET") return json({ assets: await listAssets(env, site) });
   }
 
   // POST /sites/:id/publish {versionId?}: latest version when omitted

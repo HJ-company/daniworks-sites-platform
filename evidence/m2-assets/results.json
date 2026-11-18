@@ -1,0 +1,154 @@
+{
+  "siteId": "dc8f4917-bccc-4537-96a4-be78ba047533",
+  "results": [
+    {
+      "name": "사이트 생성",
+      "pass": true
+    },
+    {
+      "name": "EXIF 회전 사진: 201, 세로 1200×1600으로 줄임",
+      "pass": true,
+      "key": "m:dc8f4917-bccc-4537-96a4-be78ba047533/9fe9b1b39f4c0f3c9841.jpg",
+      "url": "/_media/dc8f4917-bccc-4537-96a4-be78ba047533/9fe9b1b39f4c0f3c9841.jpg",
+      "width": 1200,
+      "height": 1600,
+      "bytes": 59575
+    },
+    {
+      "name": "EXIF 방향 적용: 원래 위쪽(빨강)이 오른쪽",
+      "pass": true,
+      "right": {
+        "r": 219,
+        "g": 19,
+        "b": 19
+      },
+      "left": {
+        "r": 21,
+        "g": 20,
+        "b": 218
+      }
+    },
+    {
+      "name": "결과물에 EXIF 방향 없음",
+      "pass": true
+    },
+    {
+      "name": "변형 w480: WebP, 폭 480, 영구 캐시",
+      "pass": true
+    },
+    {
+      "name": "변형 w800: WebP, 폭 800, 영구 캐시",
+      "pass": true
+    },
+    {
+      "name": "라우터도 /_media 서빙",
+      "pass": true
+    },
+    {
+      "name": "없는 미디어 404",
+      "pass": true
+    },
+    {
+      "name": "같은 사진 재업로드는 같은 키",
+      "pass": true
+    },
+    {
+      "name": "PNG 입력 → JPEG 800×600",
+      "pass": true,
+      "key": "m:dc8f4917-bccc-4537-96a4-be78ba047533/fd01cdfe411e6ef75a87.jpg",
+      "url": "/_media/dc8f4917-bccc-4537-96a4-be78ba047533/fd01cdfe411e6ef75a87.jpg",
+      "width": 800,
+      "height": 600,
+      "bytes": 17252
+    },
+    {
+      "name": "작은 사진도 광고한 변형 w480이 있음 (폭 480)",
+      "pass": true
+    },
+    {
+      "name": "작은 사진도 광고한 변형 w800이 있음 (폭 800)",
+      "pass": true
+    },
+    {
+      "name": "작은 사진도 광고한 변형 w1200이 있음 (폭 800)",
+      "pass": true
+    },
+    {
+      "name": "WebP 입력 → 1000×500",
+      "pass": true,
+      "key": "m:dc8f4917-bccc-4537-96a4-be78ba047533/958920e45667d042dd7e.jpg",
+      "url": "/_media/dc8f4917-bccc-4537-96a4-be78ba047533/958920e45667d042dd7e.jpg",
+      "width": 1000,
+      "height": 500,
+      "bytes": 19366
+    },
+    {
+      "name": "투명 PNG: JPEG와 WebP 모두 흰 배경",
+      "pass": true,
+      "pm": {
+        "r": 255,
+        "g": 255,
+        "b": 255
+      },
+      "pv": {
+        "r": 255,
+        "g": 255,
+        "b": 255
+      }
+    },
+    {
+      "name": "3MP 넘는 해상도는 413 (디코딩 전 거부, 줄이라는 안내)",
+      "pass": true,
+      "error": "사진 해상도가 너무 큽니다 (4000×3000). 긴 변 1600px 정도로 줄여서 올려주세요 (최대 3MP)"
+    },
+    {
+      "name": "15MB 넘는 파일은 413",
+      "pass": true
+    },
+    {
+      "name": "Content-Length 없는 스트림도 15MB 넘으면 413",
+      "pass": true
+    },
+    {
+      "name": "1×4000 같은 좁은 사진도 처리(폭 최소 1px)",
+      "pass": true,
+      "key": "m:dc8f4917-bccc-4537-96a4-be78ba047533/72fd6769060abbcfbd08.jpg",
+      "url": "/_media/dc8f4917-bccc-4537-96a4-be78ba047533/72fd6769060abbcfbd08.jpg",
+      "width": 1,
+      "height": 1600,
+      "bytes": 978
+    },
+    {
+      "name": "이미지가 아니면 415",
+      "pass": true
+    },
+    {
+      "name": "큰 JSON 본문은 파싱 전에 413",
+      "pass": true
+    },
+    {
+      "name": "http URL 가져오기는 400",
+      "pass": true
+    },
+    {
+      "name": "인증 없으면 401",
+      "pass": true
+    },
+    {
+      "name": "목록에 5장",
+      "pass": true,
+      "count": 5
+    },
+    {
+      "name": "게시 페이지에 업로드 사진과 srcset 변형",
+      "pass": true
+    },
+    {
+      "name": "브라우저: 이미지 모두 로드, 히어로는 WebP 변형",
+      "pass": true,
+      "heroSrc": "http://assets-mwmfpa4r.localhost:8787/_media/dc8f4917-bccc-4537-96a4-be78ba047533/9fe9b1b39f4c0f3c9841.w480.webp",
+      "failed": [],
+      "errors": []
+    }
+  ]
+}
