@@ -1,0 +1,95 @@
+{
+  "slug": "m1-mwmeal1q",
+  "siteId": "f10dd1d1-0707-4318-b694-45a6f31587b7",
+  "results": [
+    {
+      "name": "인증 없는 요청은 401",
+      "pass": true
+    },
+    {
+      "name": "사이트 생성 201",
+      "pass": true,
+      "hostname": "m1-mwmeal1q.localhost"
+    },
+    {
+      "name": "프리뷰 200 + noindex",
+      "pass": true
+    },
+    {
+      "name": "게시 전 공개 주소는 404",
+      "pass": true
+    },
+    {
+      "name": "v1 게시 후 공개",
+      "pass": true,
+      "publishMs": 61,
+      "propagationMs": 6
+    },
+    {
+      "name": "v2 초안 생성 201",
+      "pass": true
+    },
+    {
+      "name": "초안은 공개 주소에 반영되지 않음",
+      "pass": true
+    },
+    {
+      "name": "v2 게시 후 공개",
+      "pass": true,
+      "publishMs": 60,
+      "propagationMs": 4
+    },
+    {
+      "name": "v1로 롤백",
+      "pass": true,
+      "propagationMs": 3
+    },
+    {
+      "name": "게시된 적 없는 버전으로 롤백은 409",
+      "pass": true
+    },
+    {
+      "name": "허용 목록 밖 아이콘은 422",
+      "pass": true
+    },
+    {
+      "name": "slug 변경은 422",
+      "pass": true
+    },
+    {
+      "name": "검증 실패는 버전을 만들지 않음",
+      "pass": true,
+      "versions": 3
+    },
+    {
+      "name": "중복 slug는 409",
+      "pass": true
+    },
+    {
+      "name": "연결 안 된 호스트는 404",
+      "pass": true
+    },
+    {
+      "name": "robots.txt·sitemap.xml 200",
+      "pass": true
+    },
+    {
+      "name": "브라우저 mobile",
+      "pass": true,
+      "jsKiB": 341,
+      "errors": [],
+      "failed": [],
+      "external": [],
+      "unloaded": 0
+    },
+    {
+      "name": "브라우저 desktop",
+      "pass": true,
+      "jsKiB": 341,
+      "errors": [],
+      "failed": [],
+      "external": [],
+      "unloaded": 0
+    }
+  ]
+}

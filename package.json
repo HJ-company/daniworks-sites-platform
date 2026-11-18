@@ -15,5 +15,8 @@
     "verify:m1": "node scripts/verify-m1.mjs",
     "deploy:staging": "pnpm build && pnpm --filter api migrate:staging && pnpm --filter api deploy:staging && pnpm --filter router deploy:staging",
     "verify:staging": "node scripts/verify-staging.mjs"
+  },
+  "devDependencies": {
+    "playwright": "1.65.1"
   }
 }

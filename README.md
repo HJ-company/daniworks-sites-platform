@@ -15,6 +15,18 @@ pnpm verify:m1                                    # 전체 시나리오 검증
 pnpm test && pnpm check-types
 ```
 
+### Docker 로컬 검증
+
+호스트 node_modules와 무관하게 Linux 컨테이너에서 Workers·브라우저 검증을 돌린다. 단계마다 이 경로로 확인한다.
+
+```bash
+docker compose up -d --build                      # workers(api :8788, router :8787), mailpit(:8025)
+docker compose run --rm verify node scripts/verify-m1.mjs   # 결과는 evidence/<단계>/
+docker compose down -v                            # 로컬 D1·R2·KV 상태까지 지움
+```
+
+`verify`는 workers 컨테이너의 네트워크를 함께 써서, 스크립트가 `127.0.0.1`·`*.localhost`로 Workers에 닿는다.
+
 스테이징(`*.dsites.kr`, `api.dsites.kr`)은 [docs/staging-deploy.md](docs/staging-deploy.md)를 따른다.
 
 ```bash

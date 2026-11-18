@@ -1,7 +1,7 @@
 ---
 type: prd
 status: draft
-date: 2026-11-18
+date: 2026-11-19
 product: 스타터 홈페이지
 policy: https://app.notion.com/p/41cecd5a3ac28107820effaeb6cb4fc8
 ---
@@ -40,7 +40,7 @@ policy: https://app.notion.com/p/41cecd5a3ac28107820effaeb6cb4fc8
 
 | 사용자 | 하는 일 | 접점 |
 | --- | --- | --- |
-| 운영자(다니웍스) | 시안 검수, 게시, 수정 요청 처리, 도메인 문제 대응 | 내부 어드민 API, AI 도구 |
+| 운영자(다니웍스) | 시안 검수, 게시, 수정 요청 처리, 도메인 문제 대응 | 운영자 콘솔, AI 도구(MCP) |
 | AI 에이전트 | 자료 수집 결과로 설정 초안 작성, 수정 요청 반영 | MCP 도구(플랫폼 API) |
 | 고객(사장님) | 시안 확인, 도메인 연결, 문의 확인, 리포트 열람, 수정 요청 | 시안 링크, 고객 콘솔 |
 | 방문자 | 사이트 열람, 전화·카톡·지도·문의 | 공개 사이트 |
@@ -61,7 +61,9 @@ policy: https://app.notion.com/p/41cecd5a3ac28107820effaeb6cb4fc8
 
 - 형식: `@dani-builder/site-templates`의 `TemplateSeed` + 플랫폼 메타(연락처, 업종, 도메인, RSS URL 등).
 - 저장 전 `collectSeedValidationErrors`와 플랫폼 스키마로 검증한다. 검증 실패는 저장하지 않는다.
-- 업종 템플릿 4종: 음식점, 시공·설비, 뷰티·서비스, 1인·소규모 B2B.
+- 업종 템플릿: 업종별 원페이지 구조(섹션 순서, 전화·카톡·지도 CTA 배치, 필수 정보, AI 작성 지침)다. 블록 디자인(빌더 소유)과 별개로 이 플랫폼이 소유한다. 빌더 ADR 0008이 블록 배치·카피를 소비자 소유로 정했다. 필요한 블록이나 계약이 빌더에 없을 때만 빌더에 요청한다.
+- 1번 템플릿: 레슨·교육·출장 서비스(공사·하수도·청소 등). 실제 리드(지역 레슨 아카데미)를 기준으로 만든다.
+- 나머지 템플릿은 가설이다. 운영 자가진단 리드의 업종 분포를 보고 정한다. 초기 가설은 음식점, 뷰티·서비스, 1인·소규모 B2B였다.
 - 사진은 R2에 업로드하고 설정에는 키만 저장한다.
 
 ### 4-2. 버전과 게시
@@ -97,17 +99,26 @@ policy: https://app.notion.com/p/41cecd5a3ac28107820effaeb6cb4fc8
 
 ### 4-6. 측정
 
-- 방문: Cloudflare Web Analytics 또는 라우터 Worker 집계.
-- 클릭: 전화·카톡·지도·네이버 예약·문의 버튼 클릭을 `POST /api/track`으로 수집(Workers Analytics Engine).
+- 방문·클릭: 페이지 조회와 전화·카톡·지도·네이버 예약·문의 클릭을 `POST /api/track` 비콘으로 수집한다. 봇 UA를 걸러내고 D1 일별 집계 테이블에 upsert한다.
+- D1을 쓰는 이유: 300곳 규모의 트래픽이면 쓰기 한도 안에 들어간다. 로컬에서 끝까지 검증할 수 있고 경로가 하나다. Analytics Engine은 로컬에서 조회할 수 없다. 트래픽이 한도에 가까워지면 다시 검토한다.
 - 분기 리포트용 사이트별·기간별 집계 API.
 
 ### 4-7. 블로그 최신 글
 
 - 네이버 블로그 RSS를 Worker cron이 수집해 KV에 캐시하고, 페이지는 런타임에 읽어 표시한다. 글이 올라와도 재게시하지 않는다.
-- 네이버 이미지 외부 표시가 막힐 수 있다. 텍스트 카드 또는 Worker 프록시 중 PoC에서 정한다.
+- 네이버 이미지: 외부 도메인 Referer가 붙으면 403, Referer가 없으면 200이다(2026-11-19 실측). `<img referrerpolicy="no-referrer">`로 표시하고 프록시는 두지 않는다.
 - 인스타 최신 게시물: 1차 범위 제외. Graph API는 비즈니스 계정·페이스북 페이지 연결·고객별 토큰 갱신이 필요하다.
 
-### 4-8. 고객 콘솔
+### 4-8. 운영자 콘솔
+
+- 다니웍스 운영자 전용. Vite + React CSR + MUI.
+- 기능: 사이트 목록·생성, 버전·프리뷰·검증 오류 확인, 업체 정보 수정, 게시·롤백, 사진, 커스텀 도메인 등록·상태, 문의 열람·내보내기, 방문·클릭 통계, 분기 리포트, 전체 재게시, 해지.
+- 인증: 운영 환경은 Cloudflare Access를 앞에 둔다. MCP와 스크립트는 Bearer 토큰을 쓴다.
+
+### 4-9. 고객 콘솔 (보류)
+
+이번 구현 범위에서 뺐다. 범위와 시점은 따로 정한다.
+
 
 - 로그인: 이메일 매직링크(카카오 로그인은 후순위).
 - 기능: 사이트 상태, 커스텀 도메인 연결, 문의 목록, 분기 리포트 열람, 수정 요청 접수, 정적 파일 다운로드(게시 버전 zip).
@@ -115,18 +126,18 @@ policy: https://app.notion.com/p/41cecd5a3ac28107820effaeb6cb4fc8
 - 수정 요청(향후): 고객이 콘솔에서 AI 에이전트에게 말로 요청하면, 에이전트가 `draft` 버전을 만들고 프리뷰 링크를 보여준다. 사용량은 크레딧으로 제한한다.
 - 상품 경계: 스타터의 AI는 고객이 사이트를 고치는 운영 도구다. AI 홈페이지의 AI는 홈페이지에 들어가 방문자가 쓰는 기능(AI 상담 등)이다. 스타터 공개 사이트에는 방문자용 AI 기능을 넣지 않는다.
 
-### 4-9. 운영·AI 도구
+### 4-10. 운영·AI 도구
 
-- 플랫폼 API를 MCP 도구로도 노출: `site_create`, `site_get`, `site_update_draft`, `site_validate`, `site_preview_url`, `site_publish`, `site_rollback`, `asset_upload`.
+- 플랫폼 API를 MCP 도구로도 노출: `site_create`, `site_get`, `site_update_draft`, `site_validate`, `site_preview_url`, `site_publish`, `site_rollback`, `asset_upload`, `template_list`, `template_get`(작성 지침 포함).
 - 해지: 공개 중단(라우터에서 차단), 데이터·정적 파일은 보관 후 인출 가능.
 - AI 홈페이지 전환: 사이트 설정(TemplateSeed)을 Strapi로 가져오는 스크립트. `create-daniworks-app` importer를 고객 seed를 받도록 확장하는 방향.
 
 ## 5. 아키텍처
 
 ```
-[내부 어드민·AI(MCP)] ─┐
-                       ├→ apps/api (Worker) ─→ D1: customers, sites, site_versions, domains, inquiries
-[고객 콘솔] ────────────┘        │
+[운영자 콘솔·AI(MCP)] ─┐
+                       ├→ apps/api (Worker) ─→ D1: customers, sites, site_versions, domains, inquiries, metrics_daily
+[고객 콘솔(보류)] ──────┘        │
                                 └→ 게시: 검증 → packages/renderer → R2 sites/<id>/<ver>/ → KV 포인터
                                                                               ↓
 방문자 → <slug>.dsites.kr | 커스텀 도메인 → apps/router (Worker) → R2
@@ -139,16 +150,16 @@ policy: https://app.notion.com/p/41cecd5a3ac28107820effaeb6cb4fc8
 apps/
   api/        플랫폼 API + MCP 도구 + 게시 파이프라인
   router/     공개 사이트 서빙, 문의·클릭 수집, RSS cron
-  console/    고객 콘솔 (후순위)
+  console/    운영자 콘솔 (Vite React CSR, MUI)
 packages/
-  renderer/   템플릿 4종, 사이트 설정 스키마, renderToString, 클라이언트 번들 빌드
-  schema/     DB 스키마·사이트 설정 타입 공유
+  renderer/   업종 템플릿, 사이트 설정 검증, renderToString, 클라이언트 번들 빌드
+  schema/     API DTO·플랫폼 메타 스키마(zod) 공유
 ```
 
 ### 주요 의존성
 
 - `@dani-builder/blocks`, `@dani-builder/site-templates`, `@dani-builder/strapi-client` (npm 공개 패키지, 버전 고정)
-- Cloudflare: Workers, D1, KV, R2, Cloudflare for SaaS, Turnstile, Analytics Engine
+- Cloudflare: Workers, D1, KV, R2, Cloudflare for SaaS, Turnstile, Access(운영자 콘솔), Email Sending
 
 ### 데이터 모델 (초안)
 
@@ -159,6 +170,8 @@ packages/
 | `site_versions` | id, site_id, config(JSON), status, created_by(ai/operator), created_at, published_at |
 | `domains` | id, site_id, hostname, cf_hostname_id, 검증 상태, 인증서 상태 |
 | `inquiries` | id, site_id, 항목(JSON), created_at, 알림 결과 |
+| `metrics_daily` | site_id, date, event(pageview·tel·kakao·map·booking·inquiry), count |
+| `assets` | id, site_id, R2 키, 형식, 크기, created_at |
 | `change_requests` | id, site_id, 요청 경로(카톡·콘솔 AI), 요청 내용, 처리 버전, 차감 크레딧 |
 | `credit_ledger` | id, customer_id, 증감량, 사유(구독 지급·충전·수정 차감), change_request_id, created_at |
 
@@ -174,7 +187,7 @@ packages/
 
 | 항목 | 100곳 | 300곳 |
 | --- | --- | --- |
-| Workers Paid (D1·KV·Analytics Engine 포함) | $5 | $5 |
+| Workers Paid (D1·KV 포함) | $5 | $5 |
 | Cloudflare for SaaS (100개 무료, 이후 개당 $0.10) | $0 | $20 |
 | R2 (무료 10GB) | $0 | $0 |
 | 메일 발송 | $0 | $0~20 |
@@ -192,7 +205,7 @@ packages/
 | 구축 3시간 초과 | 사이트 없는 리드 3곳으로 AI 초안 유무별 실측 |
 | 국내 등록업체 도메인 연결 실패 | 가비아·후이즈·카페24 등에서 www CNAME 연결 실측, 업체별 안내 문서 작성 |
 | 등록업체 루트 포워딩이 https를 지원하지 않음 (`https://customer.kr` 접속 시 인증서 오류) | 같은 업체들에서 http·https 포워딩 각각 실측. 미지원 업체는 네임서버 Cloudflare 이전 안내 또는 도메인 대행 옵션으로 처리 |
-| 네이버 블로그 이미지 외부 표시 차단 | RSS 수집 PoC에서 확인 |
+| 네이버 블로그 이미지 외부 표시 차단 | 해소: 외부 Referer는 403, Referer 없으면 200. `no-referrer`로 표시 |
 | 클라이언트 JS(gzip 94 KiB)로 성능 목표 미달 | 아이콘은 허용 목록으로 해소(M1, fa6 청크 7.9 KiB). react-dom 비중은 부분 하이드레이션 검토 |
 | 템플릿 업데이트로 기존 사이트 깨짐 | 템플릿 버전을 사이트별로 기록, 재게시 전 시각 회귀 확인 |
 | 게시·롤백 반영이 1분을 넘음 | 스테이징 실측(2026-11-19): 최대 60.2초. 직전에 읽은 콜로는 KV `cacheTtl` 60초 동안 이전 값을 준다. 목표 경계라 `cacheTtl`을 KV 최솟값 30초로 낮추는 안을 M2에서 결정([결과](staging-deploy.md)) |
@@ -205,14 +218,21 @@ packages/
 | --- | --- | --- |
 | M0 렌더 PoC (완료, [결과](m0-render-poc.md)) | `packages/renderer`: 샘플 설정 → HTML(Worker 실행) | 샘플 사이트가 Worker 렌더 결과로 브라우저에서 정상 표시 |
 | M1 게시 PoC (완료, [로컬](m1-publish-poc.md)·[스테이징](staging-deploy.md)) | `apps/api` 사이트·버전 CRUD, 게시·롤백, `apps/router` 서브도메인 서빙 | `<slug>.dsites.kr`에서 게시·롤백 동작 |
-| M2 첫 고객 | 템플릿 1~2종, 문의, 클릭 수집, MCP 도구, 커스텀 도메인(내부 등록) | 실제 리드 1곳 오픈 |
-| M3 운영 | 템플릿 4종, RSS, 분기 리포트 집계, 전체 재게시 | 10곳 운영 |
-| M4 고객 콘솔 | 도메인 셀프 연결, 문의, 리포트, 수정 요청, zip 다운로드 | 고객이 도움 없이 도메인 연결 |
+| M2 첫 고객 | 업종 템플릿 1번(레슨·교육·출장), 문의, 측정, MCP 도구, 사진, 커스텀 도메인(내부 등록), 운영자 콘솔 v1 | 실제 리드 1곳 오픈 |
+| M3 운영 | 나머지 업종 템플릿, RSS, 분기 리포트 집계, 전체 재게시, 해지·인출 | 10곳 운영 |
+| M4 고객 콘솔(보류) | 도메인 셀프 연결, 문의, 리포트, 수정 요청, zip 다운로드 | 고객이 도움 없이 도메인 연결 |
 
 ## 10. 미결 사항
 
-- DB: D1로 충분한지, 콘솔·리포트 요구로 Postgres가 필요한지 (M1에서 결정)
-- 고객 콘솔 인증 방식과 계정 모델(고객 1 : 사이트 N 허용 여부)
+- 업종 템플릿 2~4번: 운영 자가진단 리드 업종 분포로 결정
+- 고객 콘솔 범위와 시점, 인증 방식·계정 모델
 - 분기 AI 노출 재측정(geo-prove)과 리포트 생성의 위치: 이 플랫폼 안인지 별도 시스템인지
-- 해지 후 데이터 보관 기간
+- 해지 후 데이터 보관 기간 (구현은 설정값, 기본 90일)
 - 콘솔 AI 수정: 크레딧 수량·충전, 크레딧 차감 단위(요청 1건·게시 1건 등), 게시 전 운영자 검수 여부. 정책서의 '연 4건 수정'과의 관계도 정책서에 반영 필요
+
+## 11. 결정 기록
+
+- 2026-11-19: DB는 D1을 유지한다. 측정도 D1 일별 집계로 한다. 메일은 Cloudflare Email Sending, 로컬은 Mailpit.
+- 2026-11-19: 라우터 KV `cacheTtl`을 30초로 낮추고, 호스트 키에 게시 포인터를 함께 둬 조회를 1회로 줄인다.
+- 2026-11-19: 콘솔은 운영자 전용으로 먼저 만들고 고객 콘솔은 보류한다.
+- 2026-11-19: 로컬 검증은 Docker(`docker-compose.yml`)에서 한다. 단계마다 `codex review`를 거친다.

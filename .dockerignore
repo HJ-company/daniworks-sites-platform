@@ -1,0 +1,8 @@
+**/node_modules
+**/dist
+.wrangler
+evidence
+.git
+**/.dev.vars
+**/.dev.vars.*
+*.log

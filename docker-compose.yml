@@ -1,0 +1,54 @@
+# Local verification stack. `docker compose up -d --build`, then
+# `docker compose run --rm verify node scripts/verify-<step>.mjs`.
+name: dsites
+
+x-app: &app
+  build:
+    context: .
+    dockerfile: docker/Dockerfile
+  image: dsites-app:local
+
+services:
+  workers:
+    <<: *app
+    command: ["bash", "docker/workers.sh"]
+    environment:
+      ADMIN_TOKEN: dev-admin-token
+    ports:
+      - "8787:8787" # router: http://<slug>.localhost:8787
+      - "8788:8788" # api
+    volumes:
+      - state:/state
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "Promise.all([fetch('http://127.0.0.1:8788/health'),fetch('http://127.0.0.1:8787/')]).then(r=>process.exit(r[0].ok?0:1)).catch(()=>process.exit(1))"
+      interval: 3s
+      timeout: 3s
+      retries: 60
+
+  mailpit:
+    image: axllent/mailpit:v1.27
+    ports:
+      - "8025:8025" # inbox UI and HTTP API
+
+  # Runs verification scripts inside the workers' network namespace, so 127.0.0.1 and
+  # *.localhost reach the Workers exactly as they do on a developer machine.
+  verify:
+    <<: *app
+    profiles: [tools]
+    network_mode: "service:workers"
+    depends_on:
+      workers:
+        condition: service_healthy
+    environment:
+      API_URL: http://127.0.0.1:8788
+      ADMIN_TOKEN: dev-admin-token
+      MAILPIT_URL: http://mailpit:8025
+    volumes:
+      - ./evidence:/app/evidence
+
+volumes:
+  state:
