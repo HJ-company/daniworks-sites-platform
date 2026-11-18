@@ -1,4 +1,4 @@
-import { parseSiteConfig, renderSite, SiteConfigError, type SiteConfig } from "@sites/renderer";
+import { renderSite, SiteConfigError, type SiteConfig } from "@sites/renderer";
 import { listAssets, uploadAsset } from "./assets.js";
 import { allInquiries, inquiriesCsv, listInquiries, requireEmail } from "./inquiries.js";
 import { kstDay, metricsReport } from "./metrics.js";
@@ -6,34 +6,14 @@ import { turnstileFrame } from "./turnstile.js";
 import type { Env } from "./env.js";
 import { HttpError, json, readJson, requireAdmin } from "./http.js";
 import { MEDIA_PATH, r2MediaKey, r2SharedKey } from "./keys.js";
+import { handleMcp } from "./mcp.js";
+import { assetBase, publish, rollback, siteOrigin } from "./publish.js";
 import { auditHostRecords, reconcileHostRecords, syncHostRecordsNow } from "./routes.js";
+import { addDraft, createSiteFromInput, creator } from "./sites.js";
+import { getSite, listSites, listVersions, setSiteStatus, versionByPreviewToken, type CreatedBy } from "./store.js";
 
 /** Must match wrangler.toml [triggers]: the hourly audit; the 5-minute cron only reconciles. */
 const AUDIT_CRON = "17 * * * *";
-import { assetBase, publish, rollback, siteOrigin } from "./publish.js";
-import {
-  addVersion,
-  createSite,
-  getSite,
-  listSites,
-  listVersions,
-  setSiteStatus,
-  versionByPreviewToken,
-  type CreatedBy,
-} from "./store.js";
-
-const CREATORS: CreatedBy[] = ["ai", "operator", "customer"];
-
-/** Parsed config with defaults filled; what gets stored. */
-function validated(input: unknown): SiteConfig {
-  const result = parseSiteConfig(input);
-  if (!result.ok) throw new HttpError(422, "설정 검증 실패", result.errors);
-  return result.config;
-}
-
-function creator(value: unknown): CreatedBy {
-  return CREATORS.includes(value as CreatedBy) ? (value as CreatedBy) : "operator";
-}
 
 async function serveImmutable(env: Env, key: string) {
   const object = await env.SITES.get(key);
@@ -93,6 +73,9 @@ async function handle(request: Request, env: Env): Promise<Response> {
 
   requireAdmin(request, env.ADMIN_TOKEN);
 
+  // MCP tools for AI agents (Streamable HTTP, stateless). Same admin token.
+  if (url.pathname === "/mcp") return handleMcp(request, env);
+
   // PUT /admin/shared/<version>/<path>: upload one shared asset file.
   if (method === "PUT" && parts[0] === "admin" && parts[1] === "shared" && parts.length > 3) {
     const key = r2SharedKey(parts.slice(2).join("/"));
@@ -107,11 +90,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
   // POST /sites {config, createdBy}
   if (method === "POST" && parts.length === 1) {
     const body = await readJson<{ config: unknown; createdBy?: CreatedBy }>(request);
-    const config = validated(body.config);
-    const hostname = `${config.slug}.${env.BASE_DOMAIN}`;
-    const { siteId, versionId } = await createSite(env.DB, config, creator(body.createdBy), hostname);
-    await syncHostRecordsNow(env, siteId);
-    return json({ siteId, versionId, hostname }, 201);
+    return json(await createSiteFromInput(env, body.config, creator(body.createdBy)), 201);
   }
 
   // GET /sites: every site with its published version number and primary hostname.
@@ -167,7 +146,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
   // POST /sites/:id/versions {config, createdBy, note}: new draft version
   if (method === "POST" && parts[2] === "versions") {
     const body = await readJson<{ config: unknown; createdBy?: CreatedBy; note?: string }>(request);
-    const result = await addVersion(env.DB, site, validated(body.config), creator(body.createdBy), body.note ?? null);
+    const result = await addDraft(env, site, body.config, creator(body.createdBy), body.note ?? null);
     return json(result, 201);
   }
 

@@ -11,13 +11,15 @@
   },
   "dependencies": {
     "@cf-wasm/photon": "0.4.0",
+    "@modelcontextprotocol/server": "2.4.0",
     "@sites/renderer": "workspace:*",
-    "@sites/schema": "workspace:*"
+    "@sites/schema": "workspace:*",
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20261118.1",
     "typescript": "^7.0.2",
-    "wrangler": "^4.164.0",
-    "vitest": "^5.1.1"
+    "vitest": "^5.1.1",
+    "wrangler": "^4.164.0"
   }
 }

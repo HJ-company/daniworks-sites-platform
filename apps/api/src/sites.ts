@@ -1,0 +1,42 @@
+import { parseSiteConfig, type SiteConfig } from "@sites/renderer";
+import type { Env } from "./env.js";
+import { HttpError } from "./http.js";
+import { syncHostRecordsNow } from "./routes.js";
+import { addVersion, createSite, getSite, type CreatedBy, type SiteRow } from "./store.js";
+
+const CREATORS: CreatedBy[] = ["ai", "operator", "customer"];
+
+/** Parsed config with defaults filled; what gets stored. Throws 422 with every problem. */
+export function validated(input: unknown): SiteConfig {
+  const result = parseSiteConfig(input);
+  if (!result.ok) throw new HttpError(422, "설정 검증 실패", result.errors);
+  return result.config;
+}
+
+export function creator(value: unknown): CreatedBy {
+  return CREATORS.includes(value as CreatedBy) ? (value as CreatedBy) : "operator";
+}
+
+/** New site with version 1 and its `<slug>.<BASE_DOMAIN>` hostname. */
+export async function createSiteFromInput(env: Env, input: unknown, createdBy: CreatedBy) {
+  const config = validated(input);
+  const hostname = `${config.slug}.${env.BASE_DOMAIN}`;
+  const { siteId, versionId } = await createSite(env.DB, config, createdBy, hostname);
+  await syncHostRecordsNow(env, siteId);
+  return { siteId, versionId, hostname };
+}
+
+/** New draft version; nothing goes public until it is published. */
+export async function addDraft(env: Env, site: SiteRow, input: unknown, createdBy: CreatedBy, note: string | null) {
+  return addVersion(env.DB, site, validated(input), createdBy, note);
+}
+
+export function previewUrl(env: Env, previewToken: string) {
+  return `${env.API_ORIGIN ?? ""}/preview/${previewToken}`;
+}
+
+/** Site by id or slug (MCP callers often know only the slug). */
+export async function findSite(env: Env, idOrSlug: string): Promise<SiteRow> {
+  const bySlug = await env.DB.prepare("SELECT id FROM sites WHERE slug = ?").bind(idOrSlug).first<{ id: string }>();
+  return getSite(env.DB, bySlug?.id ?? idOrSlug);
+}

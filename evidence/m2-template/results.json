@@ -1,18 +1,18 @@
 {
   "sites": {
     "lesson": {
-      "siteId": "b4aafef9-b5a1-4e42-8641-5873d6f40b0e",
-      "versionId": "68299590-23ea-4951-8ceb-f266623dfbec",
-      "hostname": "jefes-mwmh98y6.localhost",
-      "slug": "jefes-mwmh98y6",
-      "token": "cdb26c07dafc4adc9931827183cc6778"
+      "siteId": "69ea05f9-dae7-4fe5-87db-e6fe50fdc2ac",
+      "versionId": "601d0fd6-a881-41c2-af57-dd44d7ad1e64",
+      "hostname": "jefes-mwmhqu07.localhost",
+      "slug": "jefes-mwmhqu07",
+      "token": "3b93263f4d6c4e7eb22d8948b517c07c"
     },
     "field": {
-      "siteId": "f2b8a4c7-1fd9-48db-9c1e-1bedbf37c4d0",
-      "versionId": "7d1519fb-3c7c-4244-a65a-9a552820a802",
-      "hostname": "sangkwae-mwmh98y6.localhost",
-      "slug": "sangkwae-mwmh98y6",
-      "token": "8a683c72cd304845af4aea96aba4d363"
+      "siteId": "3064c8fe-6be3-4754-b0f0-c6d66b35b7a7",
+      "versionId": "490c30cc-f716-4956-9807-049163105d8e",
+      "hostname": "sangkwae-mwmhqu07.localhost",
+      "slug": "sangkwae-mwmhqu07",
+      "token": "a71abe92bb6641068da422bf08b216c2"
     }
   },
   "scores": {
@@ -21,18 +21,18 @@
       "accessibility": 100,
       "bestPractices": 96,
       "seo": 92,
-      "lcpMs": 2263,
+      "lcpMs": 1966,
       "cls": 0,
-      "tbtMs": 4
+      "tbtMs": 5
     },
     "field": {
-      "performance": 99,
+      "performance": 100,
       "accessibility": 100,
       "bestPractices": 96,
       "seo": 92,
-      "lcpMs": 1967,
+      "lcpMs": 1858,
       "cls": 0,
-      "tbtMs": 2
+      "tbtMs": 49
     }
   },
   "results": [
@@ -47,7 +47,7 @@
     {
       "name": "lesson: 사이트 생성 201",
       "pass": true,
-      "hostname": "jefes-mwmh98y6.localhost"
+      "hostname": "jefes-mwmhqu07.localhost"
     },
     {
       "name": "lesson: 저장된 설정은 v2",
@@ -64,9 +64,9 @@
     {
       "name": "lesson: 게시 200",
       "pass": true,
-      "versionId": "68299590-23ea-4951-8ceb-f266623dfbec",
+      "versionId": "601d0fd6-a881-41c2-af57-dd44d7ad1e64",
       "number": 1,
-      "publishedAt": "2026-11-18T18:51:26.349Z",
+      "publishedAt": "2026-11-18T19:05:06.824Z",
       "pages": [
         "/",
         "/privacy"
@@ -91,7 +91,7 @@
     {
       "name": "field: 사이트 생성 201",
       "pass": true,
-      "hostname": "sangkwae-mwmh98y6.localhost"
+      "hostname": "sangkwae-mwmhqu07.localhost"
     },
     {
       "name": "field: 저장된 설정은 v2",
@@ -108,9 +108,9 @@
     {
       "name": "field: 게시 200",
       "pass": true,
-      "versionId": "7d1519fb-3c7c-4244-a65a-9a552820a802",
+      "versionId": "490c30cc-f716-4956-9807-049163105d8e",
       "number": 1,
-      "publishedAt": "2026-11-18T18:51:26.540Z",
+      "publishedAt": "2026-11-18T19:05:07.024Z",
       "pages": [
         "/",
         "/privacy"
@@ -136,7 +136,7 @@
       "name": "프리뷰: 하이드레이션 오류 없음, 링크가 프리뷰 안, 문의 전송 차단",
       "pass": true,
       "errors": [],
-      "privacyHref": "/preview/cdb26c07dafc4adc9931827183cc6778/privacy",
+      "privacyHref": "/preview/3b93263f4d6c4e7eb22d8948b517c07c/privacy",
       "blocked": "프리뷰에서는 문의가 전송되지 않습니다."
     },
     {
@@ -182,9 +182,9 @@
       "accessibility": 100,
       "bestPractices": 96,
       "seo": 92,
-      "lcpMs": 2263,
+      "lcpMs": 1966,
       "cls": 0,
-      "tbtMs": 4
+      "tbtMs": 5
     },
     {
       "name": "lesson: Lighthouse SEO 90 이상, 접근성 90 이상",
@@ -193,31 +193,31 @@
       "accessibility": 100,
       "bestPractices": 96,
       "seo": 92,
-      "lcpMs": 2263,
+      "lcpMs": 1966,
       "cls": 0,
-      "tbtMs": 4
+      "tbtMs": 5
     },
     {
       "name": "field: Lighthouse 모바일 성능 90 이상, LCP 2.5초 이하",
       "pass": true,
-      "performance": 99,
+      "performance": 100,
       "accessibility": 100,
       "bestPractices": 96,
       "seo": 92,
-      "lcpMs": 1967,
+      "lcpMs": 1858,
       "cls": 0,
-      "tbtMs": 2
+      "tbtMs": 49
     },
     {
       "name": "field: Lighthouse SEO 90 이상, 접근성 90 이상",
       "pass": true,
-      "performance": 99,
+      "performance": 100,
       "accessibility": 100,
       "bestPractices": 96,
       "seo": 92,
-      "lcpMs": 1967,
+      "lcpMs": 1858,
       "cls": 0,
-      "tbtMs": 2
+      "tbtMs": 49
     }
   ]
 }

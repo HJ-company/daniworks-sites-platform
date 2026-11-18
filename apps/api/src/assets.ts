@@ -4,6 +4,7 @@ import { HttpError } from "./http.js";
 import { r2MediaKey } from "./keys.js";
 import { sha256Hex } from "./hash.js";
 import { MAX_INPUT_BYTES, processPhotoExclusive } from "./media.js";
+import { normalizeNaverImage } from "./remote-image.js";
 import type { SiteRow } from "./store.js";
 
 export interface AssetResult {
@@ -55,7 +56,7 @@ async function readUpload(request: Request): Promise<{ bytes: Uint8Array; name: 
     const url = body?.url;
     if (!url || !/^https:\/\/[^\s]+$/.test(url)) throw new HttpError(400, "url은 https:// 주소여야 합니다");
     // No Referer: Naver blog images refuse foreign referrers but serve requests without one.
-    const res = await fetch(url, { redirect: "follow", headers: { accept: "image/*" } });
+    const res = await fetch(normalizeNaverImage(url), { redirect: "follow", headers: { accept: "image/*" } });
     if (!res.ok) throw new HttpError(422, `사진을 가져오지 못했습니다 (${res.status})`);
     return { bytes: await readLimited(res.body), name: url };
   }

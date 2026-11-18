@@ -42,6 +42,9 @@ export const serviceLocalGuide = `# service-local 템플릿 작성 지침
 
 - 사진이 없으면 t:<샘플> 키를 임시로 쓰고, 시안 단계에서 고객 사진으로 바꾼다.
 - 업로드 사진은 asset_upload 결과의 key·width·height를 그대로 넣는다.
+- asset_upload는 사이트가 있어야 쓸 수 있다. 샘플 사진으로 site_create 한 뒤 사진을 올리고 site_update_draft로 바꾼다.
+- 네이버 블로그 RSS의 썸네일 URL(blogthumb.pstatic.net, 365px)은 그대로 넘기면 된다. 원본 크기(약 900px)로 바꿔 받는다.
+- 블로그 사진은 900px 안팎이라 히어로에는 작다. 고객에게 원본을 받을 항목으로 보고한다.
 - alt는 사진 내용을 설명한다('주방 후드 청소 전후'). 키워드를 나열하지 않는다.
 
 ## 5. 검증
