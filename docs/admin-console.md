@@ -71,12 +71,37 @@ product: 스타터 홈페이지
 
 - 콘솔 로그인은 Authentik OIDC(Authorization Code + PKCE)다. 운영자 계정은 Authentik에서 관리하고 콘솔에는 두지 않는다.
 - API는 Authentik 액세스 토큰을 JWKS로 검증해 운영자를 식별한다. 게시·롤백·입금 확인 기록에 운영자 ID를 남긴다.
-- MCP 서버(Claude/ChatGPT 원격 커넥터)도 Authentik OAuth로 인증한다. 커넥터를 추가하면 Authentik 로그인 창이 뜨고, MCP 서버는 받은 액세스 토큰을 JWKS로 검증한다.
-- MCP 서버는 보호 리소스 메타데이터(`/.well-known/oauth-protected-resource`)로 Authentik을 인가 서버로 알린다.
-- 권한은 Authentik 그룹으로 나눈다. `operator` 그룹은 전체, 이후 셀프서비스 고객은 `customer` 그룹 + customer_id 클레임으로 본인 사이트만 접근한다. 도구는 하나로 둔다.
 - 스크립트용 고정 토큰(`ADMIN_TOKEN`)은 배포·공용 에셋 업로드 등 사람이 없는 작업에만 쓴다.
-- 확인할 것: Claude·ChatGPT 커넥터가 요구하는 클라이언트 등록 방식(동적 등록 또는 사전 등록 client ID)과 Authentik 지원 범위. M2 착수 전에 실측한다.
 - `*.dsites.daniworks.kr`은 2단계 와일드카드라 Cloudflare 기본 인증서(Universal SSL, `*.daniworks.kr`까지만)로 덮이지 않는다. Advanced Certificate Manager(월 $10)가 필요하다.
+
+### MCP 인증
+
+daniworks-home `apps/mcp-gateway`([운영 문서](https://github.com/HJ-company/daniworks-home/blob/main/docs/operations/mcp-gateway.md))와 같은 Authentik 설정을 쓴다.
+
+| 항목 | 값 |
+| --- | --- |
+| Authentik provider | 전용 OAuth2/OIDC provider. Confidential client, Authorization Code + PKCE S256, 액세스 토큰 JWT RS256 |
+| 클라이언트 등록 | 사전 등록 client 하나를 Claude·ChatGPT가 같이 쓴다. 동적 등록은 쓰지 않는다 |
+| 콜백 | Claude `https://claude.ai/api/mcp/auth_callback`, ChatGPT `https://chatgpt.com/connector_platform_oauth_redirect`, mcp-inspector `http://localhost:6274/oauth/callback`(실측용). 와일드카드 금지, 연결 시 각 UI에서 재확인 |
+| 토큰 검증 | JWKS 서명, issuer, `aud`=client_id 고정, `exp` 필수 |
+| 메타데이터 | `/.well-known/oauth-protected-resource`, `/.well-known/oauth-protected-resource/mcp`. 인증 실패 시 401 + `WWW-Authenticate: Bearer resource_metadata=…` |
+| 클레임 | Authentik scope mapping으로 `groups`를 넣는다. 셀프서비스 때 customer_id 추가 |
+
+daniworks-home과 다른 점: **프록시를 두지 않는다.** 게이트웨이는 검증 후 토큰을 Strapi admin 토큰으로 바꿔 모든 사용자가 같은 권한이 된다. 이 플랫폼은 감사 기록과 고객별 권한이 필요하므로 MCP 서버를 `apps/api` Worker 안에 두고 JWT를 직접 검증한다(jose). 검증한 `sub`·`groups`로 권한을 판단하고 `audit_log`에 남긴다.
+
+권한은 Authentik 그룹으로 나눈다. `operator`는 전체, 셀프서비스 고객은 `customer` 그룹 + customer_id 클레임으로 본인 사이트만 접근한다. 도구는 하나로 둔다.
+
+M2 실측(mcp-inspector로 먼저, 이후 Claude·ChatGPT 실제 커넥터):
+
+| 항목 | 결과 |
+| --- | --- |
+| 메타데이터 탐색 → Authentik 로그인 → 토큰 발급 | 미실행 |
+| Authentik 인가 서버 discovery(RFC8414 또는 OIDC fallback) | 미실행 |
+| 토큰 `aud`·`groups` 클레임 | 미실행 |
+| 도구 목록·호출, 그룹별 거절 | 미실행 |
+| 세션 유지, 만료 후 갱신·재로그인 | 미실행 |
+| Claude 커넥터 연결 | 미실행 |
+| ChatGPT 커넥터 연결(Developer mode 가능 여부 포함) | 미실행 |
 
 ## 5. 메뉴와 화면
 
@@ -130,7 +155,7 @@ product: 스타터 홈페이지
 
 | 단계 | 범위 |
 | --- | --- |
-| M2 | MCP 서버 + Authentik OAuth, MCP 도구(고객·사이트 생성, draft 저장, 사진, 시안 링크), 게시 시 결제 검사, 콘솔: 로그인, 사이트 상세(개요·버전), 입금 확인, 고객 상세 |
+| M2 | MCP 서버 + Authentik OAuth(실측 표 완료), MCP 도구(고객·사이트 생성, draft 저장, 사진, 시안 링크), 게시 시 결제 검사, 콘솔: 로그인, 사이트 상세(개요·버전), 입금 확인, 고객 상세 |
 | M3 | 홈(오늘 할 일), 도메인 관제, 연체 처리, 리포트, 통계 |
 | 셀프서비스 | Authentik 고객 그룹·가입, 고객 콘솔, PG |
 
