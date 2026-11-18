@@ -7,9 +7,11 @@ export const kstDay = (at: Date) => new Date(at.getTime() + 9 * 3600_000).toISOS
 export async function bumpMetric(db: D1Database, siteId: string, event: MetricEvent, at = new Date()) {
   await db
     .prepare(
-      "INSERT INTO metrics_daily (site_id, date, event, count) VALUES (?, ?, ?, 1) ON CONFLICT (site_id, date, event) DO UPDATE SET count = count + 1",
+      `INSERT INTO metrics_daily (site_id, date, event, count)
+       SELECT ?, ?, ?, 1 WHERE EXISTS (SELECT 1 FROM sites WHERE id = ? AND purging_at IS NULL)
+       ON CONFLICT (site_id, date, event) DO UPDATE SET count = count + 1`,
     )
-    .bind(siteId, kstDay(at), event)
+    .bind(siteId, kstDay(at), event, siteId)
     .run();
 }
 

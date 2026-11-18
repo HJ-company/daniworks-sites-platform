@@ -17,13 +17,14 @@ export async function syncBlogFeed(env: Env, siteId: string, config: { business?
   // Another blog's posts must never show under this link: drop the cache when the URL changes.
   const previous = await env.DB.prepare("SELECT blog_url FROM blog_feeds WHERE site_id = ?").bind(siteId).first<{ blog_url: string }>();
   if (previous && previous.blog_url !== blogUrl) await env.ROUTES.delete(kvBlogKey(siteId));
-  // A new or changed URL is due immediately (fetched_at NULL).
+  // A new or changed URL is due immediately (fetched_at NULL). Never for a cancelled site.
   await env.DB.prepare(
-    `INSERT INTO blog_feeds (site_id, blog_url) VALUES (?, ?)
+    `INSERT INTO blog_feeds (site_id, blog_url)
+     SELECT ?, ? WHERE EXISTS (SELECT 1 FROM sites WHERE id = ? AND cancelled_at IS NULL)
      ON CONFLICT (site_id) DO UPDATE SET blog_url = excluded.blog_url,
        fetched_at = CASE WHEN blog_feeds.blog_url = excluded.blog_url THEN blog_feeds.fetched_at ELSE NULL END`,
   )
-    .bind(siteId, blogUrl)
+    .bind(siteId, blogUrl, siteId)
     .run();
 }
 

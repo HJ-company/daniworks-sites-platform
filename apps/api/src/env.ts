@@ -24,6 +24,8 @@ export interface Env {
   DOMAIN_CNAME_TARGET?: string;
   /** Naver blog RSS base (`https://rss.blog.naver.com`); Docker points it at fixtures. */
   BLOG_RSS_BASE?: string;
+  /** Days a cancelled site's data is kept before an operator may purge it (default 90). */
+  RETENTION_DAYS?: string;
   /** Pepper for hashing visitor IPs (rate limiting without storing addresses). */
   HASH_PEPPER?: string;
 }

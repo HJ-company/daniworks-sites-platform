@@ -16,6 +16,7 @@ const steps = [
   ["m3-blog", "verify-m3-blog.mjs"],
   ["m3-reports", "verify-m3-reports.mjs"],
   ["m3-republish", "verify-m3-republish.mjs"],
+  ["m3-lifecycle", "verify-m3-lifecycle.mjs"],
 ];
 const only = process.argv.slice(2);
 const summary = [];
@@ -36,7 +37,7 @@ for (const [step, script] of steps) {
   const ok = run.status === 0;
   summary.push({ step, ok, passed: results.length - failed.length, total: results.length, seconds: Math.round((Date.now() - started) / 1000), failed });
   console.log(`${ok ? "PASS" : "FAIL"} ${step} ${results.length - failed.length}/${results.length}${failed.length ? ` — ${failed.join("; ")}` : ""}`);
-  if (!ok) console.log(run.stdout.slice(-1500), run.stderr.slice(-1500));
+  if (!ok) console.log(`--- stdout (tail)\n${run.stdout.slice(-800)}\n--- stderr\n${run.stderr.slice(-3000)}\n--- exit ${run.status} signal ${run.signal}`);
 }
 writeFileSync("evidence/verify-all.json", JSON.stringify({ at: new Date().toISOString(), summary }, null, 2));
 const total = summary.reduce((n, s) => n + s.total, 0);

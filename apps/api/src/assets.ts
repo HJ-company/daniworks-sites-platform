@@ -5,6 +5,7 @@ import { r2MediaKey } from "./keys.js";
 import { sha256Hex } from "./hash.js";
 import { MAX_INPUT_BYTES, processPhotoExclusive } from "./media.js";
 import { normalizeNaverImage } from "./remote-image.js";
+import { ensureNotPurged } from "./purge-guard.js";
 import { readLimited } from "./stream.js";
 import type { SiteRow } from "./store.js";
 
@@ -44,6 +45,7 @@ async function readUpload(request: Request): Promise<{ bytes: Uint8Array; name: 
  * `assets`. Content-addressed by the input bytes, so the same upload returns the same key.
  */
 export async function uploadAsset(env: Env, site: SiteRow, request: Request): Promise<AssetResult> {
+  if (site.cancelled_at) throw new HttpError(409, "해지된 사이트에는 사진을 올릴 수 없습니다");
   const { bytes, name } = await readUpload(request);
   const hash = await sha256Hex(bytes);
   const file = `${hash}.jpg`;
@@ -57,16 +59,21 @@ export async function uploadAsset(env: Env, site: SiteRow, request: Request): Pr
 
   const photo = await processPhotoExclusive(bytes);
   const meta = { httpMetadata: { contentType: "image/jpeg", cacheControl: "public, max-age=31536000, immutable" } };
-  await env.SITES.put(r2MediaKey(site.id, file), photo.main, meta);
+  const written = [r2MediaKey(site.id, file)];
+  await env.SITES.put(written[0]!, photo.main, meta);
   for (const variant of photo.variants) {
-    await env.SITES.put(r2MediaKey(site.id, variantUrl(file, variant.width)), variant.bytes, {
+    const key = r2MediaKey(site.id, variantUrl(file, variant.width));
+    written.push(key);
+    await env.SITES.put(key, variant.bytes, {
       httpMetadata: { contentType: "image/webp", cacheControl: "public, max-age=31536000, immutable" },
     });
   }
+  await ensureNotPurged(env, site.id, written);
   await env.DB.prepare(
-    "INSERT OR IGNORE INTO assets (key, site_id, r2_key, mime, width, height, bytes, original_name, created_at) VALUES (?, ?, ?, 'image/jpeg', ?, ?, ?, ?, ?)",
+    `INSERT OR IGNORE INTO assets (key, site_id, r2_key, mime, width, height, bytes, original_name, created_at)
+     SELECT ?, ?, ?, 'image/jpeg', ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM sites WHERE id = ? AND purging_at IS NULL)`,
   )
-    .bind(key, site.id, r2MediaKey(site.id, file), photo.width, photo.height, photo.main.byteLength, name, new Date().toISOString())
+    .bind(key, site.id, r2MediaKey(site.id, file), photo.width, photo.height, photo.main.byteLength, name, new Date().toISOString(), site.id)
     .run();
   return { key, url, width: photo.width, height: photo.height, bytes: photo.main.byteLength };
 }

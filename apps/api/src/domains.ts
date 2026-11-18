@@ -96,6 +96,7 @@ export async function listDomains(env: Env, siteId: string) {
 }
 
 export async function addDomain(env: Env, site: SiteRow, input: unknown) {
+  if (site.cancelled_at) throw new HttpError(409, "해지된 사이트에는 도메인을 연결할 수 없습니다");
   const hostname = normalizeHostname(input, env.BASE_DOMAIN);
   const taken = await env.DB.prepare("SELECT site_id FROM domains WHERE hostname = ?").bind(hostname).first<{ site_id: string }>();
   if (taken) throw new HttpError(409, taken.site_id === site.id ? "이미 연결 중인 도메인입니다" : "다른 사이트가 쓰는 도메인입니다");
@@ -103,13 +104,16 @@ export async function addDomain(env: Env, site: SiteRow, input: unknown) {
   const cf = await saas.create(hostname);
   const records = instructions(env, hostname, cf);
   try {
-    await env.DB.prepare(
-      "INSERT INTO domains (hostname, site_id, kind, status, cf_hostname_id, ssl_status, verification_records, created_at) VALUES (?, ?, 'custom', 'pending', ?, ?, ?, ?)",
+    // Only for a site that is not cancelled (also when cancellation lands meanwhile).
+    const inserted = await env.DB.prepare(
+      `INSERT INTO domains (hostname, site_id, kind, status, cf_hostname_id, ssl_status, verification_records, created_at)
+       SELECT ?, ?, 'custom', 'pending', ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM sites WHERE id = ? AND cancelled_at IS NULL)`,
     )
-      .bind(hostname, site.id, cf.id, cf.ssl?.status ?? null, JSON.stringify(records), now())
+      .bind(hostname, site.id, cf.id, cf.ssl?.status ?? null, JSON.stringify(records), now(), site.id)
       .run();
+    if (inserted.meta.changes !== 1) throw new HttpError(409, "해지된 사이트에는 도메인을 연결할 수 없습니다");
   } catch (error) {
-    // Lost a race for the same hostname: do not leave a billed hostname behind.
+    // Lost a race (same hostname, or cancellation): do not leave a billed hostname behind.
     await saas.delete(cf.id);
     throw error;
   }

@@ -15,6 +15,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { api, kst, type SiteRow, type VersionRow } from "../../api.js";
 import { ErrorAlert, useToast } from "../../ui.js";
+import { LifecycleCard } from "./LifecycleCard.js";
 
 const CREATOR: Record<string, string> = { ai: "AI", operator: "운영자", customer: "고객" };
 
@@ -59,7 +60,7 @@ export function OverviewTab({ siteId, site, versions }: { siteId: string; site: 
             저장
           </Button>
           <Stack direction="row" sx={{ flex: 1, justifyContent: "flex-end" }}>
-            {site.status === "active" ? (
+            {site.cancelled_at ? null : site.status === "active" ? (
               <Button color="warning" onClick={() => action.mutate({ path: "suspend", done: "공개를 정지했습니다" })}>
                 공개 정지
               </Button>
@@ -71,6 +72,7 @@ export function OverviewTab({ siteId, site, versions }: { siteId: string; site: 
           </Stack>
         </Stack>
       </Paper>
+      <LifecycleCard siteId={siteId} site={site} />
       <Paper>
         <Typography variant="subtitle1" sx={{ fontWeight: 700, p: 2, pb: 0 }}>
           버전

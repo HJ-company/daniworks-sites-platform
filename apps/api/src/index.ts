@@ -11,6 +11,7 @@ import { addDomain, auditOrigins, domainQuota, listDomains, maintainDomains, ref
 import { handleMcp } from "./mcp.js";
 import { assetBase, publish, rollback, siteOrigin } from "./publish.js";
 import { auditHostRecords, reconcileHostRecords, syncHostRecordsNow } from "./routes.js";
+import { cancelSite, exportSite, listCancellations, purgeSite, reactivateSite } from "./lifecycle.js";
 import { commitRepublish, republishPlan, stagedPage, stageRepublish } from "./republish.js";
 import { addDraft, configFromBody, createSiteFromInput, creator, previewUrl } from "./sites.js";
 import { getSite, listSites, listVersions, setSiteStatus, versionByPreviewToken, type CreatedBy } from "./store.js";
@@ -108,6 +109,9 @@ async function handle(request: Request, env: Env): Promise<Response> {
     return stagedPage(env, parts[1]!, parts[2]!, parts[3] ?? "");
   }
 
+  // GET /cancellations: cancelled sites with the date each may be purged.
+  if (method === "GET" && url.pathname === "/cancellations") return json({ cancellations: await listCancellations(env) });
+
   // GET /domains/quota: custom hostnames on the zone vs. the 100 included.
   if (method === "GET" && url.pathname === "/domains/quota") return json(await domainQuota(env));
 
@@ -157,6 +161,20 @@ async function handle(request: Request, env: Env): Promise<Response> {
       return json({ hostname, status: await refreshDomain(env, row) });
     }
     if (method === "DELETE" && parts.length === 4) return json(await removeDomain(env, site.id, hostname));
+  }
+
+  // Lifecycle: POST /cancel, /reactivate, /purge {confirmSlug}; GET /export.zip
+  if (method === "POST" && parts.length === 3 && parts[2] === "cancel") return json(await cancelSite(env, site));
+  if (method === "POST" && parts.length === 3 && parts[2] === "reactivate") return json(await reactivateSite(env, site));
+  if (method === "POST" && parts.length === 3 && parts[2] === "purge") {
+    const body = await readJson<{ confirmSlug?: unknown }>(request);
+    return json(await purgeSite(env, site, body.confirmSlug));
+  }
+  if (method === "GET" && parts.length === 3 && parts[2] === "export.zip") {
+    const { filename, body } = await exportSite(env, site.id);
+    return new Response(body, {
+      headers: { "content-type": "application/zip", "content-disposition": `attachment; filename="${filename}"`, "cache-control": "no-store" },
+    });
   }
 
   // POST /sites/:id/republish/stage | /republish/commit {renderId}

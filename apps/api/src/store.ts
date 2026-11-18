@@ -106,14 +106,17 @@ export async function addVersion(
   const latest = await latestVersion(db, site.id);
   const versionId = crypto.randomUUID();
   const at = now();
-  await db.batch([
+  const [inserted] = await db.batch([
     db
       .prepare(
-        "INSERT INTO site_versions (id, site_id, number, config, created_by, note, preview_token, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        // Never into a site being purged (its rows are being deleted).
+        `INSERT INTO site_versions (id, site_id, number, config, created_by, note, preview_token, created_at)
+         SELECT ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM sites WHERE id = ? AND purging_at IS NULL)`,
       )
-      .bind(versionId, site.id, latest.number + 1, JSON.stringify(config), createdBy, note, token(), at),
+      .bind(versionId, site.id, latest.number + 1, JSON.stringify(config), createdBy, note, token(), at, site.id),
     db.prepare("UPDATE sites SET updated_at = ? WHERE id = ?").bind(at, site.id),
   ]);
+  if (inserted?.meta.changes !== 1) throw new HttpError(409, "삭제 중인 사이트입니다");
   return { versionId, number: latest.number + 1 };
 }
 
@@ -128,18 +131,24 @@ export async function markRendered(db: D1Database, versionId: string, assetVersi
     .run();
 }
 
+/**
+ * Moves the publish pointer in D1. Refused (409) if the site was cancelled meanwhile: the
+ * check is part of the same statements, not the caller's earlier snapshot.
+ */
 export async function markPublished(db: D1Database, siteId: string, versionId: string, templateVersion: string) {
   const at = now();
-  await db.batch([
+  const live = "EXISTS (SELECT 1 FROM sites WHERE id = ? AND cancelled_at IS NULL)";
+  const [, pointed] = await db.batch([
     db
-      .prepare("UPDATE site_versions SET first_published_at = COALESCE(first_published_at, ?) WHERE id = ?")
-      .bind(at, versionId),
+      .prepare(`UPDATE site_versions SET first_published_at = COALESCE(first_published_at, ?) WHERE id = ? AND ${live}`)
+      .bind(at, versionId, siteId),
     db
       .prepare(
-        "UPDATE sites SET published_version_id = ?, published_at = ?, template_version = ?, updated_at = ? WHERE id = ?",
+        "UPDATE sites SET published_version_id = ?, published_at = ?, template_version = ?, updated_at = ? WHERE id = ? AND cancelled_at IS NULL",
       )
       .bind(versionId, at, templateVersion, at, siteId),
   ]);
+  if (pointed?.meta.changes !== 1) throw new HttpError(409, "해지된 사이트입니다. 먼저 해지를 취소하세요");
   return at;
 }
 

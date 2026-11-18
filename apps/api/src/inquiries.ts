@@ -92,12 +92,14 @@ export async function submitInquiry(
     `INSERT INTO inquiries (id, site_id, name, phone, message, page, client_hash, notify_status, created_at)
      SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?
      WHERE (? IS NULL OR (SELECT COUNT(*) FROM inquiries WHERE client_hash = ? AND created_at >= ?) < ?)
-       AND (SELECT COUNT(*) FROM inquiries WHERE site_id = ? AND created_at >= ?) < ?`,
+       AND (SELECT COUNT(*) FROM inquiries WHERE site_id = ? AND created_at >= ?) < ?
+       AND EXISTS (SELECT 1 FROM sites WHERE id = ? AND cancelled_at IS NULL AND purging_at IS NULL)`,
   )
     .bind(
       id, site.id, input.name, input.phone, input.message, input.page ?? null, clientHash, notify, createdAt,
       clientHash, clientHash, windowStart, LIMITS.perClient,
       site.id, dayStart, LIMITS.perSiteDay,
+      site.id,
     )
     .run();
   if (inserted.meta.changes !== 1) {

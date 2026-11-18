@@ -3,6 +3,7 @@ import type { Env } from "./env.js";
 import { HttpError } from "./http.js";
 import { kvSiteKey, r2PageKey, r2SharedKey, type PublishedPointer } from "./keys.js";
 import { syncBlogFeed } from "./blog.js";
+import { ensureNotPurged } from "./purge-guard.js";
 import { routesOf, syncHostRecordsNow } from "./routes.js";
 import {
   getSite,
@@ -47,11 +48,14 @@ export async function renderToR2(env: Env, version: VersionRow, origin: string) 
   await requireSharedAssets(env);
   const { pages } = await renderSite(config, { assetBase: assetBase(), origin, turnstileFrame: turnstileFrameUrl(env) });
   const renderId = crypto.randomUUID().replace(/-/g, "").slice(0, 16);
+  const written: string[] = [];
   for (const page of pages) {
-    await env.SITES.put(r2PageKey(version.site_id, version.id, page.path, renderId), page.html, {
-      httpMetadata: { contentType: "text/html; charset=utf-8" },
-    });
+    const key = r2PageKey(version.site_id, version.id, page.path, renderId);
+    written.push(key);
+    await env.SITES.put(key, page.html, { httpMetadata: { contentType: "text/html; charset=utf-8" } });
   }
+  // Any render (publish, rollback, domain maintenance, republish) cleans up if a purge started.
+  await ensureNotPurged(env, version.site_id, written);
   return { renderId, renderKey: renderKeyOf(env, origin), routes: pages.map((page) => page.route) };
 }
 
@@ -84,6 +88,7 @@ async function pointTo(env: Env, site: SiteRow, version: VersionRow, pages: stri
 
 /** Publish = render (if needed) → R2 → move the KV pointer. Visible worldwide within about a minute. */
 export async function publish(env: Env, site: SiteRow, versionId?: string) {
+  if (site.cancelled_at) throw new HttpError(409, "해지된 사이트입니다. 먼저 해지를 취소하세요");
   await requireSharedAssets(env);
   const version = versionId ? await getVersion(env.DB, site.id, versionId) : await latestVersion(env.DB, site.id);
   const pages = await ensureRendered(env, version, await siteOrigin(env, site));
@@ -96,6 +101,7 @@ export async function publish(env: Env, site: SiteRow, versionId?: string) {
  * then only its HTML is re-rendered so canonical and OG URLs point at the current host.
  */
 export async function rollback(env: Env, site: SiteRow, versionId: string) {
+  if (site.cancelled_at) throw new HttpError(409, "해지된 사이트입니다. 먼저 해지를 취소하세요");
   const version = await getVersion(env.DB, site.id, versionId);
   if (!version.first_published_at) throw new HttpError(409, "게시된 적 없는 버전으로는 롤백할 수 없습니다");
   const exists = await env.SITES.head(r2PageKey(site.id, version.id, "index.html", version.render_id));

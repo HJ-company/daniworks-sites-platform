@@ -14,6 +14,7 @@
     "@modelcontextprotocol/server": "2.4.0",
     "@sites/renderer": "workspace:*",
     "@sites/schema": "workspace:*",
+    "fflate": "0.8.3",
     "zod": "4.6.7"
   },
   "devDependencies": {

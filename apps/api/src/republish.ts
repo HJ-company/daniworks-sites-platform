@@ -35,13 +35,16 @@ export async function republishPlan(env: Env) {
 /** Renders the live version with the current renderer under a new render_id. Not served. */
 export async function stageRepublish(env: Env, siteId: string) {
   const site = await getSite(env.DB, siteId);
+  if (site.cancelled_at) throw new HttpError(409, "해지된 사이트입니다");
   if (!site.published_version_id) throw new HttpError(409, "게시된 버전이 없습니다");
   const version = await getVersion(env.DB, siteId, site.published_version_id);
+  // renderToR2 itself refuses (and cleans up) if the site is being purged.
   const render = await renderToR2(env, version, await siteOrigin(env, site));
   await env.DB.prepare(
-    "INSERT INTO staged_renders (render_id, site_id, version_id, render_key, asset_version, base_render_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    `INSERT INTO staged_renders (render_id, site_id, version_id, render_key, asset_version, base_render_id, created_at)
+     SELECT ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM sites WHERE id = ? AND purging_at IS NULL)`,
   )
-    .bind(render.renderId, siteId, version.id, render.renderKey, RENDER_VERSION, version.render_id, new Date().toISOString())
+    .bind(render.renderId, siteId, version.id, render.renderKey, RENDER_VERSION, version.render_id, new Date().toISOString(), siteId)
     .run();
   return {
     siteId,
