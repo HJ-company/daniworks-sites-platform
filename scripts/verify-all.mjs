@@ -17,6 +17,7 @@ const steps = [
   ["m3-reports", "verify-m3-reports.mjs"],
   ["m3-republish", "verify-m3-republish.mjs"],
   ["m3-lifecycle", "verify-m3-lifecycle.mjs"],
+  ["m3-handoff", "verify-m3-handoff.mjs"],
 ];
 const only = process.argv.slice(2);
 const summary = [];

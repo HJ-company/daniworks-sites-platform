@@ -3,7 +3,7 @@ export { toPageData, toSitePages, requireValidConfig, SiteConfigError, BUILDER_V
 export type { SiteConfig, SiteConfigInput, LegacySiteConfig } from "./site-config.js";
 export { isServiceConfig } from "./site-config.js";
 export type { PageData, SiteChrome } from "./view.js";
-export { parseSiteConfig, validateSiteConfig } from "./validate.js";
+export { HOST_COMPOSITION, parseSiteConfig, validateSiteConfig } from "./validate.js";
 export { allowedPickerIcons } from "./icons/allowlist.js";
 export { ASSET_VERSION, RENDER_VERSION } from "./generated/asset-version.js";
 export { compileServiceSeed, SAMPLE_PHOTOS, mediaPath } from "./templates/service-local/compile.js";

@@ -8,6 +8,7 @@ import type { Env } from "./env.js";
 import { HttpError, json, readJson, requireAdmin } from "./http.js";
 import { MEDIA_PATH, r2MediaKey, r2SharedKey } from "./keys.js";
 import { addDomain, auditOrigins, domainQuota, listDomains, maintainDomains, refreshDomain, removeDomain, type DomainRow } from "./domains.js";
+import { templateSeedExport } from "./handoff.js";
 import { handleMcp } from "./mcp.js";
 import { assetBase, publish, rollback, siteOrigin } from "./publish.js";
 import { auditHostRecords, reconcileHostRecords, syncHostRecordsNow } from "./routes.js";
@@ -161,6 +162,11 @@ async function handle(request: Request, env: Env): Promise<Response> {
       return json({ hostname, status: await refreshDomain(env, row) });
     }
     if (method === "DELETE" && parts.length === 4) return json(await removeDomain(env, site.id, hostname));
+  }
+
+  // GET /sites/:id/template-seed[?versionId=]: content for the AI homepage importer
+  if (method === "GET" && parts.length === 3 && parts[2] === "template-seed") {
+    return json(await templateSeedExport(env, site.id, url.searchParams.get("versionId") ?? undefined));
   }
 
   // Lifecycle: POST /cancel, /reactivate, /purge {confirmSlug}; GET /export.zip

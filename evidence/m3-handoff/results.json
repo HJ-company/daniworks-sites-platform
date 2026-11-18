@@ -1,0 +1,44 @@
+{
+  "siteId": "953989b7-4471-4e59-8005-bd97ce6f8083",
+  "results": [
+    {
+      "name": "게시 전에는 versionId 없이 409",
+      "pass": true
+    },
+    {
+      "name": "형식·선택 정보·출처",
+      "pass": true
+    },
+    {
+      "name": "빌더 seed 계약 검증 통과(importer와 같은 검사)",
+      "pass": true,
+      "errors": []
+    },
+    {
+      "name": "페이지: 홈과 개인정보처리방침, 상호",
+      "pass": true
+    },
+    {
+      "name": "업로드 사진은 절대 URL이고 내려받아짐",
+      "pass": true
+    },
+    {
+      "name": "versionId로 예전 버전도 내보냄",
+      "pass": true
+    },
+    {
+      "name": "프로젝트에 seed.json(seed+colors)과 자산 파일명 일치, 이전 자산 정리",
+      "pass": true,
+      "log": "handoff-mwmo68l0 v2 → /tmp/aihome-Udn61q/template-data: 2 pages, 3 assets, palette pine\n다음: 새 CMS에서 pnpm --filter cms template:import",
+      "files": [
+        "8ec72a052fbe41f51efd.jpg",
+        "clay-shelves.jpg",
+        "pine-breakfast.jpg"
+      ]
+    },
+    {
+      "name": "프로젝트에 쓴 seed도 계약 검증 통과",
+      "pass": true
+    }
+  ]
+}
