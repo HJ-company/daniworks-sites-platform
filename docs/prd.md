@@ -40,18 +40,20 @@ policy: https://app.notion.com/p/41cecd5a3ac28107820effaeb6cb4fc8
 
 | 사용자 | 하는 일 | 접점 |
 | --- | --- | --- |
-| 운영자(다니웍스) | 시안 검수, 게시, 수정 요청 처리, 도메인 문제 대응 | 내부 어드민 API, AI 도구 |
+| 운영자(다니웍스) | 사이트 제작, 시안 검수, 게시, 입금 확인, 도메인 문제 대응 | Claude/ChatGPT + MCP 도구, [관리자 콘솔](admin-console.md) |
 | AI 에이전트 | 자료 수집 결과로 설정 초안 작성, 수정 요청 반영 | MCP 도구(플랫폼 API) |
 | 고객(사장님) | 시안 확인, 도메인 연결, 문의 확인, 리포트 열람, 수정 요청 | 시안 링크, 고객 콘솔 |
 | 방문자 | 사이트 열람, 전화·카톡·지도·문의 | 공개 사이트 |
 
 ### 제작 흐름
 
+리드는 외부(노션 등)에서 관리한다. 세부 흐름과 콘솔 화면은 [관리자 콘솔](admin-console.md)을 따른다.
+
 1. 수집: 자가진단 리드 데이터 + geo-prove 결과 + 블로그·플레이스·인스타 URL
-2. 초안: AI가 업종 템플릿을 고르고 사이트 설정을 작성해 `draft` 버전으로 저장
+2. 초안: 운영자가 Claude/ChatGPT에서 MCP 도구로 고객·사이트를 만들고 설정을 `draft` 버전으로 저장
 3. 검수: 스키마 검증 통과 후 운영자가 프리뷰 URL에서 확인·수정
-4. 시안: 프리뷰 링크를 카톡으로 발송
-5. 오픈: 결제 확인 후 게시. `<slug>.dsites.co.kr`로 즉시 공개
+4. 시안: 사이트 시안 링크를 카톡으로 발송
+5. 오픈: 입금 확인 후 게시. `<slug>.dsites.daniworks.kr`로 즉시 공개. 결제 전 게시는 예외 없이 막는다
 6. 도메인: 고객이 콘솔에서 커스텀 도메인 등록 → DNS 안내 → 연결 확인
 7. 운영: 카톡 수정 요청을 AI가 `draft`로 반영 → 운영자 검수 → 게시
 
@@ -62,7 +64,7 @@ policy: https://app.notion.com/p/41cecd5a3ac28107820effaeb6cb4fc8
 - 형식: `@dani-builder/site-templates`의 `TemplateSeed` + 플랫폼 메타(연락처, 업종, 도메인, RSS URL 등).
 - 저장 전 `collectSeedValidationErrors`와 플랫폼 스키마로 검증한다. 검증 실패는 저장하지 않는다.
 - 업종 템플릿 4종: 음식점, 시공·설비, 뷰티·서비스, 1인·소규모 B2B.
-- 사진은 R2에 업로드하고 설정에는 키만 저장한다.
+- 사진은 R2에 업로드하고 설정에는 키만 저장한다. AI 생성 이미지는 배경·일러스트에만 쓰고 실제 작업물 사진은 고객 사진만 쓴다. 고객이 요청하면 예외로 생성하고 요청 기록을 남긴다.
 
 ### 4-2. 버전과 게시
 
@@ -71,7 +73,9 @@ policy: https://app.notion.com/p/41cecd5a3ac28107820effaeb6cb4fc8
 - 게시 = 검증 → HTML 렌더 → R2 `sites/<siteId>/<versionId>/` 업로드 → KV 포인터 교체.
 - 롤백 = KV 포인터를 이전 버전으로 교체. 재렌더하지 않는다.
 - KV는 최종적 일관성이라 게시·롤백이 전 세계에 반영되기까지 최대 1분 정도 걸린다. 프리뷰 URL은 KV를 거치지 않고 버전을 직접 읽어, 운영자는 게시 직후 결과를 확인할 수 있다.
-- 프리뷰: `draft` 버전도 렌더해 `preview-<token>.dsites.co.kr`(또는 경로)로 볼 수 있다. 검색엔진 차단.
+- 프리뷰: `draft` 버전도 렌더해 `dsites.daniworks.kr/preview/{token}`으로 볼 수 있다. 검색엔진 차단.
+- 시안 링크는 사이트 단위 토큰으로 항상 최신 draft를 보여준다. 상단 시안 배너, 문의 전송 차단, 클릭 수집 끔. 버전 단위 링크는 내부 검수용이다.
+- 게시는 사이트 구독이 활성일 때만 가능하다. API가 검사하므로 콘솔·MCP 모두 같은 규칙을 따른다.
 
 ### 4-3. 렌더링
 
@@ -82,7 +86,7 @@ policy: https://app.notion.com/p/41cecd5a3ac28107820effaeb6cb4fc8
 
 ### 4-4. 라우팅·도메인
 
-- 기본 도메인: `*.dsites.co.kr` 와일드카드. slug는 사이트 생성 시 확정.
+- 기본 도메인: `*.dsites.daniworks.kr` 와일드카드. slug는 사이트 생성 시 확정. 2단계 와일드카드라 Advanced Certificate Manager(월 $10)가 필요하다.
 - 커스텀 도메인: Cloudflare for SaaS 커스텀 호스트네임. 콘솔에서 등록하면 API로 호스트네임을 만들고, 고객에게 CNAME·TXT 값을 보여주고, 상태를 확인해 표시한다.
 - 루트 도메인(example.com)은 국내 등록업체 대부분이 CNAME/ALIAS를 지원하지 않는 것으로 보인다. 고정 IP로 연결하는 Apex Proxying은 Enterprise 전용이다. 안내 기본값은 `www` CNAME 연결 + 등록업체 루트 포워딩(`customer.kr` → `https://www.customer.kr`).
 - 루트 직접 연결은 고객 DNS가 ALIAS/CNAME 평탄화를 지원하거나 네임서버가 Cloudflare일 때만 허용한다. 이 경우 호스트네임을 2개(루트·www) 쓴다.
@@ -117,19 +121,22 @@ policy: https://app.notion.com/p/41cecd5a3ac28107820effaeb6cb4fc8
 
 ### 4-9. 운영·AI 도구
 
-- 플랫폼 API를 MCP 도구로도 노출: `site_create`, `site_get`, `site_update_draft`, `site_validate`, `site_preview_url`, `site_publish`, `site_rollback`, `asset_upload`.
-- 해지: 공개 중단(라우터에서 차단), 데이터·정적 파일은 보관 후 인출 가능.
+- 사이트 제작은 MCP 도구로 한다. 운영자가 Claude/ChatGPT에서 쓰고, 이후 고객 쪽 에이전트에 붙여 셀프서비스로 쓴다. 도구는 하나로 두고 Authentik 그룹(`operator`/`customer`)으로 접근을 나눈다.
+- MCP 인증: Authentik OAuth. Claude·ChatGPT 원격 커넥터에서 Authentik으로 로그인하고, MCP 서버가 토큰을 JWKS로 검증한다.
+- 도구: `customer_create`, `customer_get`, `site_create`, `site_get`, `site_update_draft`, `site_validate`, `site_preview_url`, `site_publish`, `site_rollback`, `site_preview_link`(사이트 시안 링크 발급·재발급), `guide_list`, `guide_get`, `guide_create`, `guide_update`(제작 지침 문서), `image_generate`(OpenAI), `asset_import_url`, `asset_upload`, `asset_list`, `asset_delete`. 상세는 [관리자 콘솔 5절](admin-console.md#5-mcp-도구).
+- 관리자 콘솔: `dsites-console.daniworks.kr`, Authentik OIDC(`authentik.daniworks.kr`) 로그인. 화면은 [관리자 콘솔](admin-console.md).
+- 해지: 공개 중단(라우터에서 차단), 데이터·정적 파일은 해지일부터 1년 보관하고 그동안 인출 가능. 1년 후 삭제한다. 자동 삭제는 차후 구현하고, 그 전까지는 보관만 한다.
 - AI 홈페이지 전환: 사이트 설정(TemplateSeed)을 Strapi로 가져오는 스크립트. `create-daniworks-app` importer를 고객 seed를 받도록 확장하는 방향.
 
 ## 5. 아키텍처
 
 ```
-[내부 어드민·AI(MCP)] ─┐
-                       ├→ apps/api (Worker) ─→ D1: customers, sites, site_versions, domains, inquiries
+[관리자 콘솔·MCP] ──────┐
+                       ├→ apps/api (Worker) ─→ D1: customers, sites, site_versions, subscriptions, payments, domains, inquiries
 [고객 콘솔] ────────────┘        │
                                 └→ 게시: 검증 → packages/renderer → R2 sites/<id>/<ver>/ → KV 포인터
                                                                               ↓
-방문자 → <slug>.dsites.co.kr | 커스텀 도메인 → apps/router (Worker) → R2
+방문자 → <slug>.dsites.daniworks.kr | 커스텀 도메인 → apps/router (Worker) → R2
                                               └→ /api/inquiry, /api/track
 ```
 
@@ -139,7 +146,7 @@ policy: https://app.notion.com/p/41cecd5a3ac28107820effaeb6cb4fc8
 apps/
   api/        플랫폼 API + MCP 도구 + 게시 파이프라인
   router/     공개 사이트 서빙, 문의·클릭 수집, RSS cron
-  console/    고객 콘솔 (후순위)
+  console/    관리자 콘솔 (고객 콘솔은 후순위)
 packages/
   renderer/   템플릿 4종, 사이트 설정 스키마, renderToString, 클라이언트 번들 빌드
   schema/     DB 스키마·사이트 설정 타입 공유
@@ -149,12 +156,15 @@ packages/
 
 - `@dani-builder/blocks`, `@dani-builder/site-templates`, `@dani-builder/strapi-client` (npm 공개 패키지, 버전 고정)
 - Cloudflare: Workers, D1, KV, R2, Cloudflare for SaaS, Turnstile, Analytics Engine
+- OpenAI 이미지 API (`OPENAI_API_KEY`, `OPENAI_IMAGE_MODEL`)
 
 ### 데이터 모델 (초안)
 
 | 테이블 | 주요 필드 |
 | --- | --- |
-| `customers` | id, 업체명, 담당자 연락처, 결제 주기, 상태 |
+| `customers` | id, 업체명, 담당자 연락처, external_ref(외부 리드), 사업자번호, 계산서 메일, 상태 |
+| `subscriptions` | id, site_id, 요금제, 금액, 주기, 상태, 다음 결제일. 사이트당 정액 |
+| `payments` | id, subscription_id, 금액, 수단(manual/pg), 입금자명, 결제일, 확인자, pg_tx_id, 세금계산서 발행일 |
 | `sites` | id, customer_id, slug, 업종 템플릿, 템플릿 버전, published_version_id, 상태 |
 | `site_versions` | id, site_id, config(JSON), status, created_by(ai/operator), created_at, published_at |
 | `domains` | id, site_id, hostname, cf_hostname_id, 검증 상태, 인증서 상태 |
@@ -178,10 +188,10 @@ packages/
 | Cloudflare for SaaS (100개 무료, 이후 개당 $0.10) | $0 | $20 |
 | R2 (무료 10GB) | $0 | $0 |
 | 메일 발송 | $0 | $0~20 |
-| 도메인 `dsites.co.kr` | 약 $1 | 약 $1 |
-| 합계 | 약 $6 | 약 $26~46 |
+| Advanced Certificate Manager (`*.dsites.daniworks.kr`) | $10 | $10 |
+| 합계 | 약 $15 | 약 $35~55 |
 
-- 변동비: AI 초안 생성(시안 1건당 수백~1천원대 추정). 결제 전 시안도 포함된다.
+- 변동비: AI 초안 생성(시안 1건당 수백~1천원대 추정), OpenAI 이미지 생성(장당 과금, 연동 시 단가 확인). 결제 전 시안도 포함된다.
 - Workers·메일 요금은 구현 시점에 재확인한다.
 
 ## 8. 위험과 검증 항목
@@ -201,16 +211,15 @@ packages/
 | 단계 | 범위 | 완료 기준 |
 | --- | --- | --- |
 | M0 렌더 PoC (완료, [결과](m0-render-poc.md)) | `packages/renderer`: 샘플 설정 → HTML(Worker 실행) | 샘플 사이트가 Worker 렌더 결과로 브라우저에서 정상 표시 |
-| M1 게시 PoC (로컬 완료, [결과](m1-publish-poc.md)) | `apps/api` 사이트·버전 CRUD, 게시·롤백, `apps/router` 서브도메인 서빙 | `<slug>.dsites.co.kr`에서 게시·롤백 동작 |
-| M2 첫 고객 | 템플릿 1~2종, 문의, 클릭 수집, MCP 도구, 커스텀 도메인(내부 등록) | 실제 리드 1곳 오픈 |
+| M1 게시 PoC (로컬 완료, [결과](m1-publish-poc.md)) | `apps/api` 사이트·버전 CRUD, 게시·롤백, `apps/router` 서브도메인 서빙 | `<slug>.dsites.daniworks.kr`에서 게시·롤백 동작 |
+| M2 첫 고객 | 템플릿 1~2종, 문의, 클릭 수집, MCP 도구, 시안 링크(30일), MCP Authentik OAuth, 입금 확인·게시 검사, 관리자 콘솔(로그인·사이트·입금), 커스텀 도메인(내부 등록) | 실제 리드 1곳 오픈 |
 | M3 운영 | 템플릿 4종, RSS, 분기 리포트 집계, 전체 재게시 | 10곳 운영 |
 | M4 고객 콘솔 | 도메인 셀프 연결, 문의, 리포트, 수정 요청, zip 다운로드 | 고객이 도움 없이 도메인 연결 |
 
 ## 10. 미결 사항
 
 - DB: D1로 충분한지, 콘솔·리포트 요구로 Postgres가 필요한지 (M1에서 결정)
-- 고객 콘솔 인증 방식과 계정 모델(고객 1 : 사이트 N 허용 여부)
+- 고객 콘솔 인증 방식. 계정 모델은 고객 1 : 사이트 N, 사이트마다 과금으로 확정
 - 분기 AI 노출 재측정(geo-prove)과 리포트 생성의 위치: 이 플랫폼 안인지 별도 시스템인지
-- 해지 후 데이터 보관 기간
 - 콘솔 AI 수정: 크레딧 수량·충전, 크레딧 차감 단위(요청 1건·게시 1건 등), 게시 전 운영자 검수 여부. 정책서의 '연 4건 수정'과의 관계도 정책서에 반영 필요
-- `dsites.co.kr`은 예시. 실제 도메인 확정 필요
+- PG 선택과 연동 시점. 그 전까지 수동 입금 확인
