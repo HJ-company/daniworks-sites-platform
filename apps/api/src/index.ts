@@ -1,6 +1,7 @@
 import { parseSiteConfig, renderSite, SiteConfigError, type SiteConfig } from "@sites/renderer";
 import { listAssets, uploadAsset } from "./assets.js";
 import { allInquiries, inquiriesCsv, listInquiries, requireEmail } from "./inquiries.js";
+import { kstDay, metricsReport } from "./metrics.js";
 import { turnstileFrame } from "./turnstile.js";
 import type { Env } from "./env.js";
 import { HttpError, json, readJson, requireAdmin } from "./http.js";
@@ -132,6 +133,15 @@ async function handle(request: Request, env: Env): Promise<Response> {
       await env.DB.prepare("UPDATE sites SET notify_email = ? WHERE id = ?").bind(requireEmail(body.notifyEmail), site.id).run();
     }
     return json({ site: await getSite(env.DB, site.id) });
+  }
+
+  // GET /sites/:id/metrics?from=YYYY-MM-DD&to=YYYY-MM-DD (Korean dates, inclusive; default last 30 days)
+  if (method === "GET" && parts[2] === "metrics" && parts.length === 3) {
+    const today = kstDay(new Date());
+    const from = url.searchParams.get("from") ?? kstDay(new Date(Date.now() - 29 * 86_400_000));
+    const to = url.searchParams.get("to") ?? today;
+    if (![from, to].every((d) => /^\d{4}-\d{2}-\d{2}$/.test(d))) throw new HttpError(400, "from·to는 YYYY-MM-DD");
+    return json(await metricsReport(env.DB, site.id, from, to));
   }
 
   // GET /sites/:id/inquiries[.csv]?from=&to= (ISO dates)

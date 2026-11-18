@@ -1,0 +1,69 @@
+{
+  "siteId": "96057caf-8bd4-426f-8973-5e161b54b748",
+  "totals": {
+    "pageview": 2,
+    "tel": 1,
+    "kakao": 1,
+    "map": 1,
+    "booking": 1,
+    "inquiry_cta": 1,
+    "inquiry": 0
+  },
+  "results": [
+    {
+      "name": "사람 방문 1회와 클릭 5종이 각 1씩 집계",
+      "pass": true,
+      "pageview": 1,
+      "tel": 1,
+      "kakao": 1,
+      "map": 1,
+      "booking": 1,
+      "inquiry_cta": 1,
+      "inquiry": 0
+    },
+    {
+      "name": "잘못된 이벤트·봇 비콘도 204로 답함",
+      "pass": true,
+      "statuses": [
+        204,
+        204,
+        204,
+        204,
+        204
+      ]
+    },
+    {
+      "name": "GET은 405",
+      "pass": true
+    },
+    {
+      "name": "headless·프리뷰·잘못된 요청은 집계 안 됨",
+      "pass": true,
+      "after": {
+        "pageview": 1,
+        "tel": 1,
+        "kakao": 1,
+        "map": 1,
+        "booking": 1,
+        "inquiry_cta": 1,
+        "inquiry": 0
+      }
+    },
+    {
+      "name": "직접 보낸 유효 비콘은 집계",
+      "pass": true
+    },
+    {
+      "name": "정지된 사이트는 집계 안 됨",
+      "pass": true
+    },
+    {
+      "name": "리포트: 기간, 합계, 일별 행",
+      "pass": true
+    },
+    {
+      "name": "날짜 형식 오류는 400",
+      "pass": true
+    }
+  ]
+}

@@ -11,6 +11,7 @@ import {
 
 /** RPC surface of the api Worker's `PublicApi` entrypoint (apps/api/src/public.ts). */
 interface PublicApi {
+  track(request: { siteId: string; userAgent: string | null; body: unknown }): Promise<"counted" | "ignored">;
   submitInquiry(request: { siteId: string; hostname: string; ip: string | null; body: unknown }): Promise<{
     status: number;
     body: unknown;
@@ -87,9 +88,27 @@ async function resolveHost(env: Env, hostname: string): Promise<HostRecord | nul
 }
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
     const hostname = url.hostname.toLowerCase();
+
+    // Pageview and click beacons. Always 204: callers learn nothing, pages never wait on it.
+    if (url.pathname === "/api/track") {
+      if (request.method !== "POST") return new Response(null, { status: 405 });
+      const host = await resolveHost(env, hostname);
+      if (host && host.status === "active" && host.pointer) {
+        let body: unknown = null;
+        try {
+          body = await readSmallJson(request, 1024);
+        } catch {
+          body = null;
+        }
+        if (body) {
+          ctx.waitUntil(env.API.track({ siteId: host.siteId, userAgent: request.headers.get("user-agent"), body }));
+        }
+      }
+      return new Response(null, { status: 204, headers: { "cache-control": "no-store" } });
+    }
 
     // Visitor inquiry: the site is identified by Host here, then handed to the api by RPC.
     if (url.pathname === "/api/inquiry") {

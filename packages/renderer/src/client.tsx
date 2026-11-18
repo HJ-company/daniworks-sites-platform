@@ -1,4 +1,5 @@
 import { hydrateRoot } from "react-dom/client";
+import { startTracking } from "./platform/track.js";
 import { SiteView, type PageData } from "./view.js";
 
 const DATA_ID = "__SITE_DATA__";
@@ -11,4 +12,6 @@ if (root && json) {
       console.error("[sites] hydration error", error);
     },
   });
+  // Industry-template sites only, and never from previews.
+  if (data.site && !data.preview) startTracking();
 }
