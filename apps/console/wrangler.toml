@@ -1,0 +1,33 @@
+# Operator console: the built SPA (Vite, dist/) plus /api/* proxied to the api Worker with the
+# admin token. Deployed behind Cloudflare Access; the Worker re-verifies Access's JWT.
+name = "sites-console"
+main = "worker/index.ts"
+account_id = "358a1b6caabcf91741109efca1ec0547"
+compatibility_date = "2026-11-01"
+
+[assets]
+directory = "./dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+# Every request goes through the Worker first, so the Access check covers the SPA too.
+run_worker_first = true
+
+[[services]]
+binding = "API"
+service = "sites-api"
+
+# Local: .dev.vars has ADMIN_TOKEN and ALLOW_UNAUTHENTICATED=true.
+
+[env.staging]
+name = "sites-console-staging"
+workers_dev = false
+preview_urls = false
+routes = [{ pattern = "admin.dsites.kr", custom_domain = true }]
+
+[env.staging.vars]
+# ACCESS_TEAM_DOMAIN, ACCESS_AUD: from the Access application for admin.dsites.kr
+# ADMIN_TOKEN: wrangler secret put ADMIN_TOKEN --env staging
+
+[[env.staging.services]]
+binding = "API"
+service = "sites-api-staging"

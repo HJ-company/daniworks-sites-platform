@@ -1,4 +1,4 @@
-import { parseSiteConfig, type SiteConfig } from "@sites/renderer";
+import { parseSiteConfig, starterConfig, type SiteConfig, type StarterInput } from "@sites/renderer";
 import type { Env } from "./env.js";
 import { HttpError } from "./http.js";
 import { syncHostRecordsNow } from "./routes.js";
@@ -39,4 +39,20 @@ export function previewUrl(env: Env, previewToken: string) {
 export async function findSite(env: Env, idOrSlug: string): Promise<SiteRow> {
   const bySlug = await env.DB.prepare("SELECT id FROM sites WHERE slug = ?").bind(idOrSlug).first<{ id: string }>();
   return getSite(env.DB, bySlug?.id ?? idOrSlug);
+}
+
+/** Console "new site": either a full config or starter fields expanded server-side. */
+export function configFromBody(body: { config?: unknown; starter?: Partial<StarterInput> }): unknown {
+  if (body.config !== undefined) return body.config;
+  const starter = body.starter;
+  if (!starter || (starter.preset !== "lesson" && starter.preset !== "field")) {
+    throw new HttpError(422, "config 또는 starter{preset, slug, name, phone}가 필요합니다");
+  }
+  return starterConfig({
+    preset: starter.preset,
+    slug: String(starter.slug ?? ""),
+    name: String(starter.name ?? ""),
+    phone: String(starter.phone ?? ""),
+    representative: starter.representative ? String(starter.representative) : undefined,
+  });
 }

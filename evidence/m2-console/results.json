@@ -1,0 +1,91 @@
+{
+  "siteId": "aa4999f0-e318-48cb-a8c1-9dd9b4292c2a",
+  "slug": "console-mwmjp9gn",
+  "router": "http://console-mwmjp9gn.localhost:8787/",
+  "results": [
+    {
+      "name": "사이트 목록 화면",
+      "pass": true
+    },
+    {
+      "name": "브라우저로 내려간 HTML·JS에 관리자 토큰 없음",
+      "pass": true
+    },
+    {
+      "name": "시작 설정으로 생성 후 편집 탭, JSON에 slug",
+      "pass": true
+    },
+    {
+      "name": "검증 오류를 경로와 함께 표시",
+      "pass": true,
+      "invalid": "business.phone: 전화번호 형식이 아닙니다"
+    },
+    {
+      "name": "수정 후 검증 통과",
+      "pass": true,
+      "errors": null
+    },
+    {
+      "name": "초안 저장(v2)",
+      "pass": true
+    },
+    {
+      "name": "콘솔에서 게시한 v2가 공개, 주소 반영",
+      "pass": true
+    },
+    {
+      "name": "콘솔 롤백 → v1 공개",
+      "pass": true
+    },
+    {
+      "name": "프리뷰 링크는 api 절대 URL이고 열림",
+      "pass": true
+    },
+    {
+      "name": "12MP 원본도 브라우저에서 줄여 업로드",
+      "pass": true
+    },
+    {
+      "name": "업로드 결과 1600×1200",
+      "pass": true,
+      "card": "1600×1200 · 52KB값 복사"
+    },
+    {
+      "name": "도메인 등록과 CNAME 안내 표시",
+      "pass": true
+    },
+    {
+      "name": "도메인 삭제",
+      "pass": true
+    },
+    {
+      "name": "문의 CSV 내려받기(콘솔 프록시)",
+      "pass": true
+    },
+    {
+      "name": "통계 카드 7종",
+      "pass": true
+    },
+    {
+      "name": "콘솔 공개 정지 → 503",
+      "pass": true
+    },
+    {
+      "name": "콘솔 공개 재개 → 200",
+      "pass": true
+    },
+    {
+      "name": "목록에 새 사이트",
+      "pass": true
+    },
+    {
+      "name": "api 직접 호출은 토큰 없으면 401",
+      "pass": true
+    },
+    {
+      "name": "콘솔 페이지 오류 없음",
+      "pass": true,
+      "errors": []
+    }
+  ]
+}

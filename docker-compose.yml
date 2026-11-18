@@ -23,6 +23,7 @@ services:
     ports:
       - "8787:8787" # router: http://<slug>.localhost:8787
       - "8788:8788" # api
+      - "8789:8789" # operator console
     volumes:
       - state:/state
     healthcheck:
@@ -30,7 +31,7 @@ services:
         - CMD
         - node
         - -e
-        - "Promise.all([fetch('http://127.0.0.1:8788/health'),fetch('http://127.0.0.1:8787/')]).then(r=>process.exit(r[0].ok?0:1)).catch(()=>process.exit(1))"
+        - "Promise.all([fetch('http://127.0.0.1:8788/health'),fetch('http://127.0.0.1:8787/'),fetch('http://127.0.0.1:8789/')]).then(r=>process.exit(r[0].ok&&r[2].ok?0:1)).catch(()=>process.exit(1))"
       interval: 3s
       timeout: 3s
       retries: 60

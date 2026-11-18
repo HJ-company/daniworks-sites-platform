@@ -1,4 +1,4 @@
-import { renderSite, SiteConfigError, type SiteConfig } from "@sites/renderer";
+import { parseSiteConfig, renderSite, SiteConfigError, type SiteConfig } from "@sites/renderer";
 import { listAssets, uploadAsset } from "./assets.js";
 import { allInquiries, inquiriesCsv, listInquiries, requireEmail } from "./inquiries.js";
 import { kstDay, metricsReport } from "./metrics.js";
@@ -10,7 +10,7 @@ import { addDomain, auditOrigins, domainQuota, listDomains, maintainDomains, ref
 import { handleMcp } from "./mcp.js";
 import { assetBase, publish, rollback, siteOrigin } from "./publish.js";
 import { auditHostRecords, reconcileHostRecords, syncHostRecordsNow } from "./routes.js";
-import { addDraft, createSiteFromInput, creator } from "./sites.js";
+import { addDraft, configFromBody, createSiteFromInput, creator, previewUrl } from "./sites.js";
 import { getSite, listSites, listVersions, setSiteStatus, versionByPreviewToken, type CreatedBy } from "./store.js";
 
 /** Must match wrangler.toml [triggers]: the hourly audit; the 5-minute cron only reconciles. */
@@ -86,6 +86,13 @@ async function handle(request: Request, env: Env): Promise<Response> {
     return json({ key }, 201);
   }
 
+  // POST /validate {config}: errors without saving (console editor, scripts).
+  if (method === "POST" && url.pathname === "/validate") {
+    const body = await readJson<{ config?: unknown }>(request);
+    const result = parseSiteConfig(body.config);
+    return json(result.ok ? { valid: true, errors: [], config: result.config } : { valid: false, errors: result.errors });
+  }
+
   // GET /domains/quota: custom hostnames on the zone vs. the 100 included.
   if (method === "GET" && url.pathname === "/domains/quota") return json(await domainQuota(env));
 
@@ -93,8 +100,8 @@ async function handle(request: Request, env: Env): Promise<Response> {
 
   // POST /sites {config, createdBy}
   if (method === "POST" && parts.length === 1) {
-    const body = await readJson<{ config: unknown; createdBy?: CreatedBy }>(request);
-    return json(await createSiteFromInput(env, body.config, creator(body.createdBy)), 201);
+    const body = await readJson<{ config?: unknown; starter?: Record<string, unknown>; createdBy?: CreatedBy }>(request);
+    return json(await createSiteFromInput(env, configFromBody(body), creator(body.createdBy)), 201);
   }
 
   // GET /sites: every site with its published version number and primary hostname.
@@ -106,7 +113,8 @@ async function handle(request: Request, env: Env): Promise<Response> {
   const site = await getSite(env.DB, parts[1]!);
 
   if (method === "GET" && parts.length === 2) {
-    return json({ site, versions: await listVersions(env.DB, site.id) });
+    const versions = (await listVersions(env.DB, site.id)) as { preview_token: string }[];
+    return json({ site, versions: versions.map((v) => ({ ...v, preview_url: previewUrl(env, v.preview_token) })) });
   }
 
   // PATCH /sites/:id {notifyEmail}: operational settings outside the versioned config.
@@ -163,6 +171,20 @@ async function handle(request: Request, env: Env): Promise<Response> {
         "content-disposition": `attachment; filename="inquiries-${site.slug}.csv"`,
       },
     });
+  }
+
+  // GET /sites/:id/versions/:versionId (or "latest"): one version with its config
+  if (method === "GET" && parts[2] === "versions" && parts.length === 4) {
+    const row = await env.DB.prepare(
+      parts[3] === "latest"
+        ? "SELECT * FROM site_versions WHERE site_id = ? ORDER BY number DESC LIMIT 1"
+        : "SELECT * FROM site_versions WHERE site_id = ? AND id = ?",
+    )
+      .bind(...(parts[3] === "latest" ? [site.id] : [site.id, parts[3]]))
+      .first<{ config: string }>();
+    if (!row) throw new HttpError(404, "버전이 없습니다");
+    const { config, ...version } = row;
+    return json({ version, config: JSON.parse(config) });
   }
 
   // POST /sites/:id/versions {config, createdBy, note}: new draft version

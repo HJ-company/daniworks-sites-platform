@@ -4,6 +4,7 @@ import { parseSiteConfig } from "../src/validate.js";
 import { renderSite } from "../src/render.js";
 import { compileServiceSeed } from "../src/templates/service-local/compile.js";
 import { fieldFixture, lessonFixture } from "../src/templates/service-local/fixtures.js";
+import { starterConfig } from "../src/templates/service-local/starter.js";
 
 const clone = <T>(value: T): T => structuredClone(value);
 
@@ -105,5 +106,12 @@ describe("service-local template", () => {
     config.content.hero.image = { key: "m:site123/abc123.jpg", alt: "현장", width: 1600, height: 1067 };
     const { html } = await renderSite(config, { assetBase: "/a" });
     expect(html).toContain("/_media/site123/abc123.jpg");
+  });
+});
+
+describe("starterConfig", () => {
+  it.each(["lesson", "field"] as const)("is valid for %s", (preset) => {
+    const config = starterConfig({ preset, slug: "new-site", name: "새 업체", phone: "010-0000-0000" });
+    expect(parseSiteConfig(config).errors).toEqual([]);
   });
 });

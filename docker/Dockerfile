@@ -14,4 +14,4 @@ WORKDIR /app
 COPY . .
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
     pnpm config set store-dir /pnpm/store && pnpm install --frozen-lockfile
-RUN pnpm build
+RUN pnpm build && pnpm --filter console build
