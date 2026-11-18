@@ -98,7 +98,7 @@ const csv = await page.request.get(`${CONSOLE}/api/sites/${siteId}/inquiries.csv
 check("문의 CSV 내려받기(콘솔 프록시)", csv.ok() && (await csv.text()).includes("접수(한국 시간)"));
 await page.getByTestId("tab-stats").click();
 await page.getByTestId("metric-pageview").waitFor({ timeout: 10000 });
-check("통계 카드 7종", (await page.locator('[data-testid^="metric-"]').count()) === 7);
+check("통계 카드(전환 + 7종)", (await page.locator('[data-testid^="metric-"]').count()) === 8);
 
 // 8. suspend / resume
 await page.getByTestId("tab-overview").click();

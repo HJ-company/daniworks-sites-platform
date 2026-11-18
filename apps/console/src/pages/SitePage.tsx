@@ -19,7 +19,7 @@ const TABS = [
   { id: "photos", label: "사진" },
   { id: "domains", label: "도메인" },
   { id: "inquiries", label: "문의" },
-  { id: "stats", label: "통계" },
+  { id: "stats", label: "통계·리포트" },
 ] as const;
 
 export function useSite(siteId: string) {

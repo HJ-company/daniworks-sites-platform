@@ -1,5 +1,5 @@
 import { naverRssUrl, parseNaverRss, type BlogFeed } from "@sites/renderer/blog";
-import { readLimited } from "./assets.js";
+import { readLimited } from "./stream.js";
 import type { Env } from "./env.js";
 import { HttpError } from "./http.js";
 

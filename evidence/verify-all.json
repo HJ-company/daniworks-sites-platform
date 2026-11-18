@@ -1,28 +1,28 @@
 {
-  "at": "2026-11-18T20:32:53.880Z",
+  "at": "2026-11-18T20:39:15.696Z",
   "summary": [
     {
-      "step": "m1",
+      "step": "m2-track",
       "ok": true,
-      "passed": 18,
-      "total": 18,
-      "seconds": 6,
+      "passed": 8,
+      "total": 8,
+      "seconds": 7,
       "failed": []
     },
     {
-      "step": "m2-template",
+      "step": "m2-console",
       "ok": true,
-      "passed": 28,
-      "total": 28,
-      "seconds": 91,
+      "passed": 20,
+      "total": 20,
+      "seconds": 5,
       "failed": []
     },
     {
-      "step": "m2-router",
+      "step": "m3-reports",
       "ok": true,
-      "passed": 14,
-      "total": 14,
-      "seconds": 16,
+      "passed": 9,
+      "total": 9,
+      "seconds": 63,
       "failed": []
     }
   ]

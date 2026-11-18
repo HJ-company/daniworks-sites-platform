@@ -32,3 +32,24 @@ describe("kstDay", () => {
     expect(kstDay(new Date("2026-11-18T15:00:00Z"))).toBe("2026-11-19");
   });
 });
+
+import { currentQuarter, quarterRange } from "../src/metrics.js";
+
+describe("quarterRange", () => {
+  it.each([
+    ["2026-Q1", "2026-01-01", "2026-03-31", "2025-Q4"],
+    ["2026-Q2", "2026-04-01", "2026-06-30", "2026-Q1"],
+    ["2024-Q1", "2024-01-01", "2024-03-31", "2023-Q4"],
+    ["2026-Q4", "2026-10-01", "2026-12-31", "2026-Q3"],
+  ])("%s", (q, from, to, previous) => {
+    expect(quarterRange(q)).toMatchObject({ from, to, previous });
+  });
+  it("rejects other formats", () => {
+    expect(quarterRange("2026-Q5")).toBeNull();
+    expect(quarterRange("2026Q1")).toBeNull();
+  });
+  it("uses the Korean date for the current quarter", () => {
+    expect(currentQuarter(new Date("2026-09-30T15:30:00Z"))).toBe("2026-Q4");
+    expect(currentQuarter(new Date("2026-09-30T14:59:00Z"))).toBe("2026-Q3");
+  });
+});

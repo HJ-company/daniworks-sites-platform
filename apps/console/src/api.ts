@@ -106,3 +106,31 @@ export interface MetricsReport {
 
 export const kst = (iso: string | null) =>
   iso ? new Date(new Date(iso).getTime() + 9 * 3600_000).toISOString().replace("T", " ").slice(0, 16) : "-";
+
+export interface QuarterlyReport {
+  quarter: string;
+  from: string;
+  to: string;
+  totals: Record<MetricEvent, number>;
+  conversions: number;
+  previous: { quarter: string; totals: Record<MetricEvent, number>; conversions: number };
+  monthly: ({ month: string } & Record<MetricEvent, number>)[];
+}
+
+export interface QuarterlyOverview {
+  quarter: string;
+  from: string;
+  to: string;
+  sites: { id: string; slug: string; hostname: string; status: string; totals: Record<MetricEvent, number> }[];
+}
+
+export const METRIC_LABELS: Record<MetricEvent, string> = {
+  pageview: "방문",
+  tel: "전화",
+  kakao: "카톡",
+  map: "지도",
+  booking: "예약",
+  inquiry_cta: "문의 버튼",
+  inquiry: "문의 접수",
+};
+export const METRIC_ORDER: MetricEvent[] = ["pageview", "tel", "kakao", "map", "booking", "inquiry_cta", "inquiry"];

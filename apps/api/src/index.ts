@@ -2,7 +2,7 @@ import { parseSiteConfig, renderSite, SiteConfigError, type SiteConfig } from "@
 import { listAssets, uploadAsset } from "./assets.js";
 import { refreshBlog, refreshDueBlogs } from "./blog.js";
 import { allInquiries, inquiriesCsv, listInquiries, requireEmail } from "./inquiries.js";
-import { kstDay, metricsReport } from "./metrics.js";
+import { currentQuarter, kstDay, metricsReport, quarterlyCsv, quarterlyOverview, quarterlyReport } from "./metrics.js";
 import { turnstileFrame } from "./turnstile.js";
 import type { Env } from "./env.js";
 import { HttpError, json, readJson, requireAdmin } from "./http.js";
@@ -94,6 +94,13 @@ async function handle(request: Request, env: Env): Promise<Response> {
     return json(result.ok ? { valid: true, errors: [], config: result.config } : { valid: false, errors: result.errors });
   }
 
+  // GET /reports/quarterly?quarter=2026-Q4: every site's totals for the quarter.
+  if (method === "GET" && url.pathname === "/reports/quarterly") {
+    const report = await quarterlyOverview(env.DB, url.searchParams.get("quarter") ?? currentQuarter(), env.BASE_DOMAIN);
+    if (!report) throw new HttpError(400, "quarter는 YYYY-Q1~Q4");
+    return json(report);
+  }
+
   // GET /domains/quota: custom hostnames on the zone vs. the 100 included.
   if (method === "GET" && url.pathname === "/domains/quota") return json(await domainQuota(env));
 
@@ -148,6 +155,19 @@ async function handle(request: Request, env: Env): Promise<Response> {
   // POST /sites/:id/blog/refresh: fetch the blog RSS now (normally every 3 hours by cron)
   if (method === "POST" && parts[2] === "blog" && parts[3] === "refresh" && parts.length === 4) {
     return json(await refreshBlog(env, site.id));
+  }
+
+  // GET /sites/:id/reports/quarterly[.csv]?quarter=2026-Q4 (default: current quarter, KST)
+  if (method === "GET" && (parts[2] === "reports") && (parts[3] === "quarterly" || parts[3] === "quarterly.csv") && parts.length === 4) {
+    const report = await quarterlyReport(env.DB, site.id, url.searchParams.get("quarter") ?? currentQuarter());
+    if (!report) throw new HttpError(400, "quarter는 YYYY-Q1~Q4");
+    if (parts[3] === "quarterly") return json(report);
+    return new Response(quarterlyCsv(report), {
+      headers: {
+        "content-type": "text/csv; charset=utf-8",
+        "content-disposition": `attachment; filename="report-${site.slug}-${report.quarter}.csv"`,
+      },
+    });
   }
 
   // GET /sites/:id/metrics?from=YYYY-MM-DD&to=YYYY-MM-DD (Korean dates, inclusive; default last 30 days)

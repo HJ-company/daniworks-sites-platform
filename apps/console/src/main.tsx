@@ -9,6 +9,7 @@ import { NewSitePage } from "./pages/NewSitePage.js";
 import { SitePage } from "./pages/SitePage.js";
 
 const SitesPage = lazy(() => import("./pages/SitesPage.js").then((m) => ({ default: m.SitesPage })));
+const ReportsPage = lazy(() => import("./pages/ReportsPage.js").then((m) => ({ default: m.ReportsPage })));
 import { ToastProvider } from "./ui.js";
 
 const theme = createTheme({
@@ -26,6 +27,7 @@ const router = createBrowserRouter([
     children: [
       { index: true, element: <SitesPage /> },
       { path: "sites/new", element: <NewSitePage /> },
+      { path: "reports", element: <ReportsPage /> },
       { path: "sites/:siteId/:tab?", element: <SitePage /> },
     ],
   },

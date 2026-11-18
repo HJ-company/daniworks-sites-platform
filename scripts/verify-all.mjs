@@ -13,6 +13,8 @@ const steps = [
   ["m2-mcp", "verify-m2-mcp.mjs"],
   ["m2-domains", "verify-m2-domains.mjs"],
   ["m2-console", "verify-m2-console.mjs"],
+  ["m3-blog", "verify-m3-blog.mjs"],
+  ["m3-reports", "verify-m3-reports.mjs"],
 ];
 const only = process.argv.slice(2);
 const summary = [];

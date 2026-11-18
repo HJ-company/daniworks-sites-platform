@@ -1,7 +1,7 @@
 {
-  "siteId": "f87aaf98-fa80-4e14-b1f7-c62fe063ea02",
-  "slug": "console-mwmkckhp",
-  "router": "http://console-mwmkckhp.localhost:8787/",
+  "siteId": "e53d2bbd-e0f0-4f95-a8c0-1d4539d7751f",
+  "slug": "console-mwml2g93",
+  "router": "http://console-mwml2g93.localhost:8787/",
   "results": [
     {
       "name": "사이트 목록 화면",
@@ -63,7 +63,7 @@
       "pass": true
     },
     {
-      "name": "통계 카드 7종",
+      "name": "통계 카드(전환 + 7종)",
       "pass": true
     },
     {
