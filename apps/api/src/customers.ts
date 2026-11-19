@@ -127,7 +127,7 @@ export async function customerDetail(db: D1Database, id: string) {
   const customer = await getCustomerRow(db, id);
   const { results: sites } = await db
     .prepare(
-      `SELECT s.id, s.slug, s.status, s.cancelled_at, s.published_version_id, ${BUSINESS_NAME_SQL("s.id", "s.published_version_id")} AS business_name
+      `SELECT s.id, s.slug, s.status, s.suspend_reason, s.cancelled_at, s.published_version_id, ${BUSINESS_NAME_SQL("s.id", "s.published_version_id")} AS business_name
        FROM sites s WHERE s.customer_id = ? ORDER BY s.created_at`,
     )
     .bind(id)

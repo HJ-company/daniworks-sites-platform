@@ -69,7 +69,14 @@ function Queue() {
     { field: "customer_name", headerName: "고객", width: 140, valueGetter: (v) => v ?? "-" },
     { field: "status", headerName: "상태", width: 100, renderCell: ({ row }) => <BillingChip status={row.status} /> },
     { field: "amount", headerName: "청구", width: 120, valueGetter: (_v, row) => `${CYCLE_LABEL[row.cycle]} ${won(row.amount)}` },
-    { field: "summary", headerName: "상황", flex: 1.6, minWidth: 260, valueGetter: (_v, row) => billingSummary(row) },
+    {
+      field: "summary",
+      headerName: "상황",
+      flex: 1.6,
+      minWidth: 260,
+      valueGetter: (_v, row) => billingSummary(row),
+      renderCell: ({ value }) => <Typography variant="body2" sx={{ whiteSpace: "normal", py: 1 }}>{value as string}</Typography>,
+    },
     {
       field: "action",
       headerName: "",
@@ -92,6 +99,7 @@ function Queue() {
         <DataGrid
           rows={queue.data?.sites ?? []}
           getRowId={(row) => row.site_id}
+          getRowHeight={() => "auto"}
           columns={columns}
           loading={queue.isLoading}
           autoHeight
@@ -107,19 +115,37 @@ function Queue() {
   );
 }
 
+const monthRange = (offset: number) => {
+  const now = new Date(Date.now() + 9 * 3600_000);
+  const first = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + offset, 1));
+  const last = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 1, 0));
+  return [first, last].map((d) => d.toISOString().slice(0, 10)) as [string, string];
+};
+
+type HistoryRow = Payment & { customer_name: string | null; site_exists: boolean };
+
 function History() {
   const [from, setFrom] = useState(monthsAgo(3));
   const [to, setTo] = useState(today());
   const [method, setMethod] = useState("");
+  const [search, setSearch] = useState("");
+  const setRange = ([start, end]: [string, string]) => {
+    setFrom(start);
+    setTo(end);
+  };
   const [editing, setEditing] = useState<Payment | null>(null);
   const [voiding, setVoiding] = useState<Payment | null>(null);
   const query = new URLSearchParams({ from, to, ...(method ? { method } : {}) });
   const history = useQuery({
     queryKey: ["payments", from, to, method],
-    queryFn: () => api<{ payments: Payment[]; count: number; total: number; truncated: boolean }>(`/payments?${query.toString()}`),
+    queryFn: () =>
+      api<{ payments: HistoryRow[]; count: number; total: number; voided: number; truncated: boolean }>(`/payments?${query.toString()}`),
   });
-  const rows = history.data?.payments ?? [];
-  const columns: GridColDef<Payment>[] = [
+  const q = search.trim().toLowerCase();
+  const rows = (history.data?.payments ?? []).filter(
+    (p) => !q || [p.business_name, p.site_slug, p.customer_name, p.payer_name].some((v) => v?.toLowerCase().includes(q)),
+  );
+  const columns: GridColDef<HistoryRow>[] = [
     { field: "paid_on", headerName: "입금일", width: 110 },
     {
       field: "business_name",
@@ -127,12 +153,18 @@ function History() {
       flex: 1,
       minWidth: 150,
       valueGetter: (_v, row) => row.business_name ?? row.site_slug,
-      renderCell: ({ row }) => (
-        <Link component={RouterLink} to={`/sites/${row.site_id}`}>
-          {row.business_name ?? row.site_slug}
-        </Link>
-      ),
+      renderCell: ({ row }) =>
+        row.site_exists ? (
+          <Link component={RouterLink} to={`/sites/${row.site_id}`}>
+            {row.business_name ?? row.site_slug}
+          </Link>
+        ) : (
+          <Typography variant="body2" color="text.secondary" title="완전 삭제된 사이트입니다. 결제 기록만 남아 있습니다">
+            {row.business_name ?? row.site_slug} (삭제됨)
+          </Typography>
+        ),
     },
+    { field: "customer_name", headerName: "고객", width: 140, valueGetter: (v) => v ?? "-" },
     { field: "amount", headerName: "금액", width: 110, valueGetter: (v: number) => won(v) },
     { field: "payer_name", headerName: "입금자", width: 100, valueGetter: (v) => v ?? "-" },
     { field: "period", headerName: "이용 기간", width: 200, valueGetter: (_v, row) => `${row.period_start} ~ ${row.period_end}` },
@@ -148,7 +180,7 @@ function History() {
             취소됨 · {row.void_reason}
           </Typography>
         ) : (
-          <Stack direction="row" spacing={0.5}>
+          <Stack direction="row" spacing={0.5} sx={{ alignItems: "center", height: "100%" }}>
             <Button size="small" onClick={() => setEditing(row)} data-testid={`edit-${row.id}`}>
               수정
             </Button>
@@ -161,16 +193,45 @@ function History() {
   ];
   return (
     <Stack spacing={1.5}>
+      <Stack direction="row" spacing={1}>
+        <Button size="small" variant="outlined" onClick={() => setRange(monthRange(0))}>
+          이번 달
+        </Button>
+        <Button size="small" variant="outlined" onClick={() => setRange(monthRange(-1))}>
+          지난달
+        </Button>
+        <Button size="small" variant="outlined" onClick={() => setRange([monthsAgo(3), today()])}>
+          최근 3개월
+        </Button>
+      </Stack>
       <Stack direction={{ xs: "column", sm: "row" }} spacing={1} sx={{ alignItems: { sm: "center" } }}>
         <TextField size="small" type="date" label="입금일 부터" value={from} onChange={(e) => setFrom(e.target.value)} slotProps={{ inputLabel: { shrink: true } }} />
         <TextField size="small" type="date" label="까지" value={to} onChange={(e) => setTo(e.target.value)} slotProps={{ inputLabel: { shrink: true } }} />
-        <TextField size="small" select label="수단" value={method} onChange={(e) => setMethod(e.target.value)} sx={{ minWidth: 120 }}>
+        <TextField
+          size="small"
+          select
+          label="수단"
+          value={method}
+          onChange={(e) => setMethod(e.target.value)}
+          sx={{ minWidth: 120 }}
+          slotProps={{ select: { displayEmpty: true }, inputLabel: { shrink: true } }}
+        >
           <MenuItem value="">전체</MenuItem>
           <MenuItem value="manual">계좌 입금</MenuItem>
           <MenuItem value="pg">카드(PG)</MenuItem>
         </TextField>
+        <TextField
+          size="small"
+          type="search"
+          placeholder="상호, 고객, 입금자로 찾기"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          slotProps={{ htmlInput: { "aria-label": "결제 검색" } }}
+        />
         <Typography variant="body2" sx={{ flex: 1, textAlign: { sm: "right" } }} data-testid="payments-total">
-          {history.data ? `${history.data.count}건 · 합계 ${won(history.data.total)}(취소 제외)` : ""}
+          {history.data
+            ? `입금 ${history.data.count}건 · 합계 ${won(history.data.total)}${history.data.voided ? ` (취소 ${history.data.voided}건 제외, 목록에는 표시)` : ""}`
+            : ""}
         </Typography>
       </Stack>
       {history.data?.truncated ? (
@@ -196,7 +257,7 @@ function History() {
 }
 
 /** Corrections: the period a payment keeps the site public, payer, invoice date, amount, memo. */
-function EditPaymentDialog({ payment, onClose }: { payment: Payment; onClose: () => void }) {
+export function EditPaymentDialog({ payment, onClose, focusInvoice = false }: { payment: Payment; onClose: () => void; focusInvoice?: boolean }) {
   const queryClient = useQueryClient();
   const toast = useToast();
   const [start, setStart] = useState(payment.period_start);
@@ -250,6 +311,7 @@ function EditPaymentDialog({ payment, onClose }: { payment: Payment; onClose: ()
           <TextField
             label="세금계산서 발행일"
             type="date"
+            autoFocus={focusInvoice}
             value={invoice}
             onChange={(e) => setInvoice(e.target.value)}
             slotProps={{ inputLabel: { shrink: true }, htmlInput: { name: "invoiceIssuedOn" } }}

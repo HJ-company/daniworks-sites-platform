@@ -38,19 +38,27 @@ export function BillingChip({ status }: { status: BillingStatus | null }) {
   return <Chip size="small" label={LABELS[status]} color={COLORS[status]} variant={status === "trial" ? "outlined" : "filled"} />;
 }
 
+const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
+/** `2026-11-29` → `11월 29일(일)`: how dates are said to customers. */
+export function dayLabel(day: string) {
+  const date = new Date(`${day}T00:00:00Z`);
+  return `${date.getUTCMonth() + 1}월 ${date.getUTCDate()}일(${WEEKDAYS[date.getUTCDay()]})`;
+}
+const nextDay = (day: string) => new Date(Date.parse(`${day}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
+
 /** One line on where the subscription stands, for lists and cards. */
 export function billingSummary(sub: Subscription): string {
   switch (sub.status) {
     case "trial":
       return "시안 단계입니다. 사장님이 확정하면 청구하세요.";
     case "awaiting":
-      return sub.nextPaidStart ? `입금된 이용 기간이 ${sub.nextPaidStart}부터 시작합니다. 그 전에는 공개되지 않습니다.` : "입금을 기다리고 있습니다.";
+      return sub.nextPaidStart ? `입금된 이용 기간이 ${dayLabel(sub.nextPaidStart)}부터 시작합니다. 그 전에는 공개되지 않습니다.` : "입금을 기다리고 있습니다.";
     case "active":
-      return `${sub.paidThrough}까지 납부됨 · 다음 결제일 ${sub.nextDueOn}`;
+      return `${dayLabel(sub.paidThrough!)}까지 납부됨 · 다음 결제일 ${dayLabel(sub.nextDueOn!)}`;
     case "overdue":
-      return `${sub.daysOverdue}일 연체 · ${sub.graceDaysLeft}일 뒤(${sub.graceEndsOn} 다음 날) 공개가 중단됩니다.`;
+      return `${sub.daysOverdue}일 연체 · ${dayLabel(sub.graceEndsOn!)}까지 공개, ${dayLabel(nextDay(sub.graceEndsOn!))}부터 공개 중단`;
     case "suspended":
-      return `${sub.daysOverdue}일 연체로 공개가 중단되었습니다. 입금을 확인하면 바로 다시 공개됩니다.`;
+      return `${sub.daysOverdue}일 연체로 공개 중단 · 입금을 확인하면 바로 다시 공개됩니다.`;
     case "cancelled":
       return "해지된 사이트입니다.";
   }
@@ -121,9 +129,15 @@ export function PaymentDialog({
               input: { endAdornment: <InputAdornment position="end">원</InputAdornment> },
               htmlInput: { inputMode: "numeric", name: "amount" },
             }}
-            helperText={`청구 금액 ${won(subscription.amount)}${short ? " · 청구 금액보다 적습니다" : ""}`}
+            helperText={`청구 금액 ${won(subscription.amount)}(부가세 별도)${short ? " · 청구 금액보다 적습니다" : ""}`}
           />
-          <TextField label="입금자명" value={payerName} onChange={(e) => setPayerName(e.target.value)} slotProps={{ htmlInput: { name: "payerName" } }} />
+          <TextField
+            label="입금자명"
+            value={payerName}
+            onChange={(e) => setPayerName(e.target.value)}
+            helperText="통장에 찍힌 이름. 나중에 입금을 대조할 때 씁니다"
+            slotProps={{ htmlInput: { name: "payerName" } }}
+          />
           <TextField label="입금일" type="date" value={paidOn} onChange={(e) => setPaidOn(e.target.value)} slotProps={{ inputLabel: { shrink: true } }} />
           <Stack direction="row" spacing={1}>
             <TextField
@@ -143,8 +157,14 @@ export function PaymentDialog({
               fullWidth
             />
           </Stack>
-          <Typography variant="caption" color="text.secondary">
-            이 입금으로 공개가 유지되는 기간입니다. 기본값은 다음 미납 기간이고, 여러 달치를 한 번에 받았다면 종료일을 늘리세요.
+          <Typography variant="caption" color="text.secondary" data-testid="period-rule">
+            이 입금으로 공개가 유지되는 기간입니다.{" "}
+            {subscription.status === "suspended"
+              ? "공개가 중단된 사이트라 입금일부터 새 기간으로 잡았습니다(중단 기간은 청구하지 않음). 밀린 유예 기간까지 받았다면 시작일을 앞당기세요."
+              : subscription.status === "overdue"
+                ? "유예 중이라 지난 기간이 끝난 다음 날부터 이어서 잡았습니다."
+                : "다음 미납 기간으로 잡았습니다."}{" "}
+            여러 달치를 한 번에 받았다면 종료일을 늘리세요.
           </Typography>
           <TextField label="메모" value={memo} onChange={(e) => setMemo(e.target.value)} multiline minRows={2} />
           {end < start ? <Alert severity="warning">종료일이 시작일보다 빠릅니다.</Alert> : null}

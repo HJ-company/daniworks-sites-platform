@@ -24,6 +24,8 @@ async function ensureSite(slug, base, mutate = () => {}, customerId) {
   const config = structuredClone(base);
   config.slug = slug;
   mutate(config);
+  // The page title follows the business name, as an agent would write it.
+  config.meta.title = `${config.business.name} | ${config.meta.title.split("|").slice(1).join("|").trim() || "홈페이지"}`;
   const created = await api("POST", "/sites", { config, createdBy: "operator", customerId });
   if (created.status !== 201) throw new Error(`create ${slug}: ${created.status} ${JSON.stringify(created.data)}`);
   return { id: created.data.siteId, fresh: true };

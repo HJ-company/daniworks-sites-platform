@@ -1,4 +1,4 @@
-import { Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, Link, Stack, TextField, Typography } from "@mui/material";
+import { Alert, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, Link, Stack, TextField, Typography } from "@mui/material";
 import { DataGrid, type GridColDef } from "@mui/x-data-grid";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -87,13 +87,36 @@ const FIELDS: { key: keyof Customer; body: string; label: string; helper?: strin
   { key: "memo", body: "memo", label: "메모" },
 ];
 
-/** Add (no customer) or edit a customer. Only changed fields are sent on edit. */
-export function CustomerDialog({ customer, onClose }: { customer?: Customer; onClose: () => void }) {
+const onlyDigits = (value: string | null | undefined) => (value ?? "").replace(/[^\d]/g, "");
+
+/**
+ * Add (no customer) or edit a customer. Only changed fields are sent on edit. `initialName`
+ * prefills a new customer; `onCreated` replaces the default jump to the new customer's page.
+ */
+export function CustomerDialog({
+  customer,
+  onClose,
+  initialName = "",
+  onCreated,
+}: {
+  customer?: Customer;
+  onClose: () => void;
+  initialName?: string;
+  onCreated?: (customer: Customer) => void;
+}) {
   const queryClient = useQueryClient();
   const toast = useToast();
   const navigate = useNavigate();
+  const all = useQuery({ queryKey: ["customers"], queryFn: () => api<{ customers: CustomerSummary[] }>("/customers") });
   const [values, setValues] = useState<Record<string, string>>(
-    Object.fromEntries(FIELDS.map((f) => [f.body, (customer?.[f.key] as string | null | undefined) ?? ""])),
+    Object.fromEntries(FIELDS.map((f) => [f.body, (customer?.[f.key] as string | null | undefined) ?? (f.body === "name" ? initialName : "")])),
+  );
+  // Same phone or business number as someone else: likely the same owner registered twice.
+  const duplicates = (all.data?.customers ?? []).filter(
+    (c) =>
+      c.id !== customer?.id &&
+      ((onlyDigits(values.phone).length >= 9 && onlyDigits(c.phone) === onlyDigits(values.phone)) ||
+        (onlyDigits(values.businessNumber).length === 10 && onlyDigits(c.business_number) === onlyDigits(values.businessNumber))),
   );
   const changed = Object.fromEntries(
     FIELDS.filter((f) => values[f.body] !== ((customer?.[f.key] as string | null | undefined) ?? "")).map((f) => [f.body, values[f.body]]),
@@ -107,7 +130,10 @@ export function CustomerDialog({ customer, onClose }: { customer?: Customer; onC
       toast(customer ? "고객 정보를 저장했습니다" : "고객을 추가했습니다");
       void queryClient.invalidateQueries();
       onClose();
-      if (!customer) navigate(`/customers/${data.customer.id}`);
+      if (!customer) {
+        if (onCreated) onCreated(data.customer);
+        else navigate(`/customers/${data.customer.id}`);
+      }
     },
   });
   return (
@@ -127,6 +153,11 @@ export function CustomerDialog({ customer, onClose }: { customer?: Customer; onC
               slotProps={{ htmlInput: { name: f.body } }}
             />
           ))}
+          {duplicates.length ? (
+            <Alert severity="warning" data-testid="duplicate-customer">
+              같은 연락처나 사업자번호의 고객이 있습니다: {duplicates.map((c) => c.name).join(", ")}. 같은 사장님이면 새로 만들지 말고 기존 고객에 사이트를 연결하세요.
+            </Alert>
+          ) : null}
           <ErrorAlert error={save.error} />
         </Stack>
       </DialogContent>

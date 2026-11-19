@@ -42,7 +42,7 @@ export function SitePage() {
     domains.data?.domains.find((d) => d.kind === "subdomain")?.hostname;
 
   if (site.error) return <ErrorAlert error={site.error} />;
-  if (!site.data) return null;
+  if (!site.data) return <LinearProgress />;
   const { site: row } = site.data;
   return (
     <Stack spacing={2}>

@@ -1,18 +1,20 @@
-import { Button, Link, Paper, Stack, Table, TableBody, TableCell, TableHead, TableRow, Typography } from "@mui/material";
+import { Button, LinearProgress, Link, Paper, Stack, Table, TableBody, TableCell, TableHead, TableRow, Typography } from "@mui/material";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link as RouterLink, useParams } from "react-router";
-import { api, CYCLE_LABEL, won, type CustomerDetail } from "../api.js";
-import { ErrorAlert } from "../ui.js";
+import { api, CYCLE_LABEL, won, type CustomerDetail, type Payment } from "../api.js";
+import { ErrorAlert, StatusChip } from "../ui.js";
 import { BillingChip, billingSummary } from "./billing/billing-ui.js";
+import { EditPaymentDialog } from "./billing/PaymentsPage.js";
 import { CustomerDialog } from "./CustomersPage.js";
 
 export function CustomerPage() {
   const { customerId = "" } = useParams();
   const [editing, setEditing] = useState(false);
+  const [invoicing, setInvoicing] = useState<Payment | null>(null);
   const detail = useQuery({ queryKey: ["customer", customerId], queryFn: () => api<CustomerDetail>(`/customers/${customerId}`) });
   if (detail.error) return <ErrorAlert error={detail.error} />;
-  if (!detail.data) return null;
+  if (!detail.data) return <LinearProgress />;
   const { customer, sites, payments } = detail.data;
   const info: [string, string | null][] = [
     ["담당자", customer.contact_name],
@@ -57,6 +59,7 @@ export function CustomerPage() {
           <TableHead>
             <TableRow>
               <TableCell>상호</TableCell>
+              <TableCell>공개</TableCell>
               <TableCell>구독</TableCell>
               <TableCell>청구</TableCell>
               <TableCell>상황</TableCell>
@@ -71,6 +74,14 @@ export function CustomerPage() {
                   </Link>
                 </TableCell>
                 <TableCell>
+                  <StatusChip status={s.status} cancelled={s.cancelled_at} unpublished={!s.published_version_id} />
+                  {s.status === "suspended" && !s.cancelled_at ? (
+                    <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+                      {s.suspend_reason === "billing" ? "미납" : "운영자 정지"}
+                    </Typography>
+                  ) : null}
+                </TableCell>
+                <TableCell>
                   <BillingChip status={s.subscription.status} />
                 </TableCell>
                 <TableCell>
@@ -81,7 +92,7 @@ export function CustomerPage() {
             ))}
             {!sites.length ? (
               <TableRow>
-                <TableCell colSpan={4}>
+                <TableCell colSpan={5}>
                   <Typography variant="body2" color="text.secondary">
                     연결된 사이트가 없습니다. 사이트 개요의 '고객'에서 연결하세요.
                   </Typography>
@@ -114,7 +125,15 @@ export function CustomerPage() {
                 <TableCell>
                   {p.period_start} ~ {p.period_end}
                 </TableCell>
-                <TableCell>{p.invoice_issued_on ?? "미발행"}</TableCell>
+                <TableCell>
+                  {p.voided_at ? (
+                    "-"
+                  ) : (
+                    <Button size="small" onClick={() => setInvoicing(p)} data-testid={`invoice-${p.id}`}>
+                      {p.invoice_issued_on ?? "미발행 · 기록"}
+                    </Button>
+                  )}
+                </TableCell>
               </TableRow>
             ))}
             {!payments.length ? (
@@ -130,6 +149,7 @@ export function CustomerPage() {
         </Table>
       </Paper>
       {editing ? <CustomerDialog customer={customer} onClose={() => setEditing(false)} /> : null}
+      {invoicing ? <EditPaymentDialog payment={invoicing} onClose={() => setInvoicing(null)} focusInvoice /> : null}
     </Stack>
   );
 }

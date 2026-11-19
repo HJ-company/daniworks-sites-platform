@@ -25,6 +25,7 @@ import { Link as RouterLink } from "react-router";
 import { api, CYCLE_LABEL, won, type Cycle, type CustomerSummary, type Payment, type SiteRow, type Subscription } from "../../api.js";
 import { ErrorAlert, useToast } from "../../ui.js";
 import { BillingChip, billingSummary, PaymentDialog } from "../billing/billing-ui.js";
+import { CustomerDialog } from "../CustomersPage.js";
 
 export function useSubscription(siteId: string) {
   return useQuery({
@@ -61,7 +62,7 @@ export function SubscriptionCard({ siteId, site }: { siteId: string; site: SiteR
         </Typography>
         <BillingChip status={sub.status} />
         <Typography variant="body2" sx={{ flex: 1 }}>
-          {CYCLE_LABEL[sub.cycle]} {won(sub.amount)}
+          {CYCLE_LABEL[sub.cycle]} {won(sub.amount)}(부가세 별도)
           <Button size="small" onClick={() => setEditing(true)} disabled={sub.status === "cancelled"}>
             변경
           </Button>
@@ -153,7 +154,7 @@ function PlanDialog({ siteId, subscription, onClose }: { siteId: string; subscri
             <MenuItem value="yearly">연 단위</MenuItem>
           </TextField>
           <TextField
-            label="금액(공급가)"
+            label="금액(공급가, 부가세 별도)"
             value={amount}
             onChange={(e) => setAmount(e.target.value.replace(/[^\d]/g, ""))}
             slotProps={{ input: { endAdornment: <InputAdornment position="end">원</InputAdornment> }, htmlInput: { inputMode: "numeric" } }}
@@ -172,9 +173,12 @@ function PlanDialog({ siteId, subscription, onClose }: { siteId: string; subscri
   );
 }
 
+type Option = CustomerSummary | { id: "__new__"; name: string };
+
 function CustomerLink({ siteId, site }: { siteId: string; site: SiteRow }) {
   const queryClient = useQueryClient();
   const toast = useToast();
+  const [creating, setCreating] = useState<string | null>(null);
   const customers = useQuery({ queryKey: ["customers"], queryFn: () => api<{ customers: CustomerSummary[] }>("/customers") });
   const link = useMutation({
     mutationFn: (customerId: string | null) => api(`/sites/${siteId}`, { method: "PATCH", json: { customerId } }),
@@ -187,16 +191,51 @@ function CustomerLink({ siteId, site }: { siteId: string; site: SiteRow }) {
   const current = options.find((c) => c.id === site.customer_id) ?? null;
   return (
     <Stack direction="row" spacing={1} sx={{ alignItems: "center", mt: 1.5 }}>
-      <Autocomplete
+      <Autocomplete<Option>
         size="small"
-        sx={{ minWidth: 260 }}
+        sx={{ minWidth: 300 }}
         options={options}
         value={current}
         getOptionLabel={(c) => c.name}
         isOptionEqualToValue={(a, b) => a.id === b.id}
-        onChange={(_, value) => link.mutate(value?.id ?? null)}
-        renderInput={(params) => <TextField {...params} label="고객(사장님)" />}
-        noOptionsText="고객이 없습니다. 고객 메뉴에서 추가하세요"
+        // Find by business, owner, phone or business number; always offer to add a new customer.
+        filterOptions={(list, { inputValue }) => {
+          const q = inputValue.trim().toLowerCase();
+          const digits = q.replace(/[^\d]/g, "");
+          const found = (list as CustomerSummary[]).filter(
+            (c) =>
+              !q ||
+              [c.name, c.contact_name].some((v) => v?.toLowerCase().includes(q)) ||
+              (digits.length >= 3 && [c.phone, c.business_number].some((v) => (v ?? "").replace(/[^\d]/g, "").includes(digits))),
+          );
+          return [...found, { id: "__new__", name: q ? `새 고객 추가: ${inputValue.trim()}` : "새 고객 추가" }];
+        }}
+        renderOption={(props, option) => {
+          const { key, ...rest } = props as typeof props & { key: string };
+          return (
+            <li key={key} {...rest}>
+              {option.id === "__new__" ? (
+                <Typography color="primary">+ {option.name}</Typography>
+              ) : (
+                <Stack>
+                  <Typography variant="body2">{option.name}</Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {[(option as CustomerSummary).contact_name, (option as CustomerSummary).phone].filter(Boolean).join(" · ") || "-"}
+                  </Typography>
+                </Stack>
+              )}
+            </li>
+          );
+        }}
+        onChange={(_, value, reason, details) => {
+          if (value?.id === "__new__") {
+            const typed = (details?.option.name ?? "").replace(/^새 고객 추가:?\s*/, "");
+            setCreating(typed);
+            return;
+          }
+          if (reason === "clear" || value) link.mutate(value?.id ?? null);
+        }}
+        renderInput={(params) => <TextField {...params} label="고객(사장님)" placeholder="업체명, 이름, 전화번호" />}
       />
       {current ? (
         <Link component={RouterLink} to={`/customers/${current.id}`} variant="body2">
@@ -204,6 +243,13 @@ function CustomerLink({ siteId, site }: { siteId: string; site: SiteRow }) {
         </Link>
       ) : null}
       <ErrorAlert error={link.error} />
+      {creating !== null ? (
+        <CustomerDialog
+          initialName={creating}
+          onClose={() => setCreating(null)}
+          onCreated={(customer) => link.mutate(customer.id)}
+        />
+      ) : null}
     </Stack>
   );
 }

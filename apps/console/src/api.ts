@@ -233,7 +233,8 @@ export interface CustomerDetail {
   sites: {
     id: string;
     slug: string;
-    status: string;
+    status: "active" | "suspended";
+    suspend_reason: "billing" | "manual" | null;
     cancelled_at: string | null;
     published_version_id: string | null;
     business_name: string | null;

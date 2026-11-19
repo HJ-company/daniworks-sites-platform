@@ -1,7 +1,7 @@
 // M4 step 4-B (console): customers, the subscription card, the payments work queue and history,
 // in a browser. Publishing is blocked until a deposit is confirmed; editing a payment's period
 // moves the site between public and the preparing page.
-import { api, chromium, evidence, routerRequest, uploadShared } from "./lib/verify.mjs";
+import { api, chromium, evidence, localD1, routerRequest, uploadShared } from "./lib/verify.mjs";
 
 const { fieldFixture } = await import("../packages/renderer/src/templates/service-local/fixtures.ts");
 const CONSOLE = process.env.CONSOLE_URL ?? "http://127.0.0.1:8789";
@@ -101,11 +101,63 @@ await voidDialog.getByRole("button", { name: "결제 취소" }).click();
 check("결제 취소 → 내역에 취소됨", (await toast("결제를 취소했습니다")) && (await visible(page.getByText("취소됨 · 시험 기록"))));
 await shot("history");
 
-// 7. the customer page shows the site and its payments
+// 7. the customer page shows the site, its public state and payments; invoices are recorded there
+await api("POST", `/sites/${siteId}/payments`, { payerName: "김사장" });
 await page.goto(customerUrl, { waitUntil: "networkidle" });
-check("고객 상세: 사이트·구독 상황·결제 이력(취소 포함)", (await visible(page.getByRole("link", { name: config.business.name }))) &&
-  (await visible(page.getByText("2026", { exact: false }))) && (await page.locator("tbody tr").count()) >= 2);
+check("고객 상세: 사이트·공개 상태·구독 상황·결제 이력(취소 포함)", (await visible(page.getByRole("link", { name: config.business.name }))) &&
+  (await visible(page.getByText("운영", { exact: true }))) && (await page.locator("tbody tr").count()) >= 3);
+const fresh = (await api("GET", `/sites/${siteId}/subscription`)).data.payments.find((p) => !p.voided_at && !p.invoice_issued_on);
+await page.getByTestId(`invoice-${fresh.id}`).click();
+await page.getByRole("dialog").locator("input[name=invoiceIssuedOn]").fill(today);
+await page.getByRole("dialog").getByRole("button", { name: "저장" }).click();
+check("고객 상세에서 바로 세금계산서 발행일 기록", (await toast("결제 기록을 고쳤습니다")) &&
+  (await visible(page.getByTestId(`invoice-${fresh.id}`).filter({ hasText: today }))));
 await shot("customer");
+
+// 8. history: customer column, search, this month, purged sites shown as such
+const goneConfig = { ...structuredClone(fieldFixture), slug: `billc-gone-${run}` };
+goneConfig.business.name = `삭제될청소 ${run}`;
+const gone = (await api("POST", "/sites", { config: goneConfig, createdBy: "operator" })).data.siteId;
+await api("POST", `/sites/${gone}/payments`, { payerName: "삭제" });
+await api("POST", `/sites/${gone}/cancel`);
+localD1(`UPDATE sites SET cancelled_at = '2000-01-01T00:00:00.000Z' WHERE id = '${gone}'`);
+await api("POST", `/sites/${gone}/purge`, { confirmSlug: goneConfig.slug });
+await page.goto(`${CONSOLE}/payments?tab=history`, { waitUntil: "networkidle" });
+await page.getByRole("button", { name: "이번 달" }).click();
+await page.getByRole("searchbox", { name: "결제 검색" }).fill(`결제화면 고객 ${run}`);
+check("결제 내역: 고객 이름으로 검색, 고객 열", await visible(page.getByRole("gridcell", { name: `결제화면 고객 ${run}` })));
+await page.getByRole("searchbox", { name: "결제 검색" }).fill(`삭제될청소 ${run}`);
+check("결제 내역: 삭제된 사이트는 링크 없이 (삭제됨)", (await visible(page.getByText(`삭제될청소 ${run} (삭제됨)`))) &&
+  (await page.getByRole("link", { name: `삭제될청소 ${run}` }).count()) === 0);
+check("결제 내역 합계 문구에 취소 건 안내", (await page.getByTestId("payments-total").textContent()).includes("취소"));
+
+// 9. the site's customer picker: find by owner name, add a new customer in place
+const pickConfig = { ...structuredClone(fieldFixture), slug: `billc-pick-${run}` };
+const pick = (await api("POST", "/sites", { config: pickConfig, createdBy: "operator" })).data.siteId;
+await page.goto(`${CONSOLE}/sites/${pick}`, { waitUntil: "networkidle" });
+await card.getByLabel("고객(사장님)").fill("김사장");
+check("고객 선택: 사장님 이름으로 찾음", await visible(page.getByRole("option", { name: new RegExp(`결제화면 고객 ${run}`) })));
+await card.getByLabel("고객(사장님)").fill(`최민수${run}`);
+await page.getByRole("option", { name: `+ 새 고객 추가: 최민수${run}` }).click();
+const create = page.getByRole("dialog");
+check("새 고객 추가 창에 입력한 이름", (await create.locator("input[name=name]").inputValue()) === `최민수${run}`);
+await create.locator("input[name=businessNumber]").fill("123-45-67890");
+check("같은 사업자번호 고객이 있으면 경고", await visible(create.getByTestId("duplicate-customer")));
+await create.locator("input[name=businessNumber]").fill("");
+await create.getByRole("button", { name: "저장" }).click();
+check("새 고객을 만들고 바로 사이트에 연결", (await toast("고객을 연결했습니다")) &&
+  (await api("GET", `/sites/${pick}`)).data.site.customer_id !== null);
+
+// 10. overdue wording says until when the site stays public
+const lateConfig = { ...structuredClone(fieldFixture), slug: `billc-late-${run}` };
+const late = (await api("POST", "/sites", { config: lateConfig, createdBy: "operator" })).data.siteId;
+await api("POST", `/sites/${late}/payments`, { periodStart: addDays(today, -40), periodEnd: addDays(today, -5) });
+await page.goto(`${CONSOLE}/sites/${late}`, { waitUntil: "networkidle" });
+const summary = await card.getByTestId("billing-summary").textContent();
+check("연체 문구: ○월 ○일(요일)까지 공개, 다음 날부터 중단", /\d+월 \d+일\([일월화수목금토]\)까지 공개, \d+월 \d+일\([일월화수목금토]\)부터 공개 중단/.test(summary), { summary });
+await card.getByRole("button", { name: "입금 확인" }).click();
+check("입금 창에 기간을 잡은 기준 안내(유예 중 이어서)", (await page.getByTestId("period-rule").textContent()).includes("이어서"));
+await page.getByRole("dialog").getByRole("button", { name: "닫기" }).click();
 check("콘솔 페이지 오류 없음", !errors.length, { errors });
 await browser.close();
 ev.finish({ siteId });

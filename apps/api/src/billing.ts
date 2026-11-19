@@ -448,33 +448,54 @@ export async function sitePayments(db: D1Database, siteId: string) {
 }
 
 /** Payment history across sites. Dates filter on the payment day (KST). */
+/**
+ * Payment history across sites. Dates filter on the payment day (KST). Rows carry the site's
+ * current customer and whether the site still exists (payments outlive purged sites).
+ */
 export async function listPayments(db: D1Database, filter: { from?: string | null; to?: string | null; method?: string | null }) {
   const where = ["1 = 1"];
   const binds: unknown[] = [];
   if (filter.from) {
-    where.push("paid_on >= ?");
+    where.push("p.paid_on >= ?");
     binds.push(dayOf(filter.from, "from"));
   }
   if (filter.to) {
-    where.push("paid_on <= ?");
+    where.push("p.paid_on <= ?");
     binds.push(dayOf(filter.to, "to"));
   }
   if (filter.method) {
     if (filter.method !== "manual" && filter.method !== "pg") throw new HttpError(422, "method는 manual 또는 pg");
-    where.push("method = ?");
+    where.push("p.method = ?");
     binds.push(filter.method);
   }
-  const [rows, totals] = await db.batch<PaymentRow | { count: number; total: number }>([
-    db.prepare(`SELECT * FROM payments WHERE ${where.join(" AND ")} ORDER BY paid_on DESC, created_at DESC LIMIT ${HISTORY_LIMIT}`).bind(...binds),
-    // Totals over the whole range (voided payments excluded), whatever the list shows.
+  const clause = where.join(" AND ");
+  const [rows, totals] = await db.batch<(PaymentRow & { customer_name: string | null; site_exists: number }) | Totals>([
     db
-      .prepare(`SELECT COUNT(*) AS count, COALESCE(SUM(amount), 0) AS total FROM payments WHERE ${where.join(" AND ")} AND voided_at IS NULL`)
+      .prepare(
+        `SELECT p.*, c.name AS customer_name, (s.id IS NOT NULL) AS site_exists
+         FROM payments p LEFT JOIN sites s ON s.id = p.site_id LEFT JOIN customers c ON c.id = s.customer_id
+         WHERE ${clause} ORDER BY p.paid_on DESC, p.created_at DESC LIMIT ${HISTORY_LIMIT}`,
+      )
+      .bind(...binds),
+    // Totals over the whole range, whatever the list shows: valid payments, and how many were voided.
+    db
+      .prepare(
+        `SELECT COALESCE(SUM(CASE WHEN p.voided_at IS NULL THEN 1 ELSE 0 END), 0) AS count,
+                COALESCE(SUM(CASE WHEN p.voided_at IS NULL THEN p.amount ELSE 0 END), 0) AS total,
+                COALESCE(SUM(CASE WHEN p.voided_at IS NULL THEN 0 ELSE 1 END), 0) AS voided
+         FROM payments p WHERE ${clause}`,
+      )
       .bind(...binds),
   ]);
-  const payments = rows!.results as PaymentRow[];
-  const sum = totals!.results[0] as { count: number; total: number };
-  return { payments, count: sum.count, total: sum.total, truncated: payments.length === HISTORY_LIMIT };
+  const payments = (rows!.results as (PaymentRow & { customer_name: string | null; site_exists: number })[]).map((p) => ({
+    ...p,
+    site_exists: Boolean(p.site_exists),
+  }));
+  const sum = totals!.results[0] as Totals;
+  return { payments, count: sum.count, total: sum.total, voided: sum.voided, truncated: payments.length === HISTORY_LIMIT };
 }
+
+type Totals = { count: number; total: number; voided: number };
 
 const HISTORY_LIMIT = 1000;
 
