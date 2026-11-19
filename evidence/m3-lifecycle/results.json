@@ -1,12 +1,12 @@
 {
-  "siteId": "28f9b832-f90d-4bf2-8169-2d0627e6d529",
+  "siteId": "f897c3c7-5c82-4049-aed6-d142a7b2f041",
   "results": [
     {
       "name": "준비: 커스텀 도메인에서 서빙",
       "pass": true
     },
     {
-      "name": "zip: 페이지 2개, 클라이언트 번들·청크, CSS",
+      "name": "zip: 페이지 2개, 클라이언트 번들·청크, 페이지에 들어간 CSS",
       "pass": true
     },
     {

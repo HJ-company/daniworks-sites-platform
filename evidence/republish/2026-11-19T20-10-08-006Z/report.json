@@ -1,0 +1,33 @@
+{
+  "renderVersion": "0b2e5db82328-04b6cce1",
+  "threshold": 0.0001,
+  "apply": true,
+  "tokenLeaks": [],
+  "report": [
+    {
+      "slug": "rp-tall-mwnzhlar",
+      "siteId": "52b56047-67ff-4a5f-92d0-a34e9c6321c9",
+      "from": "old-assets",
+      "to": "0b2e5db82328-04b6cce1",
+      "renderId": "9c368c120f8f4cec",
+      "diffs": {
+        "home-mobile": {
+          "ratio": 1,
+          "reason": "size 390x6915 → 390x6940"
+        },
+        "home-desktop": {
+          "ratio": 1,
+          "reason": "size 1280x5720 → 1280x5801"
+        },
+        "privacy-mobile": {
+          "ratio": 0
+        },
+        "privacy-desktop": {
+          "ratio": 0
+        }
+      },
+      "same": false,
+      "result": "review"
+    }
+  ]
+}

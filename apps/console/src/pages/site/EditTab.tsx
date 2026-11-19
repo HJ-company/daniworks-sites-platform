@@ -4,7 +4,7 @@ import { Accordion, AccordionDetails, AccordionSummary, Alert, Button, Grid, Pap
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import CodeMirror from "@uiw/react-codemirror";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { api, type VersionRow } from "../../api.js";
+import { api, type SiteRow, type VersionRow } from "../../api.js";
 import { ErrorAlert, useToast } from "../../ui.js";
 
 type Config = Record<string, unknown> & { business?: Record<string, unknown>; content?: Record<string, unknown> };
@@ -97,7 +97,9 @@ export function EditTab({ siteId }: { siteId: string }) {
         json: { config: parsed.config, note: note || null, createdBy: "operator" },
       }),
     onSuccess: async ({ number }) => {
-      toast(`v${number} 초안을 저장했습니다`);
+      // The owner's draft link always shows the latest version: say so, it is what they will see.
+      const live = queryClient.getQueryData<{ site: SiteRow }>(["site", siteId])?.site.draft_link;
+      toast(`v${number} 초안을 저장했습니다${live && !live.expired ? " · 사장님 시안 링크에도 바로 반영됩니다" : ""}`);
       setNote("");
       await queryClient.invalidateQueries({ queryKey: ["site", siteId] });
       await queryClient.invalidateQueries({ queryKey: ["audit", siteId] });

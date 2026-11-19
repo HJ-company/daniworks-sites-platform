@@ -1,0 +1,68 @@
+{
+  "round": "round1b",
+  "at": "2026-11-19T19:59:59.160Z",
+  "public": {
+    "lesson": {
+      "performance": 100,
+      "accessibility": 100,
+      "bestPractices": 100,
+      "seo": 100,
+      "lcpMs": 1134,
+      "cls": 0,
+      "tbtMs": 0,
+      "runs": [
+        99,
+        100,
+        100
+      ],
+      "failed": []
+    },
+    "field": {
+      "performance": 100,
+      "accessibility": 100,
+      "bestPractices": 100,
+      "seo": 100,
+      "lcpMs": 1884,
+      "cls": 0,
+      "tbtMs": 0,
+      "runs": [
+        99,
+        100,
+        100
+      ],
+      "failed": []
+    },
+    "draft": {
+      "performance": 99,
+      "accessibility": 100,
+      "bestPractices": 100,
+      "seo": 63,
+      "lcpMs": 2036,
+      "cls": 0,
+      "tbtMs": 0,
+      "runs": [
+        99,
+        99,
+        100
+      ],
+      "failed": [
+        "is-crawlable"
+      ]
+    }
+  },
+  "console": {
+    "firstView": {
+      "scripts": 12,
+      "jsGzipKb": 183,
+      "listReadyMs": 141
+    },
+    "screensMs": {
+      "site": 836,
+      "edit": 846,
+      "photos": 850,
+      "payments": 128,
+      "customers": 133,
+      "guides": 120
+    }
+  }
+}

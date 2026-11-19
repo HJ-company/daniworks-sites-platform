@@ -1,5 +1,5 @@
-import { Alert, Chip, Snackbar } from "@mui/material";
-import { createContext, useCallback, useContext, useState, type ReactNode } from "react";
+import { Alert, Chip } from "@mui/material";
+import { createContext, lazy, Suspense, useCallback, useContext, useState, type ReactNode } from "react";
 import { ApiError } from "./api.js";
 
 /** Validation details from the api, one per line, under the message. */
@@ -29,6 +29,9 @@ export function StatusChip({ status, cancelled, unpublished }: { status: string;
   return <Chip size="small" label={entry.label} color={entry.color} />;
 }
 
+// Loaded with the first toast: the list screen should not download it up front.
+const Snackbar = lazy(() => import("@mui/material/Snackbar"));
+
 const ToastContext = createContext<(message: string) => void>(() => undefined);
 
 export function ToastProvider({ children }: { children: ReactNode }) {
@@ -38,13 +41,17 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={show}>
       {children}
-      <Snackbar
-        key={toast.key}
-        open={toast.open}
-        autoHideDuration={3000}
-        onClose={() => setToast((prev) => ({ ...prev, open: false }))}
-        message={toast.text}
-      />
+      {toast.key ? (
+        <Suspense fallback={null}>
+          <Snackbar
+            key={toast.key}
+            open={toast.open}
+            autoHideDuration={3000}
+            onClose={() => setToast((prev) => ({ ...prev, open: false }))}
+            message={toast.text}
+          />
+        </Suspense>
+      ) : null}
     </ToastContext.Provider>
   );
 }

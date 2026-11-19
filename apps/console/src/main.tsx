@@ -6,13 +6,14 @@ import { createRoot } from "react-dom/client";
 import { RouterProvider, createBrowserRouter } from "react-router";
 import { Layout } from "./layout.js";
 import { lazy } from "react";
-import { SitePage } from "./pages/SitePage.js";
 
 const SitesPage = lazy(() => import("./pages/SitesPage.js").then((m) => ({ default: m.SitesPage })));
 const ReportsPage = lazy(() => import("./pages/ReportsPage.js").then((m) => ({ default: m.ReportsPage })));
 const PaymentsPage = lazy(() => import("./pages/billing/PaymentsPage.js").then((m) => ({ default: m.PaymentsPage })));
 const CustomersPage = lazy(() => import("./pages/CustomersPage.js").then((m) => ({ default: m.CustomersPage })));
 const CustomerPage = lazy(() => import("./pages/CustomerPage.js").then((m) => ({ default: m.CustomerPage })));
+// Every page loads on first use: the first screen (sites list) carries only what it needs.
+const SitePage = lazy(() => import("./pages/SitePage.js").then((m) => ({ default: m.SitePage })));
 const GuidesPage = lazy(() => import("./pages/GuidesPage.js").then((m) => ({ default: m.GuidesPage })));
 const AiToolsPage = lazy(() => import("./pages/AiToolsPage.js").then((m) => ({ default: m.AiToolsPage })));
 import { ToastProvider } from "./ui.js";

@@ -20,6 +20,16 @@ export default defineConfig({
       },
     },
   },
-  // MUI X DataGrid alone is ~520 kB; it loads only on the list and inquiry screens.
-  build: { outDir: "dist", sourcemap: true, chunkSizeWarningLimit: 600 },
+  // MUI X DataGrid alone is ~520 kB; it loads only on the screens with a grid (payments,
+  // customers, reports, inquiries). Its own chunk group keeps it that way: left to itself the
+  // bundler puts MUI modules shared with other screens into the grid's chunk, and then the
+  // site page (no grid) downloads all of it.
+  build: {
+    outDir: "dist",
+    sourcemap: true,
+    chunkSizeWarningLimit: 600,
+    rolldownOptions: {
+      output: { codeSplitting: { includeDependenciesRecursively: false, groups: [{ name: "data-grid", test: /@mui[\\/]x-|grid-locale/ }] } },
+    },
+  },
 });

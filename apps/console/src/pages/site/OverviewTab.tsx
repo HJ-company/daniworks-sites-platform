@@ -1,4 +1,5 @@
 import {
+  Alert,
   Button,
   Chip,
   Dialog,
@@ -31,6 +32,7 @@ export function OverviewTab({ siteId, site, versions }: { siteId: string; site: 
   const toast = useToast();
   const [notify, setNotify] = useState(site.notify_email ?? "");
   const [confirmSuspend, setConfirmSuspend] = useState(false);
+  const [suspendReason, setSuspendReason] = useState("");
   const cancelled = Boolean(site.cancelled_at);
   const billing = useSubscription(siteId).data?.subscription;
   // Publishing follows billing: no exceptions before a payment is confirmed.
@@ -60,6 +62,12 @@ export function OverviewTab({ siteId, site, versions }: { siteId: string; site: 
       <SubscriptionCard siteId={siteId} site={site} />
       {site.published_version_id ? <DraftLinkCard siteId={siteId} site={site} /> : null}
       <ErrorAlert error={action.error ?? saveNotify.error} />
+      {site.last_suspension ? (
+        <Alert severity="warning" data-testid="manual-suspension">
+          {site.last_suspension.actor_name ?? "운영자"}님이 {kst(site.last_suspension.created_at)}에 공개를 정지했습니다
+          {site.last_suspension.reason ? ` · 사유: ${site.last_suspension.reason}` : " · 사유 없음"}. 입금과 상관없이 공개 재개를 눌러야 다시 열립니다.
+        </Alert>
+      ) : null}
       <Paper sx={{ p: 2 }}>
         <Stack direction={{ xs: "column", sm: "row" }} spacing={2} sx={{ alignItems: { sm: "center" } }}>
           <TextField
@@ -92,15 +100,29 @@ export function OverviewTab({ siteId, site, versions }: { siteId: string; site: 
           <DialogContentText>
             방문자에게는 상호와 "준비 중" 안내만 보입니다. 데이터와 도메인은 그대로이고, 공개 재개로 바로 되돌릴 수 있습니다.
           </DialogContentText>
+          <TextField
+            fullWidth
+            size="small"
+            sx={{ mt: 2 }}
+            required
+            label="사유 (다른 운영자에게 보임)"
+            placeholder="예: 사장님 요청으로 리뉴얼 중"
+            value={suspendReason}
+            onChange={(e) => setSuspendReason(e.target.value)}
+            slotProps={{ htmlInput: { maxLength: 100, name: "suspendReason" } }}
+          />
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setConfirmSuspend(false)}>닫기</Button>
           <Button
             color="warning"
             variant="contained"
+            // Nothing lifts an operator's suspension on its own: the next person needs the reason.
+            disabled={!suspendReason.trim()}
             onClick={() => {
               setConfirmSuspend(false);
-              action.mutate({ path: "suspend", done: "공개를 정지했습니다" });
+              action.mutate({ path: "suspend", body: { reason: suspendReason }, done: "공개를 정지했습니다" });
+              setSuspendReason("");
             }}
           >
             정지

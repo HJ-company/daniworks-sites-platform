@@ -1,4 +1,4 @@
-import { parseSiteConfig, renderSite, SiteConfigError, STARTER_TODO, type SiteConfig } from "@sites/renderer";
+import { parseSiteConfig, renderSite, SiteConfigError, type SiteConfig } from "@sites/renderer";
 import { deleteAsset, listAssets, uploadAsset } from "./assets.js";
 import { refreshBlog, refreshDueBlogs } from "./blog.js";
 import {
@@ -17,9 +17,10 @@ import {
   updateSubscription,
   voidPayment,
 } from "./billing.js";
-import { draftLink, issueDraftLink, revokeDraftLink } from "./draft-links.js";
+import { draftLink, issueDraftLink, revokeDraftLink, withDraftBanner } from "./draft-links.js";
 import { getGuide, guideVersions, listGuides } from "./guides.js";
-import { createCustomer, customerDetail, linkSite, listCustomers, updateCustomer } from "./customers.js";
+import { createCustomer, customerDetail, duplicatesOf, linkSite, listCustomers, updateCustomer } from "./customers.js";
+import { placeholderPaths, todayList } from "./today.js";
 import { allInquiries, inquiriesCsv, listInquiries, requireEmail } from "./inquiries.js";
 import { currentQuarter, kstDay, metricsReport, quarterlyCsv, quarterlyOverview, quarterlyReport } from "./metrics.js";
 import { turnstileFrame } from "./turnstile.js";
@@ -87,7 +88,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
     const route = parts[2] ? `/${parts[2]}` : "/";
     const page = pages.find((entry) => entry.route === route);
     if (!page) throw new HttpError(404, "없는 페이지입니다");
-    return new Response(page.html, {
+    return new Response(withDraftBanner(page.html, "internal"), {
       headers: {
         "content-type": "text/html; charset=utf-8",
         "x-robots-tag": "noindex, nofollow",
@@ -212,6 +213,9 @@ async function operatorRoutes(request: Request, env: Env, url: URL, parts: strin
     if (parts.length === 3 && parts[2] === "versions") return json({ versions: await guideVersions(env, slug) });
   }
 
+  // GET /today: the operator's to-do list (payments, suspensions, drafts, domains, unlinked sites)
+  if (method === "GET" && url.pathname === "/today") return json(await todayList(env));
+
   // Billing work list and payment history: GET /billing/queue, GET /payments?from=&to=&method=
   if (method === "GET" && url.pathname === "/billing/queue") return json({ today: today(), graceDays: GRACE_DAYS, sites: await billingQueue(env.DB) });
   if (parts[0] === "payments") {
@@ -248,11 +252,40 @@ async function operatorRoutes(request: Request, env: Env, url: URL, parts: strin
     const versions = (await listVersions(env.DB, site.id)) as { preview_token: string }[];
     const purgeAfter = site.cancelled_at ? new Date(Date.parse(site.cancelled_at) + retentionDays(env) * 86_400_000).toISOString() : null;
     const { preview_token: _token, preview_expires_at: _expires, ...rest } = site;
-    // Starter copy still to write in the latest draft: the console warns before it goes to the owner.
+    // Starter copy still to write in the latest draft, and where: the console warns before it goes to the owner.
     const latest = await env.DB.prepare("SELECT config FROM site_versions WHERE site_id = ? ORDER BY number DESC LIMIT 1").bind(site.id).first<{ config: string }>();
-    const draftTodos = latest ? latest.config.split(STARTER_TODO).length - 1 : 0;
+    const latestConfig = latest ? (JSON.parse(latest.config) as { business?: { phone?: string; businessNumber?: string } }) : null;
+    const todoFields = latestConfig ? placeholderPaths(latestConfig) : [];
+    // Who suspended the site, when and why (an operator's suspension is not billing's).
+    const lastSuspension =
+      site.status === "suspended" && site.suspend_reason === "manual"
+        ? await env.DB.prepare(
+            "SELECT actor_name, actor_type, target AS reason, created_at FROM audit_log WHERE site_id = ? AND action = 'POST /sites/:id/suspend' AND status = 200 ORDER BY created_at DESC LIMIT 1",
+          )
+            .bind(site.id)
+            .first()
+        : null;
+    // No customer yet: offer the ones with the same phone or business number as the site.
+    const customerSuggestions =
+      !site.customer_id && latestConfig?.business
+        ? (await duplicatesOf(env.DB, { phone: latestConfig.business.phone, businessNumber: latestConfig.business.businessNumber })).map((c) => ({
+            id: c.id,
+            name: c.name,
+            contact_name: c.contact_name,
+            phone: c.phone,
+          }))
+        : [];
     return json({
-      site: { ...rest, business_name: await businessName(env.DB, site), purge_after: purgeAfter, draft_link: draftLink(env, site), draft_todos: draftTodos },
+      site: {
+        ...rest,
+        business_name: await businessName(env.DB, site),
+        purge_after: purgeAfter,
+        draft_link: draftLink(env, site),
+        draft_todos: todoFields.length,
+        draft_todo_fields: todoFields,
+        last_suspension: lastSuspension,
+        customer_suggestions: customerSuggestions,
+      },
       versions: versions.map((v) => ({ ...v, preview_url: previewUrl(env, v.preview_token) })),
     });
   }
@@ -437,6 +470,11 @@ async function operatorRoutes(request: Request, env: Env, url: URL, parts: strin
   if (method === "POST" && (parts[2] === "suspend" || parts[2] === "resume") && parts.length === 3) {
     if (site.cancelled_at) throw new HttpError(409, "해지된 사이트입니다");
     const status = parts[2] === "suspend" ? "suspended" : "active";
+    // The operator's reason for a suspension (optional) goes into the audit row.
+    if (status === "suspended") {
+      const body = await readJson<{ reason?: unknown }>(request).catch(() => ({}) as { reason?: unknown });
+      if (typeof body.reason === "string" && body.reason.trim()) note.target = body.reason.trim().slice(0, 100);
+    }
     // Going public again follows the same rule as publishing: no exceptions before payment.
     if (status === "active" && site.published_version_id) await requirePublishable(env.DB, site.id);
     await setSiteStatus(env.DB, site.id, status);

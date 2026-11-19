@@ -1,5 +1,5 @@
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
-import { Alert, Button, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, Paper, Stack, Typography } from "@mui/material";
+import { Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, Paper, Stack, Typography } from "@mui/material";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { api, kst, type DraftLink, type SiteRow } from "../../api.js";
@@ -22,6 +22,7 @@ export function DraftLinkCard({ siteId, site }: { siteId: string; site: SiteRow 
   const queryClient = useQueryClient();
   const toast = useToast();
   const [confirm, setConfirm] = useState<"reissue" | "revoke" | null>(null);
+  const [showMessage, setShowMessage] = useState(false);
   const link = site.draft_link;
   const copy = (text: string, done: string) => void navigator.clipboard.writeText(text).then(() => toast(done));
   const change = useMutation({
@@ -60,6 +61,12 @@ export function DraftLinkCard({ siteId, site }: { siteId: string; site: SiteRow 
       {site.draft_todos > 0 ? (
         <Alert severity="warning" sx={{ mt: 1 }} data-testid="draft-todos">
           시안에 아직 채우지 않은 문구 "(작성 필요)"가 {site.draft_todos}곳 있습니다. 사장님께 보내기 전에 편집에서 채우세요.
+          <Box component="ul" sx={{ m: 0, mt: 0.5, pl: 2.5, fontFamily: "monospace", fontSize: 12 }} data-testid="draft-todo-fields">
+            {site.draft_todo_fields.slice(0, 8).map((field) => (
+              <li key={field}>{field}</li>
+            ))}
+            {site.draft_todo_fields.length > 8 ? <li>외 {site.draft_todo_fields.length - 8}곳</li> : null}
+          </Box>
         </Alert>
       ) : null}
       {link ? (
@@ -89,7 +96,19 @@ export function DraftLinkCard({ siteId, site }: { siteId: string; site: SiteRow 
               >
                 안내문 복사
               </Button>
+              <Button size="small" onClick={() => setShowMessage((v) => !v)} aria-expanded={showMessage}>
+                {showMessage ? "안내문 접기" : "안내문 보기"}
+              </Button>
             </Stack>
+          ) : null}
+          {showMessage && !link.expired ? (
+            <Box
+              component="pre"
+              data-testid="draft-message"
+              sx={{ mt: 1, mb: 0, p: 1.5, bgcolor: "grey.100", borderRadius: 1, whiteSpace: "pre-wrap", fontFamily: "inherit", fontSize: 14 }}
+            >
+              {draftMessage(site.business_name ?? site.slug, link)}
+            </Box>
           ) : null}
         </>
       ) : (

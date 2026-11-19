@@ -3,6 +3,7 @@
  * dev proxy) forwards to the api Worker with the admin token added server-side: the browser
  * never holds a credential.
  */
+import { useQuery } from "@tanstack/react-query";
 export class ApiError extends Error {
   constructor(
     readonly status: number,
@@ -67,6 +68,12 @@ export interface SiteRow extends Omit<SiteSummary, "published_number" | "latest_
   draft_link: DraftLink | null;
   /** "(작성 필요)" placeholders left in the latest draft. */
   draft_todos: number;
+  /** Where the "(작성 필요)" placeholders are, as JSON paths (e.g. `pages[0].sections[2].title`). */
+  draft_todo_fields: string[];
+  /** Set while an operator (not billing) has the site down. */
+  last_suspension: { actor_name: string | null; actor_type: string; reason: string | null; created_at: string } | null;
+  /** Without a customer: existing customers with the site's phone or business number. */
+  customer_suggestions: { id: string; name: string; contact_name: string | null; phone: string | null }[];
 }
 
 export interface DraftLink {
@@ -272,7 +279,30 @@ export interface CustomerDetail {
     subscription: Subscription;
   }[];
   payments: Payment[];
+  /** Sites without a customer whose latest draft has this customer's phone or business number. */
+  unlinkedMatches: { id: string; slug: string; business_name: string | null }[];
 }
 
 export const won = (amount: number) => `${amount.toLocaleString("ko-KR")}원`;
 export const CYCLE_LABEL: Record<Cycle, string> = { monthly: "월", yearly: "연" };
+
+/** The signed-in operator and console settings from the console Worker (`/auth/me`). */
+export interface Me {
+  name: string | null;
+  email: string | null;
+  /** Where operators connect Claude/ChatGPT. */
+  mcpUrl: string | null;
+  /** Deposit account for payment requests to owners (e.g. "국민 000-00-0000 (주)다니웍스"). */
+  billingAccount: string | null;
+}
+
+export function useMe() {
+  return useQuery({
+    queryKey: ["me"],
+    queryFn: async () => {
+      const res = await fetch("/auth/me");
+      return res.ok ? ((await res.json()) as Me) : null;
+    },
+    staleTime: Infinity,
+  });
+}
