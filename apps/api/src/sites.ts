@@ -23,7 +23,7 @@ export function creator(value: unknown): CreatedBy {
  * New site with version 1, its `<slug>.<BASE_DOMAIN>` hostname and a subscription in the 시안
  * (trial) state; optionally linked to a customer. Nothing is public until paid and published.
  */
-export async function createSiteFromInput(env: Env, input: unknown, createdBy: CreatedBy, customerId?: unknown) {
+export async function createSiteFromInput(env: Env, input: unknown, createdBy: CreatedBy, customerId?: unknown, author: string | null = null) {
   const config = validated(input);
   if (customerId !== undefined && customerId !== null) {
     if (typeof customerId !== "string") throw new HttpError(422, "customerId는 문자열이어야 합니다");
@@ -33,14 +33,14 @@ export async function createSiteFromInput(env: Env, input: unknown, createdBy: C
   const { siteId, versionId } = await createSite(env.DB, config, createdBy, hostname, (id) => [
     newSubscription(env.DB, id),
     ...(customerId ? [env.DB.prepare("UPDATE sites SET customer_id = ? WHERE id = ?").bind(customerId, id)] : []),
-  ]);
+  ], author);
   await syncHostRecordsNow(env, siteId);
   return { siteId, versionId, hostname };
 }
 
 /** New draft version; nothing goes public until it is published. */
-export async function addDraft(env: Env, site: SiteRow, input: unknown, createdBy: CreatedBy, note: string | null) {
-  return addVersion(env.DB, site, validated(input), createdBy, note);
+export async function addDraft(env: Env, site: SiteRow, input: unknown, createdBy: CreatedBy, note: string | null, author: string | null = null) {
+  return addVersion(env.DB, site, validated(input), createdBy, note, author);
 }
 
 export function previewUrl(env: Env, previewToken: string) {

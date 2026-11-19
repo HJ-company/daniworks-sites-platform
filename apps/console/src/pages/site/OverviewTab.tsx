@@ -20,7 +20,6 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { api, kst, type SiteRow, type VersionRow } from "../../api.js";
 import { ErrorAlert, useToast } from "../../ui.js";
-import { ActivityCard } from "./ActivityCard.js";
 import { DraftLinkCard } from "./DraftLinkCard.js";
 import { LifecycleCard } from "./LifecycleCard.js";
 import { SubscriptionCard, useSubscription } from "./SubscriptionCard.js";
@@ -109,7 +108,6 @@ export function OverviewTab({ siteId, site, versions }: { siteId: string; site: 
         </DialogActions>
       </Dialog>
       <LifecycleCard siteId={siteId} site={site} />
-      <ActivityCard siteId={siteId} />
       <Paper>
         <Typography variant="subtitle1" sx={{ fontWeight: 700, p: 2, pb: 0 }}>
           버전
@@ -144,7 +142,10 @@ export function OverviewTab({ siteId, site, versions }: { siteId: string; site: 
                       )
                     ) : null}
                   </TableCell>
-                  <TableCell>{CREATOR[v.created_by] ?? v.created_by}</TableCell>
+                  <TableCell>
+                    {CREATOR[v.created_by] ?? v.created_by}
+                    {v.author ? ` · ${v.author}` : ""}
+                  </TableCell>
                   <TableCell>{v.note ?? ""}</TableCell>
                   <TableCell>{kst(v.created_at)}</TableCell>
                   <TableCell align="right">

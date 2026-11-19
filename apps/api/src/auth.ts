@@ -100,6 +100,9 @@ export function protectedResourceMetadata(env: Env) {
 
 export const mcpChallenge = (env: Env) => `Bearer resource_metadata="${env.API_ORIGIN ?? ""}/.well-known/oauth-protected-resource/mcp"`;
 
+/** How a person appears in records (versions, payments): their name, else their id. */
+export const actorName = (actor: Actor) => actor.name ?? actor.id;
+
 const now = () => new Date().toISOString();
 
 /** One row per authenticated change. Never the request body (it may hold personal data). */

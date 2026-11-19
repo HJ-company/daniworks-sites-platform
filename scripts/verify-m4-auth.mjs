@@ -141,10 +141,21 @@ check("스크립트 작업은 스크립트로 기록, 거부된 작업도 기록
   (await api("POST", `/sites/${siteId}/rollback`, { versionId: "nope" })).status === 404 &&
   (await audit()).some((e) => e.action === "POST /sites/:id/rollback" && e.status === 404));
 await api("POST", `/sites/${siteId}/resume`);
-await page.reload({ waitUntil: "networkidle" });
+// Replacing the draft link is told apart from issuing it.
+await page.goto(`${CONSOLE}/sites/${siteId}`, { waitUntil: "networkidle" });
+await page.getByTestId("draft-link-card").getByRole("button", { name: "새 링크로 바꾸기" }).click();
+await page.getByRole("dialog").getByRole("button", { name: "바꾸기" }).click();
+await page.getByText("시안 링크를 만들었습니다").first().waitFor({ timeout: 10000 });
+check("버전 표: 만든 방식과 사람(스크립트로 생성)", (await page.getByTestId("version-1").textContent()).includes("스크립트"));
+await page.goto(`${CONSOLE}/sites/${siteId}/activity`, { waitUntil: "networkidle" });
 const activity = await page.getByTestId("activity-card").textContent();
-check("개요 작업 기록 카드: 누가 무엇을", activity.includes("김운영") && activity.includes("게시") && activity.includes("스크립트") && activity.includes("AI 도구"), { activity });
+check("작업 기록 탭: 누가 무엇을(재발급 구분)", activity.includes("김운영") && activity.includes("게시") && activity.includes("스크립트") &&
+  activity.includes("AI 도구") && activity.includes("시안 링크 새로 바꿈"), { activity });
 await page.screenshot({ path: `${ev.dir}/activity.png`, fullPage: true });
+await page.goto(`${CONSOLE}/payments?tab=history`, { waitUntil: "networkidle" });
+await page.getByTestId(`edit-${payments[0].id}`).click();
+check("결제 수정 창: 누가 언제 입금을 확인했는지", (await page.getByTestId("payment-confirmed-by").textContent()).startsWith("김운영이(가)"));
+await page.getByRole("dialog").getByRole("button", { name: "닫기" }).click();
 
 // 4. the console refreshes an expiring access token on its own
 await fetch(`${OIDC}/__mock/ttl?seconds=30`, { method: "POST" });
@@ -186,8 +197,11 @@ await big.close();
 
 // 5. logout
 await page.getByRole("link", { name: "로그아웃" }).click();
-await page.waitForURL((url) => url.origin === OIDC, { timeout: 15000 });
-check("로그아웃: 세션 삭제, 다시 열면 로그인부터", !(await context.cookies()).some((c) => c.name === "dsites_session" && c.value) && new URL(page.url()).pathname === "/authorize");
+await page.waitForURL(`${CONSOLE}/auth/logged-out`, { timeout: 15000 });
+check("로그아웃: 세션 삭제, 로그아웃 안내", !(await context.cookies()).some((c) => c.name === "dsites_session" && c.value) &&
+  (await page.getByRole("heading", { name: "로그아웃했습니다" }).isVisible()));
+await page.goto(CONSOLE, { waitUntil: "domcontentloaded" });
+check("로그아웃 뒤 다시 열면 로그인부터", new URL(page.url()).origin === OIDC && new URL(page.url()).pathname === "/authorize");
 check("콘솔 페이지 오류 없음", !errors.length, { errors });
 await browser.close();
 

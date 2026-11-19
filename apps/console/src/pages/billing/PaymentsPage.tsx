@@ -21,7 +21,7 @@ import { DataGrid, type GridColDef } from "@mui/x-data-grid";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link as RouterLink, useSearchParams } from "react-router";
-import { api, CYCLE_LABEL, won, type Payment, type QueueRow } from "../../api.js";
+import { api, CYCLE_LABEL, kst, won, type Payment, type QueueRow } from "../../api.js";
 import { ErrorAlert, useToast } from "../../ui.js";
 import { BillingChip, billingSummary, PaymentDialog } from "./billing-ui.js";
 
@@ -193,6 +193,7 @@ function History() {
     { field: "payer_name", headerName: "입금자", width: 100, valueGetter: (v) => v ?? "-" },
     { field: "period", headerName: "이용 기간", width: 200, valueGetter: (_v, row) => `${row.period_start} ~ ${row.period_end}` },
     { field: "invoice_issued_on", headerName: "계산서", width: 110, valueGetter: (v) => v ?? "미발행" },
+    { field: "confirmed_by", headerName: "확인", width: 100, valueGetter: (v) => v ?? "-" },
     {
       field: "state",
       headerName: "",
@@ -322,8 +323,9 @@ export function EditPaymentDialog({ payment, onClose, focusInvoice = false }: { 
       <DialogTitle>결제 수정 · {payment.business_name ?? payment.site_slug}</DialogTitle>
       <DialogContent>
         <Stack spacing={2} sx={{ mt: 1 }}>
-          <DialogContentText variant="body2">
-            이용 기간을 바꾸면 공개 여부도 바로 다시 계산됩니다(기간이 끝나고 14일이 지나면 공개 중단).
+          <DialogContentText variant="body2" data-testid="payment-confirmed-by">
+            {payment.confirmed_by ?? "알 수 없음"}이(가) {kst(payment.created_at)}에 입금을 확인했습니다. 이용 기간을 바꾸면 공개 여부도 바로 다시
+            계산됩니다(기간이 끝나고 14일이 지나면 공개 중단).
           </DialogContentText>
           <Stack direction="row" spacing={1}>
             <TextField label="이용 시작일" type="date" value={start} onChange={(e) => setStart(e.target.value)} slotProps={{ inputLabel: { shrink: true }, htmlInput: { name: "periodStart" } }} fullWidth />

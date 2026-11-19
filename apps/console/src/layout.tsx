@@ -1,4 +1,5 @@
-import { AppBar, Badge, Box, Button, Container, LinearProgress, Toolbar, Typography } from "@mui/material";
+import AccountCircleIcon from "@mui/icons-material/AccountCircle";
+import { AppBar, Badge, Box, Button, Chip, Container, LinearProgress, Toolbar, Typography } from "@mui/material";
 import { useQuery } from "@tanstack/react-query";
 import { api, type QueueRow } from "./api.js";
 import { Suspense } from "react";
@@ -42,9 +43,13 @@ export function Layout() {
             새 사이트
           </Button>
           {me.data ? (
-            <Typography variant="body2" color="text.secondary" data-testid="signed-in" title={me.data.email ?? ""}>
-              {me.data.name ?? me.data.email}
-            </Typography>
+            <Chip
+              icon={<AccountCircleIcon />}
+              label={me.data.name ?? me.data.email}
+              variant="outlined"
+              title={`로그인: ${me.data.email ?? ""}`}
+              data-testid="signed-in"
+            />
           ) : null}
           <Button href="/auth/logout" size="small" color="inherit">
             로그아웃

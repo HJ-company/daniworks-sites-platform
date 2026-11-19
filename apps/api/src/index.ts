@@ -23,7 +23,7 @@ import { allInquiries, inquiriesCsv, listInquiries, requireEmail } from "./inqui
 import { currentQuarter, kstDay, metricsReport, quarterlyCsv, quarterlyOverview, quarterlyReport } from "./metrics.js";
 import { turnstileFrame } from "./turnstile.js";
 import type { Env } from "./env.js";
-import { actionOf, audit, authenticate, mcpChallenge, protectedResourceMetadata, type Actor } from "./auth.js";
+import { actionOf, actorName, audit, authenticate, mcpChallenge, protectedResourceMetadata, type Actor } from "./auth.js";
 import { HttpError, json, readJson } from "./http.js";
 import { MEDIA_PATH, r2MediaKey, r2SharedKey } from "./keys.js";
 import { addDomain, auditOrigins, domainQuota, listDomains, maintainDomains, refreshDomain, removeDomain, type DomainRow } from "./domains.js";
@@ -116,18 +116,20 @@ async function handle(request: Request, env: Env): Promise<Response> {
 
   // MCP tools for AI agents (Streamable HTTP, stateless).
   if (url.pathname === "/mcp") return handleMcp(request, env, actor);
-  if (method === "GET" || method === "HEAD") return operatorRoutes(request, env, url, parts, method, actor);
+  if (method === "GET" || method === "HEAD") return operatorRoutes(request, env, url, parts, method, actor, { target: null });
 
   // Every change is recorded with who made it, refused ones included.
   let status = 500;
   let createdSiteId: string | null = null;
+  // Details a route adds to its audit row (e.g. a draft link replaced rather than first issued).
+  const note: AuditNote = { target: null };
   // Payment corrections belong to the payment's site history.
   const paymentSite =
     parts[0] === "payments" && parts[1]
       ? ((await env.DB.prepare("SELECT site_id FROM payments WHERE id = ?").bind(parts[1]).first<{ site_id: string }>())?.site_id ?? null)
       : null;
   try {
-    const response = await operatorRoutes(request, env, url, parts, method, actor);
+    const response = await operatorRoutes(request, env, url, parts, method, actor, note);
     status = response.status;
     // A new site's id is only known from the answer.
     if (method === "POST" && parts.length === 1 && parts[0] === "sites" && status === 201) {
@@ -141,14 +143,18 @@ async function handle(request: Request, env: Env): Promise<Response> {
     await audit(env, actor, {
       action: actionOf(method, parts),
       siteId: parts[0] === "sites" && parts[1] ? parts[1] : (paymentSite ?? createdSiteId),
-      target: parts[0] === "payments" || parts[0] === "customers" ? (parts[1] ?? null) : null,
+      target: note.target ?? (parts[0] === "payments" || parts[0] === "customers" ? (parts[1] ?? null) : null),
       status,
     });
   }
 }
 
 /** Routes for authenticated operators (Authentik `operator` group) and scripts. */
-async function operatorRoutes(request: Request, env: Env, url: URL, parts: string[], method: string, actor: Actor): Promise<Response> {
+interface AuditNote {
+  target: string | null;
+}
+
+async function operatorRoutes(request: Request, env: Env, url: URL, parts: string[], method: string, actor: Actor, note: AuditNote): Promise<Response> {
 
   // PUT /admin/shared/<version>/<path>: upload one shared asset file.
   if (method === "PUT" && parts[0] === "admin" && parts[1] === "shared" && parts.length > 3) {
@@ -215,7 +221,7 @@ async function operatorRoutes(request: Request, env: Env, url: URL, parts: strin
   // POST /sites {config, createdBy}
   if (method === "POST" && parts.length === 1) {
     const body = await readJson<{ config?: unknown; starter?: Record<string, unknown>; createdBy?: CreatedBy; customerId?: unknown }>(request);
-    return json(await createSiteFromInput(env, configFromBody(body), creator(body.createdBy), body.customerId), 201);
+    return json(await createSiteFromInput(env, configFromBody(body), creator(body.createdBy), body.customerId, actorName(actor)), 201);
   }
 
   // GET /sites: every site with its published version number and primary hostname.
@@ -252,7 +258,7 @@ async function operatorRoutes(request: Request, env: Env, url: URL, parts: strin
   // GET /sites/:id/audit: recent changes to this site and who made them.
   if (method === "GET" && parts.length === 3 && parts[2] === "audit") {
     const { results } = await env.DB.prepare(
-      "SELECT actor_type, actor_name, via, action, status, created_at FROM audit_log WHERE site_id = ? ORDER BY created_at DESC LIMIT 50",
+      "SELECT actor_type, actor_name, via, action, target, status, created_at FROM audit_log WHERE site_id = ? ORDER BY created_at DESC LIMIT 50",
     )
       .bind(site.id)
       .all();
@@ -261,7 +267,10 @@ async function operatorRoutes(request: Request, env: Env, url: URL, parts: strin
 
   // Customer draft link: POST issues (or reissues: the old link stops), DELETE revokes.
   if (parts.length === 3 && parts[2] === "draft-link") {
-    if (method === "POST") return json({ draftLink: await issueDraftLink(env, site) }, 201);
+    if (method === "POST") {
+      note.target = site.preview_token ? "replaced" : "issued";
+      return json({ draftLink: await issueDraftLink(env, site) }, 201);
+    }
     if (method === "DELETE") {
       await revokeDraftLink(env, site);
       return json({ draftLink: null });
@@ -277,7 +286,7 @@ async function operatorRoutes(request: Request, env: Env, url: URL, parts: strin
     if (parts.length === 4 && parts[3] === "bill" && method === "POST") return json({ subscription: await billSite(env, site) });
   }
   if (method === "POST" && parts.length === 3 && parts[2] === "payments") {
-    return json(await recordPayment(env, site, await readJson(request), actor.name ?? actor.id), 201);
+    return json(await recordPayment(env, site, await readJson(request), actorName(actor)), 201);
   }
 
   // Custom domains: GET list, POST {hostname}, POST /:host/refresh, DELETE /:host
@@ -391,7 +400,7 @@ async function operatorRoutes(request: Request, env: Env, url: URL, parts: strin
   // POST /sites/:id/versions {config, createdBy, note}: new draft version
   if (method === "POST" && parts[2] === "versions") {
     const body = await readJson<{ config: unknown; createdBy?: CreatedBy; note?: string }>(request);
-    const result = await addDraft(env, site, body.config, creator(body.createdBy), body.note ?? null);
+    const result = await addDraft(env, site, body.config, creator(body.createdBy), body.note ?? null, actorName(actor));
     return json(result, 201);
   }
 

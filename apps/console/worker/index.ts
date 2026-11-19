@@ -230,7 +230,11 @@ async function callback(request: Request, env: Env, cfg: NonNullable<ReturnType<
   const { session, operator } = await sessionFrom(cfg, tokens, null);
   const clearLogin = cookie(request, LOGIN_COOKIE, "", 0);
   if (!operator) {
-    const res = page(403, "운영자 권한이 없습니다", `${escapeHtml(session.name ?? "이 계정")}은(는) 운영자(operator) 그룹이 아닙니다. 관리자에게 요청하세요. <a href="/auth/logout">다른 계정으로 로그인</a>`);
+    const res = page(
+      403,
+      "운영자 권한이 없습니다",
+      `${escapeHtml(session.name ?? "이")} 계정에는 콘솔을 쓸 권한이 없습니다. 관리자에게 운영자 권한을 요청하세요. <a href="/auth/logout">다른 계정으로 로그인</a>`,
+    );
     res.headers.append("set-cookie", clearLogin);
     return res;
   }
@@ -271,7 +275,7 @@ async function logout(request: Request, cfg: NonNullable<ReturnType<typeof confi
   const url = new URL(request.url);
   const { end_session_endpoint } = await discovery(cfg.issuer);
   const target = end_session_endpoint ? new URL(end_session_endpoint) : new URL("/auth/login", url.origin);
-  if (end_session_endpoint) target.searchParams.set("post_logout_redirect_uri", `${url.origin}/`);
+  if (end_session_endpoint) target.searchParams.set("post_logout_redirect_uri", `${url.origin}/auth/logged-out`);
   const headers = new Headers({ location: target.toString() });
   for (const value of clearSessionCookies(request)) headers.append("set-cookie", value);
   return new Response(null, { status: 302, headers });
@@ -286,6 +290,7 @@ export default {
     if (url.pathname === "/auth/login") return login(request, cfg);
     if (url.pathname === "/auth/callback") return callback(request, env, cfg);
     if (url.pathname === "/auth/logout") return logout(request, cfg);
+    if (url.pathname === "/auth/logged-out") return page(200, "로그아웃했습니다", `<a href="/auth/login">다시 로그인</a>`);
 
     // Built JS/CSS chunks carry no data or credentials; serving them without a session keeps a
     // page's parallel chunk loads out of the refresh race.

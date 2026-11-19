@@ -7,6 +7,7 @@ interface Entry {
   actor_name: string | null;
   via: "console" | "mcp" | "script";
   action: string;
+  target: string | null;
   status: number;
   created_at: string;
 }
@@ -43,7 +44,8 @@ const TOOLS: Record<string, string> = {
 };
 
 /** Audit action (`POST /sites/:id/publish`, `MCP site_publish`) in words. */
-export function actionLabel(action: string) {
+export function actionLabel(action: string, target: string | null = null) {
+  if (action === "POST /sites/:id/draft-link" && target === "replaced") return "시안 링크 새로 바꿈(예전 링크 막힘)";
   const tool = /^MCP (.+)$/.exec(action)?.[1];
   if (tool) return `AI 도구: ${TOOLS[tool] ?? tool}`;
   return ACTIONS.find(([pattern]) => pattern.test(action))?.[1] ?? action;
@@ -51,10 +53,10 @@ export function actionLabel(action: string) {
 
 const who = (e: Entry) => (e.actor_type === "script" ? "스크립트" : `${e.actor_name ?? "운영자"}${e.via === "mcp" ? " (AI 도구)" : ""}`);
 
-/** Recent changes to the site and who made them (console, AI tools, scripts). */
+/** Recent changes to the site (latest 50) and who made them: console, AI tools, scripts. */
 export function ActivityCard({ siteId }: { siteId: string }) {
   const log = useQuery({ queryKey: ["audit", siteId], queryFn: () => api<{ entries: Entry[] }>(`/sites/${siteId}/audit`) });
-  const entries = (log.data?.entries ?? []).slice(0, 10);
+  const entries = log.data?.entries ?? [];
   return (
     <Paper data-testid="activity-card">
       <Typography variant="subtitle1" sx={{ fontWeight: 700, p: 2, pb: 0 }}>
@@ -75,7 +77,7 @@ export function ActivityCard({ siteId }: { siteId: string }) {
                 <TableCell>{kst(e.created_at)}</TableCell>
                 <TableCell>{who(e)}</TableCell>
                 <TableCell>
-                  {actionLabel(e.action)}
+                  {actionLabel(e.action, e.target)}
                   {e.status >= 400 ? (
                     <Typography component="span" variant="caption" color="error">
                       {" "}

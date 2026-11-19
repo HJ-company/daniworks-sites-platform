@@ -69,7 +69,7 @@ export async function latestVersion(db: D1Database, siteId: string): Promise<Ver
 export async function listVersions(db: D1Database, siteId: string) {
   const { results } = await db
     .prepare(
-      "SELECT id, number, created_by, note, preview_token, asset_version, rendered_at, first_published_at, created_at FROM site_versions WHERE site_id = ? ORDER BY number DESC",
+      "SELECT id, number, created_by, author, note, preview_token, asset_version, rendered_at, first_published_at, created_at FROM site_versions WHERE site_id = ? ORDER BY number DESC",
     )
     .bind(siteId)
     .all();
@@ -83,6 +83,7 @@ export async function createSite(
   createdBy: CreatedBy,
   hostname: string,
   extra: (siteId: string) => D1PreparedStatement[] = () => [],
+  author: string | null = null,
 ) {
   const exists = await db.prepare("SELECT id FROM sites WHERE slug = ?").bind(config.slug).first();
   if (exists) throw new HttpError(409, `이미 쓰는 slug입니다: ${config.slug}`);
@@ -95,9 +96,9 @@ export async function createSite(
       .bind(siteId, config.slug, config.templateId, at, at),
     db
       .prepare(
-        "INSERT INTO site_versions (id, site_id, number, config, created_by, note, preview_token, created_at) VALUES (?, ?, 1, ?, ?, ?, ?, ?)",
+        "INSERT INTO site_versions (id, site_id, number, config, created_by, author, note, preview_token, created_at) VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?)",
       )
-      .bind(versionId, siteId, JSON.stringify(config), createdBy, "최초 생성", token(), at),
+      .bind(versionId, siteId, JSON.stringify(config), createdBy, author, "최초 생성", token(), at),
     db
       .prepare("INSERT INTO domains (hostname, site_id, kind, created_at) VALUES (?, ?, 'subdomain', ?)")
       .bind(hostname, siteId, at),
@@ -112,6 +113,7 @@ export async function addVersion(
   config: SiteConfig,
   createdBy: CreatedBy,
   note: string | null,
+  author: string | null = null,
 ) {
   if (config.slug !== site.slug) throw new HttpError(422, "slug는 바꿀 수 없습니다", [`slug: ${site.slug}`]);
   const latest = await latestVersion(db, site.id);
@@ -121,10 +123,10 @@ export async function addVersion(
     db
       .prepare(
         // Never into a site being purged (its rows are being deleted).
-        `INSERT INTO site_versions (id, site_id, number, config, created_by, note, preview_token, created_at)
-         SELECT ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM sites WHERE id = ? AND purging_at IS NULL)`,
+        `INSERT INTO site_versions (id, site_id, number, config, created_by, author, note, preview_token, created_at)
+         SELECT ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM sites WHERE id = ? AND purging_at IS NULL)`,
       )
-      .bind(versionId, site.id, latest.number + 1, JSON.stringify(config), createdBy, note, token(), at, site.id),
+      .bind(versionId, site.id, latest.number + 1, JSON.stringify(config), createdBy, author, note, token(), at, site.id),
     db.prepare("UPDATE sites SET updated_at = ? WHERE id = ?").bind(at, site.id),
   ]);
   if (inserted?.meta.changes !== 1) throw new HttpError(409, "삭제 중인 사이트입니다");

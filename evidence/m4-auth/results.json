@@ -85,48 +85,54 @@
           "actor_name": "김운영",
           "via": "console",
           "action": "POST /sites/:id/publish",
+          "target": null,
           "status": 200,
-          "created_at": "2026-11-19T18:15:59.128Z"
+          "created_at": "2026-11-19T18:22:08.174Z"
         },
         {
           "actor_type": "user",
           "actor_name": "김운영",
           "via": "console",
           "action": "POST /sites/:id/payments",
+          "target": null,
           "status": 201,
-          "created_at": "2026-11-19T18:15:58.991Z"
+          "created_at": "2026-11-19T18:22:08.042Z"
         },
         {
           "actor_type": "user",
           "actor_name": "김운영",
           "via": "mcp",
           "action": "MCP site_rollback",
+          "target": "auth-mwnvnc4y",
           "status": 422,
-          "created_at": "2026-11-19T18:15:55.313Z"
+          "created_at": "2026-11-19T18:22:04.333Z"
         },
         {
           "actor_type": "user",
           "actor_name": "김운영",
           "via": "mcp",
           "action": "MCP site_publish",
+          "target": "auth-mwnvnc4y",
           "status": 422,
-          "created_at": "2026-11-19T18:15:55.306Z"
+          "created_at": "2026-11-19T18:22:04.325Z"
         },
         {
           "actor_type": "user",
           "actor_name": "김운영",
           "via": "mcp",
           "action": "MCP site_preview_link",
+          "target": "auth-mwnvnc4y",
           "status": 200,
-          "created_at": "2026-11-19T18:15:55.298Z"
+          "created_at": "2026-11-19T18:22:04.319Z"
         },
         {
           "actor_type": "script",
           "actor_name": "스크립트",
           "via": "script",
           "action": "POST /sites",
+          "target": null,
           "status": 201,
-          "created_at": "2026-11-19T18:15:55.255Z"
+          "created_at": "2026-11-19T18:22:04.278Z"
         }
       ]
     },
@@ -143,9 +149,17 @@
       "pass": true
     },
     {
-      "name": "개요 작업 기록 카드: 누가 무엇을",
+      "name": "버전 표: 만든 방식과 사람(스크립트로 생성)",
+      "pass": true
+    },
+    {
+      "name": "작업 기록 탭: 누가 무엇을(재발급 구분)",
       "pass": true,
-      "activity": "작업 기록때(KST)누가무엇을2026-11-20 03:15스크립트공개 재개2026-11-20 03:15스크립트롤백 (거부됨)2026-11-20 03:15스크립트공개 정지2026-11-20 03:15스크립트결제 기록 수정2026-11-20 03:15김운영게시2026-11-20 03:15김운영입금 확인2026-11-20 03:15김운영 (AI 도구)AI 도구: 롤백 (거부됨)2026-11-20 03:15김운영 (AI 도구)AI 도구: 게시 (거부됨)2026-11-20 03:15김운영 (AI 도구)AI 도구: 시안 링크2026-11-20 03:15스크립트사이트 생성"
+      "activity": "작업 기록때(KST)누가무엇을2026-11-20 03:22김운영시안 링크 새로 바꿈(예전 링크 막힘)2026-11-20 03:22스크립트공개 재개2026-11-20 03:22스크립트롤백 (거부됨)2026-11-20 03:22스크립트공개 정지2026-11-20 03:22스크립트결제 기록 수정2026-11-20 03:22김운영게시2026-11-20 03:22김운영입금 확인2026-11-20 03:22김운영 (AI 도구)AI 도구: 롤백 (거부됨)2026-11-20 03:22김운영 (AI 도구)AI 도구: 게시 (거부됨)2026-11-20 03:22김운영 (AI 도구)AI 도구: 시안 링크2026-11-20 03:22스크립트사이트 생성"
+    },
+    {
+      "name": "결제 수정 창: 누가 언제 입금을 확인했는지",
+      "pass": true
     },
     {
       "name": "콘솔: 갱신 중 동시 요청도 모두 성공",
@@ -179,7 +193,11 @@
       ]
     },
     {
-      "name": "로그아웃: 세션 삭제, 다시 열면 로그인부터",
+      "name": "로그아웃: 세션 삭제, 로그아웃 안내",
+      "pass": true
+    },
+    {
+      "name": "로그아웃 뒤 다시 열면 로그인부터",
       "pass": true
     },
     {

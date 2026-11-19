@@ -96,7 +96,7 @@ describe("console worker", () => {
     const res = await worker.fetch(new Request("https://console.example/auth/logout"), configured);
     expect(res.status).toBe(302);
     expect(res.headers.get("location")).toBe(
-      "https://auth.example/application/o/dsites-console/end-session/?post_logout_redirect_uri=https%3A%2F%2Fconsole.example%2F",
+      "https://auth.example/application/o/dsites-console/end-session/?post_logout_redirect_uri=https%3A%2F%2Fconsole.example%2Fauth%2Flogged-out",
     );
     const cleared = res.headers.getSetCookie();
     expect(cleared).toContain("dsites_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Secure");

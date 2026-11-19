@@ -10,7 +10,7 @@ import {
 import { z } from "zod";
 import { uploadAsset } from "./assets.js";
 import { draftLink, issueDraftLink } from "./draft-links.js";
-import { audit, type Actor } from "./auth.js";
+import { actorName, audit, type Actor } from "./auth.js";
 import type { Env } from "./env.js";
 import { HttpError } from "./http.js";
 import { publish, rollback } from "./publish.js";
@@ -53,7 +53,7 @@ const TEMPLATES = [
   },
 ];
 
-function createServer(env: Env) {
+function createServer(env: Env, actor: Actor) {
   const server = new McpServer({ name: "dsites", version: "1.0.0" });
 
   server.registerTool(
@@ -98,7 +98,7 @@ function createServer(env: Env) {
     },
     async ({ config }) =>
       run(async () => {
-        const created = await createSiteFromInput(env, config, "ai");
+        const created = await createSiteFromInput(env, config, "ai", undefined, actorName(actor));
         const versions = (await listVersions(env.DB, created.siteId)) as { preview_token: string }[];
         return { ...created, previewUrl: previewUrl(env, versions[0]!.preview_token) };
       }),
@@ -134,7 +134,7 @@ function createServer(env: Env) {
     async ({ site: ref, config, note }) =>
       run(async () => {
         const site = await findSite(env, ref);
-        const draft = await addDraft(env, site, config, "ai", note ?? null);
+        const draft = await addDraft(env, site, config, "ai", note ?? null, actorName(actor));
         const token = await env.DB.prepare("SELECT preview_token FROM site_versions WHERE id = ?")
           .bind(draft.versionId)
           .first<{ preview_token: string }>();
@@ -285,7 +285,7 @@ export async function handleMcp(request: Request, env: Env, actor: Actor) {
       // Not JSON: the MCP handler answers with the protocol error.
     }
   }
-  const streamed = await createMcpHandler(() => createServer(env)).fetch(request);
+  const streamed = await createMcpHandler(() => createServer(env, actor)).fetch(request);
   if (!calls.length) return streamed;
   // The body may still be streaming while the tool runs: read it to the end before auditing.
   const body = await streamed.text();

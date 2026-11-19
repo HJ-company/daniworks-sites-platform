@@ -79,6 +79,8 @@ export interface VersionRow {
   id: string;
   number: number;
   created_by: "ai" | "operator" | "customer";
+  /** Operator behind the version (AI tool runs carry who ran them); null before M4. */
+  author: string | null;
   note: string | null;
   preview_token: string;
   /** Absolute api URL: previews load their own assets from the api origin. */
