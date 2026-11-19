@@ -129,7 +129,7 @@ export interface Asset {
   source: "upload" | "url" | "ai";
   prompt: string | null;
   purpose: "background" | "illustration" | "mood" | "work" | null;
-  customer_request: { channel: string; requestedAt: string; summary: string } | null;
+  customer_request: { channel: string; requestedAt: string; summary: string; recordedBy?: string | null } | null;
   cost_usd: number | null;
   /** Some version of some site refers to it (cannot be deleted). */
   in_use: boolean;

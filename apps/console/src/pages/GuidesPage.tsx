@@ -62,7 +62,7 @@ export function GuidesPage() {
         제작 지침
       </Typography>
       <Typography variant="body2" color="text.secondary">
-        AI 도구가 사이트를 만들기 전에 읽는 문서입니다. 고칠 때는 AI 도구에 "작성 규칙의 사진 섹션을 이렇게 바꿔 줘"처럼 요청하세요(guide_update). 고칠 때마다 버전이 남습니다.
+        AI 도구가 사이트를 만들기 전에 읽는 문서입니다. 고칠 때는 AI 도구에 "작성 규칙의 '이미지 용도' 부분을 이렇게 바꿔 줘"처럼 말하면 됩니다. 고칠 때마다 누가 언제 고쳤는지 버전이 남습니다.
       </Typography>
       <ErrorAlert error={list.error ?? guide.error} />
       <Stack direction={{ xs: "column", md: "row" }} spacing={2} sx={{ alignItems: "flex-start" }}>

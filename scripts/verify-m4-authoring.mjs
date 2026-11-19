@@ -170,6 +170,14 @@ check("지침 화면: 업종 지침 본문과 버전·작성자", (await page.ge
 await page.getByTestId("guide-schema-site-config").click();
 check("지침 화면: 스키마는 코드 생성(읽기 전용)", await page.getByText("코드에서 자동으로 만든 문서(읽기 전용)").waitFor({ timeout: 10000 }).then(() => true).catch(() => false));
 await page.screenshot({ path: `${ev.dir}/guides.png`, fullPage: true });
+check("사진 탭: 쓰지 않는 사진은 미사용 표시, 고객 요청 기록자", (await page.goto(`${CONSOLE}/sites/${site.data.siteId}/photos`, { waitUntil: "networkidle" })) !== null &&
+  (await page.getByTestId("unused-chip").count()) >= 1 && (await page.getByTestId("customer-request").first().textContent()).includes("기록: 스크립트"));
+await page.goto(`${CONSOLE}/sites/${site.data.siteId}/activity`, { waitUntil: "networkidle" });
+const log = await page.getByTestId("activity-card").textContent();
+check("작업 기록: AI 이미지 용도, 지운 사진", log.includes("AI 이미지 만듦 (작업물·고객 요청)") && log.includes("AI 이미지 만듦 (배경)") && log.includes("사진 지움 (사진"), { log: log.slice(0, 400) });
+await page.goto(`${CONSOLE}/`, { waitUntil: "networkidle" });
+await page.getByRole("link", { name: "AI 도구 연결 방법" }).click();
+check("AI 도구 연결 방법: 연결 주소와 단계", (await page.getByTestId("mcp-url").textContent()) === `${API}/mcp` && (await page.getByText("Claude에 연결").isVisible()));
 check("콘솔 페이지 오류 없음", !errors.length, { errors });
 await browser.close();
 ev.finish();

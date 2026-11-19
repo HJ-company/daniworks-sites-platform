@@ -7,7 +7,12 @@ import type { SiteRow } from "./store.js";
 export { PURPOSES, SIZES } from "./openai-images.js";
 
 /** Generates an image under the policy (openai-images.ts) and stores it like any photo. */
-export async function generateImage(env: Env, site: SiteRow, input: ImageInput): Promise<AssetResult & { aiGenerated: true; purpose: Purpose }> {
+export async function generateImage(
+  env: Env,
+  site: SiteRow,
+  input: ImageInput,
+  recordedBy: string | null = null,
+): Promise<AssetResult & { aiGenerated: true; purpose: Purpose }> {
   if (site.cancelled_at) throw new HttpError(409, "해지된 사이트에는 사진을 만들 수 없습니다");
   checkPolicy(input);
   const bytes = await callOpenAi(env, input);
@@ -17,7 +22,8 @@ export async function generateImage(env: Env, site: SiteRow, input: ImageInput):
     name: `ai:${env.OPENAI_IMAGE_MODEL}`,
     prompt: input.prompt,
     purpose: input.purpose,
-    customerRequest: input.customerRequest ? JSON.stringify(input.customerRequest) : null,
+    // The request as the AI recorded it, plus the operator who ran the tool.
+    customerRequest: input.customerRequest ? JSON.stringify({ ...input.customerRequest, recordedBy }) : null,
     costUsd: Number.isFinite(cost) ? cost : null,
   });
   return { ...stored, aiGenerated: true, purpose: input.purpose };

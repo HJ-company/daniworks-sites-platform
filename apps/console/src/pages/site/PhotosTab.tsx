@@ -85,7 +85,8 @@ export function PhotosTab({ siteId }: { siteId: string }) {
       </Stack>
       {ai.length ? (
         <Typography variant="body2" color="text.secondary" data-testid="ai-summary">
-          AI 이미지 {ai.length}장{aiCost ? ` · 생성 비용 약 $${aiCost.toFixed(2)}` : ""}. 실제 작업물 용도는 고객 요청이 있을 때만 만듭니다.
+          남아 있는 AI 이미지 {ai.length}장{aiCost ? ` · 이 사진들의 생성 비용 약 $${aiCost.toFixed(2)}` : ""}. 실제 작업물 용도는 고객 요청이 있을 때만
+          만듭니다.
         </Typography>
       ) : null}
       <ErrorAlert error={assets.error ?? upload.error ?? discard.error} />
@@ -103,7 +104,11 @@ export function PhotosTab({ siteId }: { siteId: string }) {
                   ) : (
                     <Chip size="small" variant="outlined" label={asset.source === "url" ? "가져온 사진" : "올린 사진"} />
                   )}
-                  {asset.in_use ? <Chip size="small" color="success" variant="outlined" label="사용 중" /> : null}
+                  {asset.in_use ? (
+                    <Chip size="small" color="success" variant="outlined" label="사용 중" />
+                  ) : (
+                    <Chip size="small" variant="outlined" label="미사용" data-testid="unused-chip" />
+                  )}
                 </Stack>
                 <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
                   {asset.width}×{asset.height} · {Math.round(asset.bytes / 1024)}KB
@@ -111,6 +116,7 @@ export function PhotosTab({ siteId }: { siteId: string }) {
                 {asset.customer_request ? (
                   <Typography variant="caption" color="text.secondary" sx={{ display: "block" }} data-testid="customer-request">
                     고객 요청: {asset.customer_request.channel} {asset.customer_request.requestedAt} · {asset.customer_request.summary}
+                    {asset.customer_request.recordedBy ? ` (기록: ${asset.customer_request.recordedBy})` : ""}
                   </Typography>
                 ) : null}
               </CardContent>
@@ -133,7 +139,10 @@ export function PhotosTab({ siteId }: { siteId: string }) {
       <Dialog open={confirm !== null} onClose={() => setConfirm(null)}>
         <DialogTitle>사진 지우기</DialogTitle>
         <DialogContent>
-          <DialogContentText>어느 버전에서도 쓰지 않는 사진입니다. 지우면 되돌릴 수 없습니다(같은 사진을 다시 올리면 됩니다).</DialogContentText>
+          <DialogContentText>
+            어느 버전에서도 쓰지 않는 사진입니다. 지우면 되돌릴 수 없습니다
+            {confirm?.source === "ai" ? "(AI 이미지는 같은 것을 다시 만들 수 없습니다)." : "(같은 사진 파일을 다시 올리면 됩니다)."}
+          </DialogContentText>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setConfirm(null)}>닫기</Button>

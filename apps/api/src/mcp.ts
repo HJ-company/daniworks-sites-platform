@@ -127,7 +127,7 @@ function createServer(env: Env, actor: Actor) {
           .describe("purpose가 work일 때 필수: 사장님이 언제 어디서 무엇을 요청했는지"),
       }),
     },
-    async ({ site: ref, ...input }) => run(async () => ({ ...(await generateImage(env, await findSite(env, ref), input)) })),
+    async ({ site: ref, ...input }) => run(async () => ({ ...(await generateImage(env, await findSite(env, ref), input, actorName(actor))) })),
   );
 
   server.registerTool(
@@ -404,6 +404,14 @@ function rpcMessages(contentType: string, body: string): RpcMessage[] {
   });
 }
 
+/** What an AI call did, beyond its name, for the activity log (`purpose=work`, `key=m:…`). */
+function auditDetail(name: string, args: Record<string, unknown>): string | null {
+  if (name === "image_generate" && typeof args.purpose === "string") return `purpose=${args.purpose}`;
+  if (name === "asset_delete" && typeof args.key === "string") return `key=${args.key}`;
+  if (name === "site_preview_link" && args.reissue === true) return "replaced";
+  return null;
+}
+
 /**
  * `/mcp` endpoint. The caller is authenticated (Authentik operator or script); a fresh server
  * serves each request. Changing tool calls are audited with the person behind them and their
@@ -411,14 +419,15 @@ function rpcMessages(contentType: string, body: string): RpcMessage[] {
  * (tool refusals, input validation and unknown tools all arrive over HTTP 200).
  */
 export async function handleMcp(request: Request, env: Env, actor: Actor) {
-  const calls: { id: unknown; name: string; site: string | null }[] = [];
+  const calls: { id: unknown; name: string; site: string | null; detail: string | null }[] = [];
   if (request.method === "POST") {
     try {
       const body = (await request.clone().json()) as unknown;
       for (const message of Array.isArray(body) ? body : [body]) {
-        const m = message as { id?: unknown; method?: string; params?: { name?: string; arguments?: { site?: unknown } } };
+        const m = message as { id?: unknown; method?: string; params?: { name?: string; arguments?: Record<string, unknown> } };
         if (m?.method === "tools/call" && m.params?.name && !READ_ONLY.has(m.params.name)) {
-          calls.push({ id: m.id, name: m.params.name, site: typeof m.params.arguments?.site === "string" ? m.params.arguments.site : null });
+          const args = m.params.arguments ?? {};
+          calls.push({ id: m.id, name: m.params.name, site: typeof args.site === "string" ? args.site : null, detail: auditDetail(m.params.name, args) });
         }
       }
     } catch {
@@ -441,7 +450,7 @@ export async function handleMcp(request: Request, env: Env, actor: Actor) {
         : call.site
           ? ((await env.DB.prepare("SELECT id FROM sites WHERE slug = ?1 OR id = ?1").bind(call.site).first<{ id: string }>())?.id ?? null)
           : null;
-    await audit(env, actor, { action: `MCP ${call.name}`, siteId, target: call.site, status: streamed.ok ? (succeeded ? 200 : 422) : streamed.status });
+    await audit(env, actor, { action: `MCP ${call.name}`, siteId, target: call.detail ?? call.site, status: streamed.ok ? (succeeded ? 200 : 422) : streamed.status });
   }
   return new Response(body, streamed);
 }

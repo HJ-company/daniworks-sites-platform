@@ -423,6 +423,7 @@ async function operatorRoutes(request: Request, env: Env, url: URL, parts: strin
   }
   // DELETE /sites/:id/assets/<file>: an unused photo
   if (parts[2] === "assets" && parts.length === 4 && method === "DELETE") {
+    note.target = `key=m:${site.id}/${parts[3]}`;
     return json(await deleteAsset(env, site, `m:${site.id}/${parts[3]}`));
   }
 

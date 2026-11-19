@@ -20,6 +20,7 @@ service = "sites-api"
 [vars]
 OIDC_ISSUER = "http://127.0.0.1:8791"
 OIDC_CLIENT_ID = "dsites-console"
+MCP_URL = "http://127.0.0.1:8788/mcp"
 
 [env.staging]
 name = "sites-console-staging"
@@ -32,6 +33,7 @@ routes = [{ pattern = "dsites-console.daniworks.kr", custom_domain = true }]
 # https://dsites-console.daniworks.kr/auth/callback
 OIDC_ISSUER = "https://authentik.daniworks.kr/application/o/dsites-console/"
 OIDC_CLIENT_ID = "dsites-console"
+MCP_URL = "https://api.dsites.kr/mcp"
 # Secrets: OIDC_CLIENT_SECRET, SESSION_SECRET (32+ random characters): wrangler secret put … --env staging
 
 [[env.staging.services]]

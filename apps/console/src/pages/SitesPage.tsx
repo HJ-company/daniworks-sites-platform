@@ -64,7 +64,10 @@ export function SitesPage() {
         사이트
       </Typography>
       <Typography variant="body2" color="text.secondary" data-testid="create-hint">
-        새 사이트는 AI 도구(Claude·ChatGPT에 연결한 MCP)로 만듭니다. AI는 고객 등록부터 시안 링크까지 하고, 운영자는 여기서 검수·입금 확인·게시합니다.
+        새 사이트는 AI 도구(Claude·ChatGPT)로 만듭니다. AI가 고객 등록부터 시안 링크까지 하고, 운영자는 여기서 검수·입금 확인·게시합니다.{" "}
+        <Link component={RouterLink} to="/ai-tools">
+          AI 도구 연결 방법
+        </Link>
       </Typography>
       <TextField
         type="search"

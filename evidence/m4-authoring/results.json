@@ -36,9 +36,6 @@
       "slugs": [
         "schema-site-config",
         "design",
-        "industry-cafe-mwnxdx11",
-        "industry-cafe-mwnxh80h",
-        "industry-cafe-mwnxns3n",
         "industry-service-local",
         "product-policy",
         "writing-rules"
@@ -63,7 +60,7 @@
     {
       "name": "섹션 단위 수정 → 새 버전, 다른 섹션은 그대로",
       "pass": true,
-      "version": 5
+      "version": 2
     },
     {
       "name": "읽은 뒤 다른 수정이 있었으면 거부(baseVersion)",
@@ -89,14 +86,11 @@
       "name": "AI가 만든 버전에 참고한 지침 버전 기록",
       "pass": true,
       "stamp": {
-        "industry-service-local": 5,
+        "industry-service-local": 2,
         "writing-rules": 1,
         "product-policy": 1,
         "design": 1,
-        "industry-cafe-mwnxdx11": 1,
-        "industry-cafe-mwnxh80h": 1,
-        "industry-cafe-mwnxns3n": 1,
-        "industry-cafe-mwnxqgyf": 1
+        "industry-cafe-mwny2hju": 1
       }
     },
     {
@@ -167,7 +161,7 @@
       "name": "image_generate(배경): 가로 1536px 사진으로 저장, 출처·용도·프롬프트·비용 기록",
       "pass": true,
       "row": {
-        "key": "m:9f9d3506-533b-4f98-8542-2e9df28a7e38/08f8f2d5a739f67901d0.jpg",
+        "key": "m:2628b68a-c736-4fa4-833f-55c94c7d186c/08f8f2d5a739f67901d0.jpg",
         "width": 1536,
         "height": 1024,
         "bytes": 43636,
@@ -177,8 +171,8 @@
         "purpose": "background",
         "customer_request": null,
         "cost_usd": 0.04,
-        "created_at": "2026-11-19T19:20:36.145Z",
-        "url": "/_media/9f9d3506-533b-4f98-8542-2e9df28a7e38/08f8f2d5a739f67901d0.jpg",
+        "created_at": "2026-11-19T19:29:55.732Z",
+        "url": "/_media/2628b68a-c736-4fa4-833f-55c94c7d186c/08f8f2d5a739f67901d0.jpg",
         "in_use": false
       }
     },
@@ -212,6 +206,19 @@
     },
     {
       "name": "지침 화면: 스키마는 코드 생성(읽기 전용)",
+      "pass": true
+    },
+    {
+      "name": "사진 탭: 쓰지 않는 사진은 미사용 표시, 고객 요청 기록자",
+      "pass": true
+    },
+    {
+      "name": "작업 기록: AI 이미지 용도, 지운 사진",
+      "pass": true,
+      "log": "작업 기록때(KST)누가무엇을2026-11-20 04:29스크립트AI 도구: AI 이미지 만듦 (분위기) (거부됨)2026-11-20 04:29스크립트AI 도구: AI 이미지 만듦 (작업물·고객 요청)2026-11-20 04:29스크립트AI 도구: AI 이미지 만듦 (작업물·고객 요청) (거부됨)2026-11-20 04:29스크립트AI 도구: AI 이미지 만듦 (배경)2026-11-20 04:29스크립트사진 지움 (사진 a1acde2e…) (거부됨)2026-11-20 04:29스크립트AI 도구: 사진 지움 (사진 e99ee974…)2026-11-20 04:29스크립트AI 도구: 사진 올림2026-11-20 04:29스크립트AI 도구: 사진 올림 (거부됨)2026-11-20 04:29스크립트AI 도구: 사진 "
+    },
+    {
+      "name": "AI 도구 연결 방법: 연결 주소와 단계",
       "pass": true
     },
     {

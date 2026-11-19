@@ -14,6 +14,7 @@ const PaymentsPage = lazy(() => import("./pages/billing/PaymentsPage.js").then((
 const CustomersPage = lazy(() => import("./pages/CustomersPage.js").then((m) => ({ default: m.CustomersPage })));
 const CustomerPage = lazy(() => import("./pages/CustomerPage.js").then((m) => ({ default: m.CustomerPage })));
 const GuidesPage = lazy(() => import("./pages/GuidesPage.js").then((m) => ({ default: m.GuidesPage })));
+const AiToolsPage = lazy(() => import("./pages/AiToolsPage.js").then((m) => ({ default: m.AiToolsPage })));
 import { ToastProvider } from "./ui.js";
 
 // Korean text for MUI components (the data grid gets its own in grid-locale.ts, loaded with it).
@@ -39,6 +40,7 @@ const router = createBrowserRouter([
       { path: "customers", element: <CustomersPage /> },
       { path: "customers/:customerId", element: <CustomerPage /> },
       { path: "guides/:slug?", element: <GuidesPage /> },
+      { path: "ai-tools", element: <AiToolsPage /> },
       { path: "sites/:siteId/:tab?", element: <SitePage /> },
     ],
   },

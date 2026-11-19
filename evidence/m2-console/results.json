@@ -1,7 +1,7 @@
 {
-  "siteId": "2cdacf71-d5cd-496b-8821-aaca0c41e3ff",
-  "slug": "console-mwnx4as5",
-  "router": "http://console-mwnx4as5.localhost:8787/",
+  "siteId": "387f9427-7f3e-43f1-8567-80282b7ad61a",
+  "slug": "console-mwny22up",
+  "router": "http://console-mwny22up.localhost:8787/",
   "results": [
     {
       "name": "사이트 목록 화면",
@@ -52,7 +52,7 @@
     {
       "name": "업로드 결과 1600×1200",
       "pass": true,
-      "card": "올린 사진1600×1200 · 52KB값 복사지우기"
+      "card": "올린 사진미사용1600×1200 · 52KB값 복사지우기"
     },
     {
       "name": "도메인 등록과 CNAME 안내 표시",
