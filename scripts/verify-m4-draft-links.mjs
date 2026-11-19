@@ -36,7 +36,7 @@ check("시안 띠 아래로 사이트 머리글을 내림", home.body.includes("
 const privacy = await open(issued.url, "/privacy");
 check("하위 페이지(개인정보처리방침)도 배너와 함께", privacy.status === 200 && privacy.body.includes("시안입니다"));
 check("없는 하위 페이지는 안내 404", (await open(issued.url, "/nope")).status === 404);
-const asset = home.body.match(/\/_shared\/[^"]+\.css/)?.[0];
+const asset = home.body.match(/\/_shared\/[^"]+\.js/)?.[0]; // CSS is inlined; the client bundle still comes from /_shared
 check("공용 자산을 같은 주소에서 받음", asset && (await routerRequest("localhost", asset)).status === 200, { asset });
 
 // 3. always the latest version

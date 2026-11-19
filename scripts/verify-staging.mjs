@@ -227,9 +227,10 @@ const robots = await get(`${siteUrl}robots.txt`);
 const sitemap = await get(`${siteUrl}sitemap.xml`);
 check("robots.txt·sitemap.xml 200", robots.status === 200 && sitemap.status === 200 && sitemap.body.includes(host));
 const page = await get(siteUrl);
-const css = page.body.match(/href="(\/_shared\/[^"]+\.css)"/)?.[1];
-const cssRes = css ? await get(new URL(css, siteUrl).href) : { status: 0, headers: new Headers() };
-check("공용 CSS 200 + immutable", cssRes.status === 200 && cssRes.headers.get("cache-control")?.includes("immutable"), { css });
+// The stylesheet is inlined into the page; the client bundle is the shared, immutable asset.
+const js = page.body.match(/src="(\/_shared\/[^"]+\.js)"/)?.[1];
+const jsRes = js ? await get(new URL(js, siteUrl).href) : { status: 0, headers: new Headers() };
+check("CSS는 페이지에, 공용 JS 200 + immutable", /<style>\/\*! tailwindcss/.test(page.body) && jsRes.status === 200 && jsRes.headers.get("cache-control")?.includes("immutable"), { js });
 
 // 9. browser (optional: needs `playwright` resolvable from the repo)
 let chromium;

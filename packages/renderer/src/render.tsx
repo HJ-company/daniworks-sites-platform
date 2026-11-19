@@ -17,6 +17,11 @@ export interface RenderOptions {
   linkPrefix?: string;
   /** Turnstile frame the inquiry form embeds (`https://api.dsites.kr/turnstile-frame`). */
   turnstileFrame?: string | null;
+  /**
+   * The shared site.css text to inline instead of linking it: no render-blocking request before
+   * the first paint (about 12 KB gzipped, no url() references, so it is position-independent).
+   */
+  inlineCss?: string;
 }
 
 export interface RenderedPage {
@@ -140,13 +145,14 @@ async function renderPage(config: SiteConfig, sitePage: SitePage, options: Rende
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 ${head}
+<link rel="icon" href="data:,">
 ${lcpPreload(body)}
-<link rel="stylesheet" href="${options.assetBase}/_assets/site.css">
+${options.inlineCss ? `<style>${options.inlineCss.replace(/<\/style/gi, "<\\/style")}</style>` : `<link rel="stylesheet" href="${options.assetBase}/_assets/site.css">`}
 </head>
 <body${page.data.site ? ' class="has-contact-bar"' : ""}>
 <div id="root">${body}</div>
 ${hydrate ? `<script id="${DATA_ID}" type="application/json">${escapeJson(page.data)}</script>
-<script type="module" src="${options.assetBase}/_assets/client.js"></script>` : ""}
+<script type="module" fetchpriority="low" src="${options.assetBase}/_assets/client.js"></script>` : ""}
 </body>
 </html>`;
   return { route: page.route, path: page.route === "/" ? "index.html" : `${page.route.slice(1)}/index.html`, html };
