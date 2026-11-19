@@ -1,6 +1,11 @@
 import {
   Button,
   Chip,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogContentText,
+  DialogTitle,
   Paper,
   Stack,
   Table,
@@ -23,6 +28,8 @@ export function OverviewTab({ siteId, site, versions }: { siteId: string; site: 
   const queryClient = useQueryClient();
   const toast = useToast();
   const [notify, setNotify] = useState(site.notify_email ?? "");
+  const [confirmSuspend, setConfirmSuspend] = useState(false);
+  const cancelled = Boolean(site.cancelled_at);
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: ["site", siteId] });
     void queryClient.invalidateQueries({ queryKey: ["sites"] });
@@ -60,8 +67,8 @@ export function OverviewTab({ siteId, site, versions }: { siteId: string; site: 
             저장
           </Button>
           <Stack direction="row" sx={{ flex: 1, justifyContent: "flex-end" }}>
-            {site.cancelled_at ? null : site.status === "active" ? (
-              <Button color="warning" onClick={() => action.mutate({ path: "suspend", done: "공개를 정지했습니다" })}>
+            {cancelled || (site.status === "active" && !site.published_version_id) ? null : site.status === "active" ? (
+              <Button color="warning" onClick={() => setConfirmSuspend(true)}>
                 공개 정지
               </Button>
             ) : (
@@ -72,6 +79,27 @@ export function OverviewTab({ siteId, site, versions }: { siteId: string; site: 
           </Stack>
         </Stack>
       </Paper>
+      <Dialog open={confirmSuspend} onClose={() => setConfirmSuspend(false)}>
+        <DialogTitle>공개 정지</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            방문자에게는 상호와 "준비 중" 안내만 보입니다. 데이터와 도메인은 그대로이고, 공개 재개로 바로 되돌릴 수 있습니다.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setConfirmSuspend(false)}>닫기</Button>
+          <Button
+            color="warning"
+            variant="contained"
+            onClick={() => {
+              setConfirmSuspend(false);
+              action.mutate({ path: "suspend", done: "공개를 정지했습니다" });
+            }}
+          >
+            정지
+          </Button>
+        </DialogActions>
+      </Dialog>
       <LifecycleCard siteId={siteId} site={site} />
       <Paper>
         <Typography variant="subtitle1" sx={{ fontWeight: 700, p: 2, pb: 0 }}>
@@ -106,6 +134,7 @@ export function OverviewTab({ siteId, site, versions }: { siteId: string; site: 
                       {!live && v.first_published_at ? (
                         <Button
                           size="small"
+                          disabled={cancelled}
                           onClick={() => action.mutate({ path: "rollback", body: { versionId: v.id }, done: `v${v.number}로 되돌렸습니다` })}
                         >
                           롤백
@@ -115,6 +144,7 @@ export function OverviewTab({ siteId, site, versions }: { siteId: string; site: 
                         <Button
                           size="small"
                           variant="contained"
+                          disabled={cancelled}
                           onClick={() => action.mutate({ path: "publish", body: { versionId: v.id }, done: `v${v.number}을 게시했습니다` })}
                         >
                           게시

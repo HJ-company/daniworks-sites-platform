@@ -12,10 +12,10 @@ import { templateSeedExport } from "./handoff.js";
 import { handleMcp } from "./mcp.js";
 import { assetBase, publish, rollback, siteOrigin } from "./publish.js";
 import { auditHostRecords, reconcileHostRecords, syncHostRecordsNow } from "./routes.js";
-import { cancelSite, exportSite, listCancellations, purgeSite, reactivateSite } from "./lifecycle.js";
+import { cancelSite, exportSite, listCancellations, purgeSite, reactivateSite, retentionDays } from "./lifecycle.js";
 import { commitRepublish, republishPlan, stagedPage, stageRepublish } from "./republish.js";
 import { addDraft, configFromBody, createSiteFromInput, creator, previewUrl } from "./sites.js";
-import { getSite, listSites, listVersions, setSiteStatus, versionByPreviewToken, type CreatedBy } from "./store.js";
+import { businessName, getSite, listSites, listVersions, setSiteStatus, versionByPreviewToken, type CreatedBy } from "./store.js";
 
 /** Must match wrangler.toml [triggers]: the hourly audit; the 5-minute cron only reconciles. */
 const AUDIT_CRON = "17 * * * *";
@@ -134,7 +134,11 @@ async function handle(request: Request, env: Env): Promise<Response> {
 
   if (method === "GET" && parts.length === 2) {
     const versions = (await listVersions(env.DB, site.id)) as { preview_token: string }[];
-    return json({ site, versions: versions.map((v) => ({ ...v, preview_url: previewUrl(env, v.preview_token) })) });
+    const purgeAfter = site.cancelled_at ? new Date(Date.parse(site.cancelled_at) + retentionDays(env) * 86_400_000).toISOString() : null;
+    return json({
+      site: { ...site, business_name: await businessName(env.DB, site), purge_after: purgeAfter },
+      versions: versions.map((v) => ({ ...v, preview_url: previewUrl(env, v.preview_token) })),
+    });
   }
 
   // PATCH /sites/:id {notifyEmail}: operational settings outside the versioned config.

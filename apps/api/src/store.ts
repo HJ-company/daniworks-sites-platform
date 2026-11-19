@@ -237,11 +237,24 @@ export async function releaseRoutesLease(db: D1Database, siteId: string, token: 
     .run();
 }
 
+/** SQL for a site's business name: the live version's, else the latest draft's. */
+export const BUSINESS_NAME_SQL = (siteIdColumn: string, publishedColumn: string) =>
+  `(SELECT json_extract(config, '$.business.name') FROM site_versions
+    WHERE id = COALESCE(${publishedColumn}, (SELECT id FROM site_versions WHERE site_id = ${siteIdColumn} ORDER BY number DESC LIMIT 1)))`;
+
+export async function businessName(db: D1Database, site: SiteRow): Promise<string | null> {
+  const row = await db
+    .prepare(`SELECT ${BUSINESS_NAME_SQL("?1", "?2")} AS name`)
+    .bind(site.id, site.published_version_id)
+    .first<{ name: string | null }>();
+  return row?.name ?? null;
+}
+
 export async function listSites(db: D1Database, baseDomain: string) {
   const { results } = await db
     .prepare(
       `SELECT s.id, s.slug, s.template_id, s.status, s.cancelled_at, s.published_version_id, s.published_at,
-              s.notify_email, s.created_at, s.updated_at,
+              s.notify_email, s.created_at, s.updated_at, ${BUSINESS_NAME_SQL("s.id", "s.published_version_id")} AS business_name,
               (SELECT number FROM site_versions WHERE id = s.published_version_id) AS published_number,
               (SELECT MAX(number) FROM site_versions WHERE site_id = s.id) AS latest_number,
               (SELECT hostname FROM domains WHERE site_id = s.id AND kind = 'custom' AND status = 'active' ORDER BY created_at LIMIT 1) AS custom_hostname

@@ -37,7 +37,8 @@ export function LifecycleCard({ siteId, site }: { siteId: string; site: SiteRow 
     <Paper sx={{ p: 2 }}>
       <Stack direction={{ xs: "column", sm: "row" }} spacing={1} sx={{ alignItems: { sm: "center" } }}>
         <Typography variant="subtitle1" sx={{ fontWeight: 700, flex: 1 }}>
-          계약·데이터 {site.cancelled_at ? `· 해지 ${kst(site.cancelled_at)}` : ""}
+          계약·데이터{" "}
+          {site.cancelled_at ? `· 해지 ${kst(site.cancelled_at).slice(0, 10)} · 보관 만료 ${kst(site.purge_after).slice(0, 10)}` : ""}
         </Typography>
         <Button href={`/api/sites/${siteId}/export.zip`} data-testid="export">
           내보내기(zip)
@@ -61,8 +62,8 @@ export function LifecycleCard({ siteId, site }: { siteId: string; site: SiteRow 
         <DialogContent>
           <DialogContentText sx={{ mb: 2 }}>
             {dialog === "purge"
-              ? "파일·문의·통계·버전이 모두 지워지고 되돌릴 수 없습니다. 먼저 내보내기를 받아 두세요."
-              : "공개를 멈추고(410) 커스텀 도메인을 해제합니다. 데이터는 해지일부터 1년 동안 보관하고, 그동안 내려받을 수 있습니다."}
+              ? "홈페이지 파일·사진·문의·통계·버전이 모두 지워지고 되돌릴 수 없습니다. 먼저 내보내기를 받아 두세요."
+              : "홈페이지 공개를 멈추고 연결된 도메인을 해제합니다. 자료(홈페이지 파일·사진·문의·통계)는 해지일부터 1년 동안 보관합니다. 그동안 언제든 zip으로 내려받거나 해지를 취소해 다시 공개할 수 있습니다(도메인은 다시 연결). 1년이 지나면 운영자가 삭제합니다."}
             {" "}확인을 위해 <b>{site.slug}</b>를 입력하세요.
           </DialogContentText>
           <TextField fullWidth size="small" value={typed} onChange={(e) => setTyped(e.target.value)} slotProps={{ htmlInput: { name: "confirmSlug" } }} />

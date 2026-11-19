@@ -40,12 +40,16 @@ export interface SiteSummary {
   latest_number: number | null;
   notify_email: string | null;
   hostname: string;
+  /** From the live version's config (else the latest draft's). */
+  business_name: string | null;
   updated_at: string;
 }
 
 export interface SiteRow extends Omit<SiteSummary, "published_number" | "latest_number" | "hostname"> {
   published_at: string | null;
   origin_pending: number;
+  /** When a cancelled site's data may be deleted. */
+  purge_after: string | null;
 }
 
 export interface VersionRow {
@@ -70,6 +74,10 @@ export interface DomainRow {
   checked_at: string | null;
   verification_records: {
     cname: { type: string; name: string; value: string };
+    /** Registrar host field (`www`, `www.shop`, `@`); null if unknown, missing before M4. */
+    host?: string | null;
+    /** Registered domain (`example.co.kr`); null if unknown, missing before M4. */
+    zone?: string | null;
     optionalTxt: { type: string; name: string; value: string } | null;
     apex: boolean;
     note: string | null;

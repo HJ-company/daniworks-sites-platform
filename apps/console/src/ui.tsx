@@ -14,8 +14,10 @@ export function ErrorAlert({ error }: { error: unknown }) {
   );
 }
 
-export function StatusChip({ status, cancelled }: { status: string; cancelled?: string | null }) {
+/** Site or domain status. A site never published shows as 미공개 rather than 운영. */
+export function StatusChip({ status, cancelled, unpublished }: { status: string; cancelled?: string | null; unpublished?: boolean }) {
   if (cancelled) return <Chip size="small" label="해지" color="default" />;
+  if (unpublished && status === "active") return <Chip size="small" label="미공개" color="default" variant="outlined" />;
   const map: Record<string, { label: string; color: "success" | "warning" | "default" | "error" | "info" }> = {
     active: { label: "운영", color: "success" },
     suspended: { label: "정지", color: "warning" },
@@ -30,12 +32,19 @@ export function StatusChip({ status, cancelled }: { status: string; cancelled?: 
 const ToastContext = createContext<(message: string) => void>(() => undefined);
 
 export function ToastProvider({ children }: { children: ReactNode }) {
-  const [message, setMessage] = useState<string | null>(null);
-  const show = useCallback((text: string) => setMessage(text), []);
+  // The text outlives `open` so the closing animation never shows an empty box.
+  const [toast, setToast] = useState<{ open: boolean; text: string; key: number }>({ open: false, text: "", key: 0 });
+  const show = useCallback((text: string) => setToast((prev) => ({ open: true, text, key: prev.key + 1 })), []);
   return (
     <ToastContext.Provider value={show}>
       {children}
-      <Snackbar open={Boolean(message)} autoHideDuration={3000} onClose={() => setMessage(null)} message={message ?? ""} />
+      <Snackbar
+        key={toast.key}
+        open={toast.open}
+        autoHideDuration={3000}
+        onClose={() => setToast((prev) => ({ ...prev, open: false }))}
+        message={toast.text}
+      />
     </ToastContext.Provider>
   );
 }

@@ -48,9 +48,14 @@ export function SitePage() {
     <Stack spacing={2}>
       <Stack direction="row" spacing={1.5} sx={{ alignItems: "center", flexWrap: "wrap" }}>
         <Typography variant="h5" sx={{ fontWeight: 700 }} data-testid="site-title">
-          {row.slug}
+          {row.business_name ?? row.slug}
         </Typography>
-        <StatusChip status={row.status} cancelled={row.cancelled_at} />
+        {row.business_name ? (
+          <Typography variant="body2" color="text.secondary">
+            {row.slug}
+          </Typography>
+        ) : null}
+        <StatusChip status={row.status} cancelled={row.cancelled_at} unpublished={!row.published_version_id} />
         {primary ? (
           <Link href={`https://${primary}`} target="_blank" rel="noopener" variant="body2">
             {primary}

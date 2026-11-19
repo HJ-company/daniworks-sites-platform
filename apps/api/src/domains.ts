@@ -1,3 +1,4 @@
+import { getDomain } from "tldts";
 import type { Env } from "./env.js";
 import { HttpError } from "./http.js";
 import { kvHostKey } from "./keys.js";
@@ -11,7 +12,6 @@ export const INCLUDED_HOSTNAMES = 100;
 const PLATFORM_ZONE = "dsites.kr";
 
 /** Public suffixes common for Korean small businesses; the label before one is the apex. */
-const SUFFIXES = ["co.kr", "or.kr", "ne.kr", "re.kr", "pe.kr", "go.kr", "ac.kr", "kr", "com", "net", "org", "shop", "store", "info", "biz", "me", "io", "co"];
 
 export interface DomainRow {
   hostname: string;
@@ -42,19 +42,29 @@ export function normalizeHostname(input: unknown, baseDomain: string): string {
   return host;
 }
 
+/**
+ * The domain the customer registered, from the Public Suffix List: `example.co.kr` for
+ * `www.shop.example.co.kr`, `example.seoul.kr` for `www.example.seoul.kr`. Null if none.
+ */
+export function registrableDomain(hostname: string): string | null {
+  return getDomain(hostname, { allowPrivateDomains: false });
+}
+
 /** `example.co.kr` and `example.com` are apex; `www.example.co.kr` is not. */
 export function isApex(hostname: string) {
-  const suffix = SUFFIXES.filter((s) => hostname.endsWith(`.${s}`)).sort((a, b) => b.length - a.length)[0];
-  if (!suffix) return hostname.split(".").length === 2;
-  return hostname.slice(0, -(suffix.length + 1)).split(".").length === 1;
+  return registrableDomain(hostname) === hostname;
 }
 
 /** DNS instructions shown to the operator and, later, the customer. */
 export function instructions(env: Env, hostname: string, cf: CustomHostname) {
   const target = env.DOMAIN_CNAME_TARGET ?? `connect.${env.BASE_DOMAIN}`;
   const apex = isApex(hostname);
+  const zone = registrableDomain(hostname);
   return {
     cname: { type: "CNAME", name: hostname, value: target },
+    /** Registrar host field: `www`, `www.shop`, `@` for the apex; null when the zone is unknown. */
+    host: apex ? "@" : zone ? hostname.slice(0, -(zone.length + 1)) : null,
+    zone,
     /** Only for a domain already live elsewhere: validate before switching DNS (no downtime). */
     optionalTxt: cf.ownership_verification
       ? { type: "TXT", name: cf.ownership_verification.name, value: cf.ownership_verification.value }
