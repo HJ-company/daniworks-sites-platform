@@ -1,5 +1,5 @@
 import { parseSiteConfig, renderSite, SiteConfigError, STARTER_TODO, type SiteConfig } from "@sites/renderer";
-import { listAssets, uploadAsset } from "./assets.js";
+import { deleteAsset, listAssets, uploadAsset } from "./assets.js";
 import { refreshBlog, refreshDueBlogs } from "./blog.js";
 import {
   billingQueue,
@@ -18,6 +18,7 @@ import {
   voidPayment,
 } from "./billing.js";
 import { draftLink, issueDraftLink, revokeDraftLink } from "./draft-links.js";
+import { getGuide, guideVersions, listGuides } from "./guides.js";
 import { createCustomer, customerDetail, linkSite, listCustomers, updateCustomer } from "./customers.js";
 import { allInquiries, inquiriesCsv, listInquiries, requireEmail } from "./inquiries.js";
 import { currentQuarter, kstDay, metricsReport, quarterlyCsv, quarterlyOverview, quarterlyReport } from "./metrics.js";
@@ -198,6 +199,17 @@ async function operatorRoutes(request: Request, env: Env, url: URL, parts: strin
     if (parts.length === 2 && method === "GET") return json(await customerDetail(env.DB, parts[1]!));
     if (parts.length === 2 && method === "PATCH") return json({ customer: await updateCustomer(env.DB, parts[1]!, await readJson(request)) });
     throw new HttpError(404, "없는 경로입니다");
+  }
+
+  // Authoring guides (read-only here; edited through MCP): GET /guides, /guides/:slug[?version=], /guides/:slug/versions
+  if (method === "GET" && parts[0] === "guides") {
+    if (parts.length === 1) return json({ guides: await listGuides(env) });
+    const slug = decodeURIComponent(parts[1]!);
+    if (parts.length === 2) {
+      const version = url.searchParams.get("version");
+      return json({ guide: await getGuide(env, slug, undefined, version ? Number(version) : undefined) });
+    }
+    if (parts.length === 3 && parts[2] === "versions") return json({ versions: await guideVersions(env, slug) });
   }
 
   // Billing work list and payment history: GET /billing/queue, GET /payments?from=&to=&method=
@@ -404,10 +416,15 @@ async function operatorRoutes(request: Request, env: Env, url: URL, parts: strin
     return json(result, 201);
   }
 
-  // POST /sites/:id/assets: raw image body, or JSON {url}. GET lists them.
+  // POST /sites/:id/assets: raw image body, or JSON {url}. GET lists them (with in_use).
   if (parts[2] === "assets" && parts.length === 3) {
     if (method === "POST") return json(await uploadAsset(env, site, request), 201);
     if (method === "GET") return json({ assets: await listAssets(env, site) });
+  }
+  // DELETE /sites/:id/assets/<file>: an unused photo
+  if (parts[2] === "assets" && parts.length === 4 && method === "DELETE") {
+    note.target = `key=m:${site.id}/${parts[3]}`;
+    return json(await deleteAsset(env, site, `m:${site.id}/${parts[3]}`));
   }
 
   // POST /sites/:id/publish {versionId?}: latest version when omitted

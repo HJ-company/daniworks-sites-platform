@@ -126,7 +126,25 @@ export interface Asset {
   height: number;
   bytes: number;
   original_name: string | null;
+  source: "upload" | "url" | "ai";
+  prompt: string | null;
+  purpose: "background" | "illustration" | "mood" | "work" | null;
+  customer_request: { channel: string; requestedAt: string; summary: string; recordedBy?: string | null } | null;
+  cost_usd: number | null;
+  /** Some version of some site refers to it (cannot be deleted). */
+  in_use: boolean;
   created_at: string;
+}
+
+export interface GuideSummary {
+  slug: string;
+  title: string;
+  kind: string;
+  scope: string;
+  summary: string;
+  version: number;
+  readOnly: boolean;
+  updated_at?: string;
 }
 
 export type MetricEvent = "pageview" | "tel" | "kakao" | "map" | "booking" | "inquiry_cta" | "inquiry";

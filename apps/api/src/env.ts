@@ -38,4 +38,8 @@ export interface Env {
   /** Image generation. Optional until image_generate ships. */
   OPENAI_API_KEY?: string;
   OPENAI_IMAGE_MODEL?: string;
+  /** Images API base (`https://api.openai.com/v1`); Docker points it at cf-mock. */
+  OPENAI_BASE_URL?: string;
+  /** Recorded cost per generated image in USD, for the console's totals. Unset: not recorded. */
+  IMAGE_COST_USD?: string;
 }

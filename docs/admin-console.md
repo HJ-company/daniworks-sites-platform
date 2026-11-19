@@ -148,7 +148,9 @@ context7처럼 MCP를 연결하면 제작에 필요한 지침을 바로 찾아 �
 | `guide_create` | 새 문서 등록 | operator |
 | `guide_update` | 섹션 단위 수정, 새 버전으로 쌓임 | operator |
 
-- D1에 문서·섹션을 append-only 버전으로 저장한다. 검색은 제목·키워드로 시작하고 문서가 늘면 Vectorize를 붙인다.
+- D1에 문서를 버전별로 저장한다(섹션 단위 수정도 새 버전). `guide_get`의 query는 그 단어가 들어간 섹션만 돌려준다. 문서가 늘면 Vectorize를 붙인다.
+- 기본 지침(업종 service-local, 작성 규칙, 상품·계약 요약, 디자인)은 코드에 있고 처음 읽을 때 D1로 복사된다. 스키마 문서는 검증 스키마에서 그때그때 만든다.
+- 콘솔 "지침" 메뉴에서 문서와 버전 이력(작성자·메모)을 읽는다. 고치는 일은 AI 도구로 한다.
 - 문서마다 공개 범위(`operator`/`customer`)를 둔다.
 - 사이트 버전 저장 시 참고한 지침 버전을 함께 기록한다.
 - MCP 서버 설명에 "제작 전에 `guide_get`으로 스키마와 업종 지침부터 읽는다"를 넣는다. resources·prompts는 클라이언트 지원이 고르지 않아 도구로 제공한다.
@@ -158,8 +160,7 @@ context7처럼 MCP를 연결하면 제작에 필요한 지침을 바로 찾아 �
 | 도구 | 하는 일 |
 | --- | --- |
 | `image_generate` | 프롬프트·비율·site_id → OpenAI 이미지 API로 생성 → WebP 변환 → R2 저장 → asset 키·CDN 주소 반환 |
-| `asset_import_url` | 블로그·플레이스의 고객 사진 URL을 서버가 받아 R2에 저장 |
-| `asset_upload` | 작은 파일 직접 업로드(base64) |
+| `asset_upload` | 블로그·플레이스의 고객 사진 URL을 서버가 받아 저장하거나, 작은 파일을 직접 업로드(base64) |
 | `asset_list`, `asset_delete` | 사이트별 자산 관리 |
 
 - 저장·서빙은 M2의 사진 경로(R2, WebP 변형 3종, 내용 해시 키)를 그대로 쓴다. 설정에는 키만 저장한다.

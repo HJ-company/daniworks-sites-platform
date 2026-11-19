@@ -15,6 +15,8 @@ interface Env {
   OIDC_CLIENT_SECRET?: string;
   /** Encrypts the session cookie. 32+ random characters, a secret in deployed environments. */
   SESSION_SECRET?: string;
+  /** Where operators connect Claude/ChatGPT (`https://api.dsites.kr/mcp`), shown in the help page. */
+  MCP_URL?: string;
 }
 
 interface Session {
@@ -308,7 +310,7 @@ export default {
 
     if (url.pathname === "/auth/me") {
       if (!current) return Response.json({ error: "로그인이 필요합니다" }, { status: 401 });
-      return store(Response.json({ name: current.session.name, email: current.session.email }));
+      return store(Response.json({ name: current.session.name, email: current.session.email, mcpUrl: env.MCP_URL ?? null }));
     }
 
     if (url.pathname === "/api" || url.pathname.startsWith("/api/")) {

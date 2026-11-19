@@ -2,7 +2,7 @@
 // create → edit (form + JSON) → validate → draft → publish → rollback → photos (browser resize)
 // → domain → inquiries CSV → stats → suspend/resume. No credential ever reaches the browser.
 import { createRequire } from "node:module";
-import { API, ROUTER_PORT, chromium, evidence, paySite, routerRequest, uploadShared, consoleLogin, CONSOLE } from "./lib/verify.mjs";
+import { API, ROUTER_PORT, api, chromium, evidence, paySite, routerRequest, uploadShared, consoleLogin, CONSOLE } from "./lib/verify.mjs";
 
 const sharp = createRequire(new URL("../packages/renderer/package.json", import.meta.url))("sharp");
 const ev = evidence("m2-console");
@@ -30,14 +30,13 @@ await page.goto(CONSOLE, { waitUntil: "networkidle" });
 check("사이트 목록 화면", await page.getByRole("heading", { name: "사이트" }).isVisible());
 check("브라우저로 내려간 HTML·JS에 관리자 토큰 없음", bodies.length > 0 && !bodies.some((b) => b.includes("dev-admin-token")));
 
-// 2. create from the starter
-await page.getByRole("link", { name: "새 사이트" }).click();
-await page.locator("input[name=slug]").fill(slug);
-await page.locator("input[name=name]").fill("콘솔 시험 학원");
-await page.locator("input[name=phone]").fill("010-0000-0000");
-await page.getByRole("button", { name: "만들기" }).click();
-await page.waitForURL(/\/sites\/[^/]+\/edit$/);
-const siteId = page.url().split("/").at(-2);
+// 2. a site from the starter (M4: sites are created with the AI tools or the API, not the console)
+check("콘솔에는 새 사이트 화면이 없고 AI 도구 안내", (await page.getByRole("link", { name: "새 사이트" }).count()) === 0 &&
+  (await page.getByTestId("create-hint").textContent()).includes("AI 도구"));
+const siteId = (await api("POST", "/sites", { starter: { preset: "lesson", slug, name: "콘솔 시험 학원", phone: "010-0000-0000" }, createdBy: "operator" })).data.siteId;
+await page.goto(`${CONSOLE}/sites/${siteId}/edit`, { waitUntil: "networkidle" });
+// The raw JSON is folded away under 고급.
+await page.getByTestId("json-section").getByText("고급: 전체 설정").click();
 const editorText = () => page.locator(".cm-content").innerText();
 const loaded = await page
   .waitForFunction((s) => document.querySelector(".cm-content")?.textContent?.includes(s), slug, { timeout: 15000 })

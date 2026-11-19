@@ -1,7 +1,7 @@
 {
-  "siteId": "79f89a8b-96ee-46a3-81a1-5714031683b9",
-  "slug": "console-mwnvn0i6",
-  "router": "http://console-mwnvn0i6.localhost:8787/",
+  "siteId": "387f9427-7f3e-43f1-8567-80282b7ad61a",
+  "slug": "console-mwny22up",
+  "router": "http://console-mwny22up.localhost:8787/",
   "results": [
     {
       "name": "사이트 목록 화면",
@@ -9,6 +9,10 @@
     },
     {
       "name": "브라우저로 내려간 HTML·JS에 관리자 토큰 없음",
+      "pass": true
+    },
+    {
+      "name": "콘솔에는 새 사이트 화면이 없고 AI 도구 안내",
       "pass": true
     },
     {
@@ -48,7 +52,7 @@
     {
       "name": "업로드 결과 1600×1200",
       "pass": true,
-      "card": "1600×1200 · 52KB값 복사"
+      "card": "올린 사진미사용1600×1200 · 52KB값 복사지우기"
     },
     {
       "name": "도메인 등록과 CNAME 안내 표시",

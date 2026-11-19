@@ -1,5 +1,5 @@
 {
-  "slug": "mcp-mwnvbfl1",
+  "slug": "mcp-mwnxqfn1",
   "results": [
     {
       "name": "토큰 없는 MCP 요청은 401",
@@ -9,7 +9,16 @@
       "name": "M2 도구 10종 노출",
       "pass": true,
       "names": [
+        "asset_delete",
+        "asset_list",
         "asset_upload",
+        "customer_create",
+        "customer_get",
+        "guide_create",
+        "guide_get",
+        "guide_list",
+        "guide_update",
+        "image_generate",
         "site_create",
         "site_get",
         "site_preview_link",
@@ -50,10 +59,10 @@
     {
       "name": "site_create: 사이트와 프리뷰 URL",
       "pass": true,
-      "siteId": "9a27dceb-5609-4c44-b3f6-ef499b7f1e0b",
-      "versionId": "c6a93e84-8793-4f7e-929a-c734881c7995",
-      "hostname": "mcp-mwnvbfl1.localhost",
-      "previewUrl": "http://127.0.0.1:8788/preview/b4694aaa65074fc7aab7c2acbf23a5fb"
+      "siteId": "9e547574-b276-4bac-8c72-835ed5482ed3",
+      "versionId": "c904e5ac-202f-4a52-9f5a-713ce770a37b",
+      "hostname": "mcp-mwnxqfn1.localhost",
+      "previewUrl": "http://127.0.0.1:8788/preview/843a1719798842279f26fb779a03cc2d"
     },
     {
       "name": "프리뷰 URL 열림",
@@ -62,8 +71,8 @@
     {
       "name": "asset_upload(base64): key·크기",
       "pass": true,
-      "key": "m:9a27dceb-5609-4c44-b3f6-ef499b7f1e0b/9ea3888a0c09e05d62de.jpg",
-      "url": "/_media/9a27dceb-5609-4c44-b3f6-ef499b7f1e0b/9ea3888a0c09e05d62de.jpg",
+      "key": "m:9e547574-b276-4bac-8c72-835ed5482ed3/9ea3888a0c09e05d62de.jpg",
+      "url": "/_media/9e547574-b276-4bac-8c72-835ed5482ed3/9ea3888a0c09e05d62de.jpg",
       "width": 1200,
       "height": 800,
       "bytes": 26878
@@ -71,8 +80,8 @@
     {
       "name": "asset_upload(url, 외부): 네이버 RSS 썸네일을 원본 크기(900px)로",
       "pass": true,
-      "key": "m:9a27dceb-5609-4c44-b3f6-ef499b7f1e0b/67e27c24d87c60c58c07.jpg",
-      "url": "/_media/9a27dceb-5609-4c44-b3f6-ef499b7f1e0b/67e27c24d87c60c58c07.jpg",
+      "key": "m:9e547574-b276-4bac-8c72-835ed5482ed3/67e27c24d87c60c58c07.jpg",
+      "url": "/_media/9e547574-b276-4bac-8c72-835ed5482ed3/67e27c24d87c60c58c07.jpg",
       "width": 900,
       "height": 675,
       "bytes": 190053

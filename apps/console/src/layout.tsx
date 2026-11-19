@@ -39,8 +39,8 @@ export function Layout() {
           <Button component={RouterLink} to="/reports">
             분기 리포트
           </Button>
-          <Button component={RouterLink} to="/sites/new" variant="contained">
-            새 사이트
+          <Button component={RouterLink} to="/guides">
+            지침
           </Button>
           {me.data ? (
             <Chip

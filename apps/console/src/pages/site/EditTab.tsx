@@ -1,5 +1,6 @@
 import { json } from "@codemirror/lang-json";
-import { Alert, Button, Grid, Paper, Stack, TextField, Typography } from "@mui/material";
+import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
+import { Accordion, AccordionDetails, AccordionSummary, Alert, Button, Grid, Paper, Stack, TextField, Typography } from "@mui/material";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import CodeMirror from "@uiw/react-codemirror";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -52,6 +53,8 @@ export function EditTab({ siteId }: { siteId: string }) {
   });
   const [text, setText] = useState("");
   const [note, setNote] = useState("");
+  // The raw JSON starts folded; it opens only when the operator asks.
+  const [jsonOpen, setJsonOpen] = useState(false);
   // Last config loaded from the server. A refetch (e.g. after saving) replaces the editor only
   // when the operator has not changed it since, so typing during a save is never lost.
   const loaded = useRef("");
@@ -132,25 +135,28 @@ export function EditTab({ siteId }: { siteId: string }) {
           </Grid>
         </Paper>
       ))}
-      <Paper sx={{ p: 2 }}>
-        <Stack direction="row" sx={{ alignItems: "center", mb: 1 }}>
+      {/* Content beyond these forms is the AI tools' job; the raw JSON stays for emergencies. */}
+      <Accordion disableGutters expanded={jsonOpen} onChange={(_, open) => setJsonOpen(open)} data-testid="json-section">
+        <AccordionSummary expandIcon={<ExpandMoreIcon />}>
           <Typography variant="subtitle1" sx={{ fontWeight: 700, flex: 1 }}>
-            전체 설정 (JSON) {latest.data ? `· 최신 v${latest.data.version.number} 기준` : ""}
+            고급: 전체 설정 (JSON) {latest.data ? `· 최신 v${latest.data.version.number} 기준` : ""}
           </Typography>
-          <Typography variant="body2" color="text.secondary">
-            나머지 섹션·사진·FAQ는 여기서 고칩니다(큰 수정은 AI 도구로)
+          <Typography variant="body2" color="text.secondary" sx={{ mr: 1, display: { xs: "none", sm: "block" } }}>
+            섹션·사진·FAQ는 AI 도구로 고치고, 급할 때만 여기서
           </Typography>
-        </Stack>
-        <CodeMirror
-          value={text}
-          height="420px"
-          extensions={[json()]}
-          onChange={setText}
-          readOnly={save.isPending}
-          data-testid="json-editor"
-        />
-        {parsed.error ? <Alert severity="warning">JSON 문법 오류: {parsed.error}</Alert> : null}
-      </Paper>
+        </AccordionSummary>
+        <AccordionDetails>
+          <CodeMirror
+            value={text}
+            height="420px"
+            extensions={[json()]}
+            onChange={setText}
+            readOnly={save.isPending}
+            data-testid="json-editor"
+          />
+          {parsed.error ? <Alert severity="warning">JSON 문법 오류: {parsed.error}</Alert> : null}
+        </AccordionDetails>
+      </Accordion>
       {validate.data ? (
         validate.data.valid ? (
           <Alert severity="success" data-testid="validate-ok">

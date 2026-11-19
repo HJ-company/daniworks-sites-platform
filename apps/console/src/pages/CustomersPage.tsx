@@ -50,6 +50,9 @@ export function CustomersPage() {
           고객 추가
         </Button>
       </Stack>
+      <Typography variant="body2" color="text.secondary">
+        고객(사장님)은 AI 도구가 시안을 만들면서 등록하거나, 여기서 직접 추가합니다. 같은 연락처의 고객이 있으면 알려 줍니다.
+      </Typography>
       <TextField
         type="search"
         size="small"

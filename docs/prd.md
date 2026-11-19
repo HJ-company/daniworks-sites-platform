@@ -160,7 +160,7 @@ policy: https://app.notion.com/p/41cecd5a3ac28107820effaeb6cb4fc8
 
 - 사이트 제작은 MCP 도구로 한다. 운영자가 Claude/ChatGPT에서 쓰고, 이후 고객 쪽 에이전트에 붙여 셀프서비스로 쓴다. 도구는 하나로 두고 Authentik 그룹(`operator`/`customer`)으로 접근을 나눈다.
 - MCP 서버: `apps/api` Worker의 `/mcp`(stateless Streamable HTTP). 인증은 Authentik OAuth. Claude·ChatGPT 원격 커넥터에서 Authentik으로 로그인하고, MCP 서버가 토큰을 JWKS로 직접 검증한다(프록시 없음). 행위는 `audit_log`에 남긴다.
-- 도구: 기존 `site_create`, `site_get`, `site_versions`, `site_update_draft`, `site_validate`, `site_preview_url`, `site_publish`, `site_rollback`, `asset_upload`, `template_list`, `template_get`에 더해 `customer_create`, `customer_get`, `site_preview_link`(시안 링크 발급·재발급), `guide_list`, `guide_get`, `guide_create`, `guide_update`(제작 지침 문서), `image_generate`(OpenAI), `asset_import_url`, `asset_list`, `asset_delete`. 상세는 [관리자 콘솔 5절](admin-console.md#5-mcp-도구).
+- 도구: `template_list`, `template_get`, `site_create`(customerId), `site_get`, `site_update_draft`, `site_validate`, `site_preview_url`(내부 검수용), `site_preview_link`(사장님용 시안 링크), `site_publish`, `site_rollback`, `asset_upload`(파일 또는 URL), `asset_list`, `asset_delete`, `image_generate`(OpenAI), `customer_get`, `customer_create`, `guide_list`, `guide_get`, `guide_create`, `guide_update`. 상세는 [관리자 콘솔 5절](admin-console.md#5-mcp-도구).
 - 해지: 운영자가 콘솔에서 처리한다(자동 전환 없음). 공개 중단(410), 커스텀 도메인 즉시 삭제(과금 중단), 쓰기 거부. 데이터·정적 파일은 해지일부터 1년 보관하고 그동안 zip으로 인출할 수 있다. 1년 후 삭제한다. 자동 삭제는 차후 구현하고, 그 전까지는 운영자가 slug를 입력해야 완전 삭제된다.
 - AI 홈페이지 전환: `GET /sites/:id/template-seed`와 `scripts/handoff-to-strapi.mjs`로 create-daniworks-app 프로젝트의 `template-data`를 사이트 내용으로 바꾼 뒤 기존 `template:import`를 쓴다. importer 수정은 필요 없다.
 
@@ -274,7 +274,7 @@ packages/
 | 4-B 고객·구독·입금 (완료) | `customers` 확장, `subscriptions`·`payments`, 게시 시 구독 검사, 상태 전이, 매시간 결제 상태 갱신(14일 유예 → 자동 중단, 입금 시 재공개), 콘솔 결제·고객 화면 | |
 | 4-C 시안 링크 (완료) | 사이트 단위 토큰(30일), `dsites.kr/preview/{token}` 서빙(라우터 → api RPC), 배너·문의 차단·수집 끔·만료 페이지, 콘솔 복사·안내문·막기·새 링크, `site_preview_link`, 편집 탭 첫 화면 문구 폼 | 스테이징은 `dsites.kr` 루트에 DNS 레코드 필요 |
 | 4-D Authentik (로컬 완료) | 콘솔 OIDC(Access 대체, `dsites-console.daniworks.kr`), MCP OAuth(보호 자원 메타데이터, JWKS 검증, 그룹), `audit_log`와 작업 기록 카드. 로컬은 Authentik 목업으로 실측 | 실제 Authentik 애플리케이션 2개 생성과 커넥터 실측은 M5 |
-| 4-E MCP 제작 도구 | `customer_*`, `guide_*`(스키마 문서 자동 생성 포함), `asset_import_url`·`asset_list`·`asset_delete`, `image_generate`, 콘솔 제작 화면을 오타 수정 수준으로 축소 | `OPENAI_IMAGE_MODEL` 결정 필요 |
+| 4-E MCP 제작 도구 (로컬 완료) | `customer_get`·`customer_create`(같은 연락처 중복 거부), `guide_*`(코드 생성 스키마 + D1 지침, 섹션 단위 버전), `asset_list`·`asset_delete`(쓰는 사진은 거부), `image_generate`(이미지 정책, 비용 기록), 콘솔: 새 사이트 화면 제거·JSON 접기·사진 출처·지침 화면 | URL 가져오기는 `asset_upload(url)`로 충분해 `asset_import_url`은 두지 않음. 실제 OpenAI 호출은 키·모델 설정 뒤 |
 
 ## 10. 미결 사항
 
@@ -287,6 +287,8 @@ packages/
 - 출시 시 스테이징 분리: 지금은 `dsites.kr`을 스테이징으로 같이 쓴다. 별도 존(도메인)이 필요하다
 
 ## 11. 결정 기록
+
+- 2026-11-20: 제작 지침은 코드에 기본값을 두고 처음 읽을 때 D1에 복사해 MCP로 섹션 단위로 고친다(고칠 때마다 버전). 설정 스키마 지침은 검증 스키마(zod)에서 만들어 고칠 수 없다. AI가 저장한 버전에는 그때의 지침 버전을 남긴다. 콘솔은 사이트를 만들지 않고 AI 도구 안내만 둔다. 사진은 어느 사이트의 어느 버전이든 쓰고 있으면 지울 수 없고, 지운 사진은 묘비로 남겨 다시 쓰이지 않게 한다.
 
 - 2026-11-20: 콘솔·MCP 인증은 Authentik 애플리케이션 2개(각자 issuer)로 하고, API가 issuer·aud로 둘을 구분해 검증한다. 콘솔은 서버(Worker)가 토큰을 쥐는 BFF 방식이고 세션은 상태 없는 암호화 쿠키다(KV를 두지 않음). 로컬 검증은 Authentik 목업으로 한다.
 

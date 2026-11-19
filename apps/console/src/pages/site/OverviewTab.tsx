@@ -143,8 +143,8 @@ export function OverviewTab({ siteId, site, versions }: { siteId: string; site: 
                     ) : null}
                   </TableCell>
                   <TableCell>
-                    {CREATOR[v.created_by] ?? v.created_by}
-                    {v.author ? ` · ${v.author}` : ""}
+                    {/* A script (fixed token) is not a person: say so instead of "운영자 · 스크립트". */}
+                    {v.author === "스크립트" ? "스크립트" : `${CREATOR[v.created_by] ?? v.created_by}${v.author ? ` · ${v.author}` : ""}`}
                   </TableCell>
                   <TableCell>{v.note ?? ""}</TableCell>
                   <TableCell>{kst(v.created_at)}</TableCell>
