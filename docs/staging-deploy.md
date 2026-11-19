@@ -140,6 +140,7 @@ KV 콜드·웜 (같은 한국 프로브로 70초 쉬고 1회, 바로 이어서 2
 - 테스트 사이트: `stg-mwmc19ni`, `stg-mwmc46r2` (D1·R2·KV)
 - KV `host:dsites-test.daapp.net`, 커스텀 호스트네임 `dsites-test.daapp.net`, `daapp.net` 존의 `dsites-test` CNAME
 - 스테이징을 별도 존으로 옮길 때 `[env.staging]`의 `zone_name`·`BASE_DOMAIN`·라우트를 바꾸고, dsites.kr에는 production env를 새로 만든다.
+- 콘솔 `BILLING_ACCOUNT`(입금 요청 안내문의 계좌)는 스테이징 임시값이다. 운영 env에는 실제 입금 계좌를 넣는다.
 
 ## 확인하지 못한 것
 

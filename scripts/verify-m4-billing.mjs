@@ -32,15 +32,15 @@ const created = await api("POST", "/sites", { config, createdBy: "operator", cus
 const siteId = created.data.siteId;
 const sub = async () => (await api("GET", `/sites/${siteId}/subscription`)).data;
 let s = await sub();
-check("새 사이트: 구독 시안, 월 30,000원, 게시 불가 표시", s.subscription.status === "trial" && s.subscription.cycle === "monthly" &&
-  s.subscription.amount === 30000 && s.subscription.canPublish === false, s.subscription);
+check("새 사이트: 구독 시안, 월 33,000원(부가세 포함), 게시 불가 표시", s.subscription.status === "trial" && s.subscription.cycle === "monthly" &&
+  s.subscription.amount === 33000 && s.subscription.canPublish === false, s.subscription);
 check("고객에 사이트 연결", (await api("GET", `/customers/${customer.id}`)).data.sites.some((x) => x.id === siteId));
 
 const yearly = (await api("PATCH", `/sites/${siteId}/subscription`, { cycle: "yearly" })).data.subscription;
 const nextYear = `${Number(today.slice(0, 4)) + 1}${today.slice(4)}`;
-check("연 단위로 바꾸면 기본 360,000원, 기간 1년", yearly.amount === 360000 && yearly.nextPeriod.end === addDays(nextYear, -1), yearly.nextPeriod);
-const custom = (await api("PATCH", `/sites/${siteId}/subscription`, { cycle: "monthly", amount: "33,000" })).data.subscription;
-check("금액 직접 지정(쉼표 허용)", custom.cycle === "monthly" && custom.amount === 33000);
+check("연 단위로 바꾸면 기본 396,000원, 기간 1년", yearly.amount === 396000 && yearly.nextPeriod.end === addDays(nextYear, -1), yearly.nextPeriod);
+const custom = (await api("PATCH", `/sites/${siteId}/subscription`, { cycle: "monthly", amount: "35,000" })).data.subscription;
+check("금액 직접 지정(쉼표 허용)", custom.cycle === "monthly" && custom.amount === 35000);
 check("잘못된 주기·금액 422", (await api("PATCH", `/sites/${siteId}/subscription`, { cycle: "weekly" })).status === 422 &&
   (await api("PATCH", `/sites/${siteId}/subscription`, { amount: -1 })).status === 422);
 
@@ -54,7 +54,7 @@ check("청구 → 입금 대기, 작업 목록에 표시", billed.status === "aw
 const paid = await api("POST", `/sites/${siteId}/payments`, { payerName: "김철수", paidOn: today });
 const payment = paid.data.payment;
 check("입금 확인 → 활성, 기본 기간 오늘부터 한 달", paid.status === 201 && paid.data.subscription.status === "active" &&
-  payment.period_start === today && payment.amount === 33000 && payment.site_slug === config.slug && payment.business_name === config.business.name &&
+  payment.period_start === today && payment.amount === 35000 && payment.site_slug === config.slug && payment.business_name === config.business.name &&
   !(await queue()), payment);
 check("입금 날짜·기간 형식 검증", (await api("POST", `/sites/${siteId}/payments`, { paidOn: "2026-02-30" })).status === 422 &&
   (await api("POST", `/sites/${siteId}/payments`, { periodStart: today, periodEnd: addDays(today, -1) })).status === 422);
@@ -145,7 +145,7 @@ check("시간별 cron: 기한 지난 구독을 중단하고 공개를 멈춤", c
 const customerView = (await api("GET", `/customers/${customer.id}`)).data;
 check("고객 상세: 사이트별 구독 상태·결제 이력", customerView.sites[0]?.subscription.statusLabel === "중단" && customerView.payments.length === 4);
 const listed = (await api("GET", "/customers")).data.customers.find((c) => c.id === customer.id);
-check("고객 목록: 사이트 수, 월 청구 합계, 확인 필요 표시", listed?.site_count === 1 && listed.monthly_total === 33000 && listed.attention === 1, listed);
+check("고객 목록: 사이트 수, 월 청구 합계, 확인 필요 표시", listed?.site_count === 1 && listed.monthly_total === 35000 && listed.attention === 1, listed);
 const history = (await api("GET", `/payments?from=${today}&to=${today}`)).data.payments.filter((p) => p.site_id === siteId);
 check("결제 내역: 입금일 필터, 취소 건 포함 표시", history.length === 4 && history.some((p) => p.voided_at));
 const range = (await api("GET", `/payments?from=${today}&to=${today}`)).data;

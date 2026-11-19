@@ -5,7 +5,7 @@ import { paymentRequest } from "../src/pages/billing/billing-ui.js";
 const sub = (over: Partial<Subscription>): Subscription => ({
   siteId: "s1",
   cycle: "monthly",
-  amount: 30000,
+  amount: 33000,
   status: "awaiting",
   statusLabel: "",
   billedAt: "2026-11-01T00:00:00Z",
@@ -24,7 +24,7 @@ const sub = (over: Partial<Subscription>): Subscription => ({
 describe("paymentRequest", () => {
   it("billed: amount, period, account, publish on payment", () => {
     const text = paymentRequest("반짝 이사청소", sub({}), "국민 000-00-0000")!;
-    expect(text).toContain("금액: 30,000원(부가세 별도)");
+    expect(text).toContain("금액: 33,000원(부가세 포함)");
     expect(text).toContain("이용 기간: 2026-11-20 ~ 2026-12-19");
     expect(text).toContain("입금 계좌: 국민 000-00-0000");
     expect(text).toContain("입금이 확인되면 홈페이지를 공개합니다.");

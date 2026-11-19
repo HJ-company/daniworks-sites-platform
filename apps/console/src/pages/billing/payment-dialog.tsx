@@ -13,7 +13,7 @@ import {
 } from "@mui/material";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { api, kst, kstToday, won, type Payment, type Subscription } from "../../api.js";
+import { api, kst, kstToday, vatNote, won, type Payment, type Subscription } from "../../api.js";
 import { ErrorAlert, useToast } from "../../ui.js";
 import { dayLabel } from "./billing-ui.js";
 
@@ -84,7 +84,7 @@ export function PaymentDialog({
               input: { endAdornment: <InputAdornment position="end">원</InputAdornment> },
               htmlInput: { inputMode: "numeric", name: "amount" },
             }}
-            helperText={`청구 금액 ${won(subscription.amount)}(부가세 별도)${short ? " · 청구 금액보다 적습니다" : ""}`}
+            helperText={`청구 금액 ${won(subscription.amount)}(부가세 포함)${short ? " · 청구 금액보다 적습니다" : ""}`}
           />
           <TextField
             label="입금자명"
@@ -187,6 +187,7 @@ export function EditPaymentDialog({ payment, onClose, focusInvoice = false }: { 
             label="입금액"
             value={amount}
             onChange={(e) => setAmount(e.target.value.replace(/[^\d]/g, ""))}
+            helperText={Number(amount) ? `세금계산서: ${vatNote(Number(amount)).replace("부가세 포함 · ", "")}` : undefined}
             slotProps={{ input: { endAdornment: <InputAdornment position="end">원</InputAdornment> } }}
           />
           <TextField

@@ -281,6 +281,19 @@ export interface CustomerDetail {
 }
 
 export const won = (amount: number) => `${amount.toLocaleString("ko-KR")}원`;
+
+/**
+ * Amounts are VAT-inclusive (what the owner deposits). The split for the tax invoice:
+ * supply price rounded to the won, VAT the rest.
+ */
+export const vatSplit = (amount: number) => {
+  const supply = Math.round(amount / 1.1);
+  return { supply, vat: amount - supply };
+};
+export const vatNote = (amount: number) => {
+  const { supply, vat } = vatSplit(amount);
+  return `부가세 포함 · 공급가 ${won(supply)} + 부가세 ${won(vat)}`;
+};
 export const CYCLE_LABEL: Record<Cycle, string> = { monthly: "월", yearly: "연" };
 
 /** The signed-in operator and console settings from the console Worker (`/auth/me`). */
