@@ -28,4 +28,7 @@ export interface Env {
   RETENTION_DAYS?: string;
   /** Pepper for hashing visitor IPs (rate limiting without storing addresses). */
   HASH_PEPPER?: string;
+  /** Image generation. Optional until image_generate ships. */
+  OPENAI_API_KEY?: string;
+  OPENAI_IMAGE_MODEL?: string;
 }

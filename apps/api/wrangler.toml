@@ -22,6 +22,8 @@ MAIL_FROM = "noreply@dsites.kr"
 DOMAIN_CNAME_TARGET = "fallback.dsites.kr"
 # Custom domains locally: CF_API_BASE / CF_ZONE_ID / CF_API_TOKEN in .dev.vars (Docker: cf-mock).
 # ADMIN_TOKEN comes from .dev.vars locally and a secret in production.
+# Secrets: ADMIN_TOKEN, OPENAI_API_KEY. From .dev.vars locally, `wrangler secret put` in production.
+# OPENAI_IMAGE_MODEL is also set in .dev.vars until the model is fixed.
 
 [[d1_databases]]
 binding = "DB"
