@@ -201,8 +201,8 @@ context7처럼 MCP를 연결하면 제작에 필요한 지침을 바로 찾아 �
 | --- | --- |
 | `customers` | + external_ref(외부 리드 링크), 사업자번호, 계산서 메일 |
 | `sites` | + preview_token, preview_expires_at |
-| `subscriptions` | id, site_id, 요금제, 금액, 주기, 상태(시안/입금 대기/활성/연체/중단/해지), 다음 결제일 |
-| `payments` | id, subscription_id, 금액, 수단(manual/pg), 입금자명, 결제일, 확인자, pg_tx_id, 세금계산서 발행일 |
+| `subscriptions` | site_id, 주기(월·연), 금액, 상태(시안/입금 대기/활성/연체/중단/해지, 이용 기간에서 계산), 청구일 |
+| `payments` | id, site_id·slug·상호, 금액, 수단(manual/pg), 입금자명, 입금일, 이용 기간(운영자 수정 가능), 확인자, pg_tx_id, 세금계산서 발행일, 취소 사유 |
 | `guides` | id, 주제, 종류(스키마/계약/업종/디자인/작성 규칙), 공개 범위, 현재 버전 |
 | `guide_versions` | id, guide_id, 본문(섹션 단위 markdown), 작성자, created_at |
 | `site_versions` | + guide_versions(참고한 지침 버전 목록) |
