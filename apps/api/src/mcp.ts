@@ -9,6 +9,7 @@ import {
 } from "@sites/renderer";
 import { z } from "zod";
 import { uploadAsset } from "./assets.js";
+import { draftLink, issueDraftLink } from "./draft-links.js";
 import type { Env } from "./env.js";
 import { HttpError } from "./http.js";
 import { publish, rollback } from "./publish.js";
@@ -158,6 +159,23 @@ function createServer(env: Env) {
           .first<{ id: string; number: number; preview_token: string }>();
         if (!row) throw new HttpError(404, "버전이 없습니다");
         return { versionId: row.id, number: row.number, previewUrl: previewUrl(env, row.preview_token) };
+      }),
+  );
+
+  server.registerTool(
+    "site_preview_link",
+    {
+      description:
+        "사장님께 카톡으로 보낼 시안 링크. 사이트당 하나이고 항상 최신 버전을 보여주므로 시안을 고쳐도 링크는 그대로다. 30일 동안 열린다. " +
+        "링크가 없거나 만료됐으면 새로 만든다. reissue=true면 새 링크로 바꾸고 예전 링크는 막는다. site_preview_url은 운영자 검수용 버전 링크다.",
+      inputSchema: z.object({ site: siteRef, reissue: z.boolean().optional() }),
+    },
+    async ({ site: ref, reissue }) =>
+      run(async () => {
+        const site = await findSite(env, ref);
+        const current = draftLink(env, site);
+        const link = !reissue && current && !current.expired ? current : await issueDraftLink(env, site);
+        return { url: link.url, expiresAt: link.expiresAt, reissued: link !== current };
       }),
   );
 

@@ -54,6 +54,14 @@ export interface SiteRow extends Omit<SiteSummary, "published_number" | "latest_
   origin_pending: number;
   /** When a cancelled site's data may be deleted. */
   purge_after: string | null;
+  /** The customer's draft link, if issued. */
+  draft_link: DraftLink | null;
+}
+
+export interface DraftLink {
+  url: string;
+  expiresAt: string;
+  expired: boolean;
 }
 
 export interface VersionRow {

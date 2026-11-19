@@ -1,0 +1,139 @@
+{
+  "router": "http://localhost:8787",
+  "results": [
+    {
+      "name": "처음에는 시안 링크 없음",
+      "pass": true
+    },
+    {
+      "name": "발급: 기본 도메인의 /preview/<40자>, 30일",
+      "pass": true,
+      "url": "http://localhost:8787/preview/080198af41fd4569aeca07dd003775a29e67d6ca",
+      "expiresAt": "2026-12-19T17:05:56.156Z",
+      "expired": false
+    },
+    {
+      "name": "상세에 시안 링크, 토큰 원문 필드는 없음",
+      "pass": true
+    },
+    {
+      "name": "라우터가 시안 제공(게시 전·입금 전에도)",
+      "pass": true
+    },
+    {
+      "name": "시안 배너, noindex(메타·헤더), 캐시 안 함",
+      "pass": true
+    },
+    {
+      "name": "문의 폼에 '시안에서는 문의가 전송되지 않습니다'",
+      "pass": true
+    },
+    {
+      "name": "사이트 안 링크는 시안 경로 안에서",
+      "pass": true
+    },
+    {
+      "name": "하위 페이지(개인정보처리방침)도 배너와 함께",
+      "pass": true
+    },
+    {
+      "name": "없는 하위 페이지는 안내 404",
+      "pass": true
+    },
+    {
+      "name": "공용 자산을 같은 주소에서 받음",
+      "pass": true,
+      "asset": "/_shared/8d91d24157a5/_assets/site.css"
+    },
+    {
+      "name": "시안을 고치면 같은 링크에 최신 버전",
+      "pass": true
+    },
+    {
+      "name": "브라우저: 배너 보임, 하이드레이션, 오류 없음",
+      "pass": true,
+      "errors": []
+    },
+    {
+      "name": "브라우저: 폼에 미리 전송 안 됨 안내",
+      "pass": true
+    },
+    {
+      "name": "브라우저: 문의 보내기 → 전송 안 됨 안내, 요청 없음",
+      "pass": true
+    },
+    {
+      "name": "브라우저: 방문 수집 비콘 없음",
+      "pass": true,
+      "beacons": []
+    },
+    {
+      "name": "시안 열람은 방문 통계에 안 잡힘",
+      "pass": true
+    },
+    {
+      "name": "새 링크로 바꾸면 예전 링크는 안내 404, 새 링크는 열림",
+      "pass": true
+    },
+    {
+      "name": "만료된 링크는 410 안내",
+      "pass": true
+    },
+    {
+      "name": "링크 막기 → 404, 상세에 링크 없음",
+      "pass": true
+    },
+    {
+      "name": "형식이 틀린 토큰은 404",
+      "pass": true
+    },
+    {
+      "name": "해지된 사이트의 시안은 410",
+      "pass": true
+    },
+    {
+      "name": "해지된 사이트는 링크 발급 409",
+      "pass": true
+    },
+    {
+      "name": "시안 경로는 기본 도메인에서만(고객 사이트 주소에선 아님)",
+      "pass": true
+    },
+    {
+      "name": "MCP site_preview_link: 없으면 만들고, 다시 부르면 같은 링크, reissue면 새 링크",
+      "pass": true,
+      "first": {
+        "url": "http://localhost:8787/preview/157d7096e81045cda6ca51b3070e251cc634fc54",
+        "expiresAt": "2026-12-19T17:06:00.613Z",
+        "reissued": true
+      },
+      "again": {
+        "url": "http://localhost:8787/preview/157d7096e81045cda6ca51b3070e251cc634fc54",
+        "expiresAt": "2026-12-19T17:06:00.613Z",
+        "reissued": false
+      }
+    },
+    {
+      "name": "MCP 링크도 라우터에서 열림",
+      "pass": true
+    },
+    {
+      "name": "콘솔: 시안 링크 만들기 → 주소와 만료일 표시",
+      "pass": true
+    },
+    {
+      "name": "콘솔: 사장님께 보낼 안내문에 상호·링크·만료일",
+      "pass": true,
+      "message": "[홈페이지 시안 안내]\n사장님, 시안화면 mwnsxfeh 홈페이지 시안을 준비했습니다. 아래 링크에서 휴대폰으로 확인해 주세요.\n\nhttp://localhost:8787/preview/3e6977e63fc046b9989d716d230bb5096d24a1c5\n\n링크는 2026-12-20까지 열립니다. 고칠 부분은 편하게 말씀해 주세요. 시안을 고쳐도 링크는 그대로입니다."
+    },
+    {
+      "name": "콘솔: 새 링크로 바꾸기(확인 창) → 주소 바뀜, 예전 링크 막힘",
+      "pass": true
+    },
+    {
+      "name": "콘솔 페이지 오류 없음",
+      "pass": true,
+      "errors": []
+    }
+  ]
+}

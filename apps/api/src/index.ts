@@ -17,6 +17,7 @@ import {
   updateSubscription,
   voidPayment,
 } from "./billing.js";
+import { draftLink, issueDraftLink, revokeDraftLink } from "./draft-links.js";
 import { createCustomer, customerDetail, linkSite, listCustomers, updateCustomer } from "./customers.js";
 import { allInquiries, inquiriesCsv, listInquiries, requireEmail } from "./inquiries.js";
 import { currentQuarter, kstDay, metricsReport, quarterlyCsv, quarterlyOverview, quarterlyReport } from "./metrics.js";
@@ -177,8 +178,9 @@ async function handle(request: Request, env: Env): Promise<Response> {
   if (method === "GET" && parts.length === 2) {
     const versions = (await listVersions(env.DB, site.id)) as { preview_token: string }[];
     const purgeAfter = site.cancelled_at ? new Date(Date.parse(site.cancelled_at) + retentionDays(env) * 86_400_000).toISOString() : null;
+    const { preview_token: _token, preview_expires_at: _expires, ...rest } = site;
     return json({
-      site: { ...site, business_name: await businessName(env.DB, site), purge_after: purgeAfter },
+      site: { ...rest, business_name: await businessName(env.DB, site), purge_after: purgeAfter, draft_link: draftLink(env, site) },
       versions: versions.map((v) => ({ ...v, preview_url: previewUrl(env, v.preview_token) })),
     });
   }
@@ -191,6 +193,15 @@ async function handle(request: Request, env: Env): Promise<Response> {
     }
     if ("customerId" in body) await linkSite(env.DB, site.id, body.customerId);
     return json({ site: await getSite(env.DB, site.id) });
+  }
+
+  // Customer draft link: POST issues (or reissues: the old link stops), DELETE revokes.
+  if (parts.length === 3 && parts[2] === "draft-link") {
+    if (method === "POST") return json({ draftLink: await issueDraftLink(env, site) }, 201);
+    if (method === "DELETE") {
+      await revokeDraftLink(env, site);
+      return json({ draftLink: null });
+    }
   }
 
   // Subscription: GET (with payments), PATCH {cycle, amount}, POST /bill; POST /sites/:id/payments

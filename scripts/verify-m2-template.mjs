@@ -86,7 +86,7 @@ const kakao = ["https://pf.kakao.com/", "https://open.kakao.com/"];
   const blocked = await r.page.getByRole("alert").textContent();
   check(
     "프리뷰: 하이드레이션 오류 없음, 링크가 프리뷰 안, 문의 전송 차단",
-    r.hydrated && !r.errors.length && privacyHref === `/preview/${sites.lesson.token}/privacy` && blocked?.includes("프리뷰"),
+    r.hydrated && !r.errors.length && privacyHref === `/preview/${sites.lesson.token}/privacy` && blocked?.includes("시안에서는 문의가 전송되지 않습니다"),
     { errors: r.errors, privacyHref, blocked },
   );
   await r.page.close();

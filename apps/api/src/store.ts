@@ -12,6 +12,8 @@ export interface SiteRow {
   template_version: string | null;
   cancelled_at: string | null;
   suspend_reason: "billing" | "manual" | null;
+  preview_token: string | null;
+  preview_expires_at: string | null;
   published_at: string | null;
   routes_synced_at: string | null;
   origin_pending: number;

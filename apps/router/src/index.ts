@@ -13,6 +13,7 @@ import {
 /** RPC surface of the api Worker's `PublicApi` entrypoint (apps/api/src/public.ts). */
 interface PublicApi {
   track(request: { siteId: string; userAgent: string | null; body: unknown }): Promise<"counted" | "ignored">;
+  renderDraft(request: { token: string; route: string }): Promise<{ status: number; html: string }>;
   submitInquiry(request: { siteId: string; hostname: string; ip: string | null; body: unknown }): Promise<{
     status: number;
     body: unknown;
@@ -58,6 +59,8 @@ async function readSmallJson(request: Request, limit: number): Promise<unknown> 
   }
   return JSON.parse(new TextDecoder().decode(bytes));
 }
+
+const DRAFT_PATH = /^\/preview\/([A-Za-z0-9]{1,64})(?:\/([a-z0-9-]{1,40}))?\/?$/;
 
 // KV values are cached at the edge for this long (KV minimum); publish/rollback propagate within it.
 const KV_CACHE_TTL = 30;
@@ -177,6 +180,21 @@ export default {
         (await serveObject(env, r2MediaKey(media[1]!, media[2]!), "public, max-age=31536000, immutable")) ??
         new Response("not found", { status: 404 })
       );
+    }
+
+    // Customer draft links live on the bare base domain: dsites.kr/preview/<token>[/<page>].
+    const draft = hostname === env.BASE_DOMAIN ? DRAFT_PATH.exec(url.pathname) : null;
+    if (draft) {
+      const rendered = await env.API.renderDraft({ token: draft[1]!, route: draft[2] ? `/${draft[2]}` : "/" });
+      return new Response(rendered.html, {
+        status: rendered.status,
+        headers: {
+          "content-type": "text/html; charset=utf-8",
+          "cache-control": "no-store",
+          "x-robots-tag": "noindex, nofollow",
+          "referrer-policy": "no-referrer",
+        },
+      });
     }
 
     const host = await resolveHost(env, hostname);

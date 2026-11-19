@@ -20,6 +20,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { api, kst, type SiteRow, type VersionRow } from "../../api.js";
 import { ErrorAlert, useToast } from "../../ui.js";
+import { DraftLinkCard } from "./DraftLinkCard.js";
 import { LifecycleCard } from "./LifecycleCard.js";
 import { SubscriptionCard, useSubscription } from "./SubscriptionCard.js";
 
@@ -55,7 +56,9 @@ export function OverviewTab({ siteId, site, versions }: { siteId: string; site: 
 
   return (
     <Stack spacing={2}>
+      {site.published_version_id ? null : <DraftLinkCard siteId={siteId} site={site} />}
       <SubscriptionCard siteId={siteId} site={site} />
+      {site.published_version_id ? <DraftLinkCard siteId={siteId} site={site} /> : null}
       <ErrorAlert error={action.error ?? saveNotify.error} />
       <Paper sx={{ p: 2 }}>
         <Stack direction={{ xs: "column", sm: "row" }} spacing={2} sx={{ alignItems: { sm: "center" } }}>

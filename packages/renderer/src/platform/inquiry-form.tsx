@@ -42,6 +42,9 @@ function useTurnstile(frameUrl: string | null, active: boolean) {
  * Platform inquiry form for local businesses: name, phone and message. It posts to the shared
  * `/api/inquiry` endpoint on the site's own host, which identifies the site by Host header.
  */
+/** Drafts (customer draft links, operator previews) never send inquiries. */
+const DRAFT_NOTICE = "시안에서는 문의가 전송되지 않습니다.";
+
 export function InquiryForm({ block }: { block: InquiryFormBlock }) {
   const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -59,7 +62,7 @@ export function InquiryForm({ block }: { block: InquiryFormBlock }) {
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (preview) {
-      setError("프리뷰에서는 문의가 전송되지 않습니다.");
+      setError(DRAFT_NOTICE);
       setStatus("error");
       return;
     }
@@ -150,6 +153,11 @@ export function InquiryForm({ block }: { block: InquiryFormBlock }) {
                 className="h-[70px] w-full max-w-[320px] border-0"
                 data-turnstile-frame=""
               />
+            ) : null}
+            {preview && status !== "error" ? (
+              <p className="text-sm text-[var(--color-muted,#5b616e)]" data-draft-notice="">
+                {DRAFT_NOTICE}
+              </p>
             ) : null}
             {status === "error" && error ? (
               <p role="alert" className="text-sm text-red-700">

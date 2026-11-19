@@ -15,6 +15,8 @@ crons = ["*/5 * * * *", "17 * * * *"]
 BASE_DOMAIN = "localhost"
 PUBLIC_SCHEME = "http"
 API_ORIGIN = "http://127.0.0.1:8788"
+# Customer draft links: the router answers /preview/<token> on the bare base domain.
+PREVIEW_ORIGIN = "http://localhost:8787"
 # Cloudflare's always-pass test key; the matching test secret goes in .dev.vars.
 TURNSTILE_SITE_KEY = "1x00000000000000000000AA"
 MAIL_MODE = "mailpit"
@@ -55,6 +57,7 @@ crons = ["*/5 * * * *", "17 * * * *"]
 BASE_DOMAIN = "dsites.kr"
 PUBLIC_SCHEME = "https"
 API_ORIGIN = "https://api.dsites.kr"
+PREVIEW_ORIGIN = "https://dsites.kr"
 # TURNSTILE_SITE_KEY: widget whose hostnames include api.dsites.kr (the frame host).
 # TURNSTILE_SECRET, HASH_PEPPER: `wrangler secret put ... --env staging`
 MAIL_MODE = "binding"

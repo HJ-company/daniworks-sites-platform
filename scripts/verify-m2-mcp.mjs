@@ -36,7 +36,8 @@ const expected = [
   "asset_upload", "site_create", "site_get", "site_preview_url", "site_publish",
   "site_rollback", "site_update_draft", "site_validate", "template_get", "template_list",
 ].sort();
-check("도구 10종 노출", JSON.stringify(names) === JSON.stringify(expected), { names });
+// Later milestones add tools; the M2 ones must stay.
+check("M2 도구 10종 노출", expected.every((name) => names.includes(name)), { names });
 
 // 2. template
 const list = await call(client, "template_list");

@@ -6,6 +6,8 @@ export interface Env {
   ADMIN_TOKEN: string;
   /** `https` in deployed environments, `http` locally. Used for canonical and OG URLs. */
   PUBLIC_SCHEME?: string;
+  /** Origin of customer draft links (`https://dsites.kr`; locally the router). */
+  PREVIEW_ORIGIN?: string;
   /** Public origin of this API (`https://api.dsites.kr`); hosts the Turnstile frame sites embed. */
   API_ORIGIN?: string;
   /** Turnstile widget key (public) and secret. Without a secret the check is skipped. */
