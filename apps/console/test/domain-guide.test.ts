@@ -47,6 +47,7 @@ describe("domain guide", () => {
 
   it("translates Cloudflare errors and keeps unknown ones visible", () => {
     expect(domainErrorText("custom hostname does not CNAME to this zone.")).toContain("CNAME이 설정되지 않았거나");
+    expect(domainErrorText("Cloudflare에 호스트네임이 없습니다")).toContain("삭제한 뒤 다시 연결");
     expect(domainErrorText("something new")).toBe("확인 결과: something new");
     expect(domainErrorText(null)).toBeNull();
   });

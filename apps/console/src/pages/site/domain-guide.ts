@@ -6,6 +6,9 @@ export function domainErrorText(error: string | null): string | null {
   if (/does not CNAME to this zone|cname.*not.*found|no cname/i.test(error)) {
     return "아직 CNAME이 설정되지 않았거나 반영되지 않았습니다. 설정했다면 잠시 뒤 다시 확인하세요.";
   }
+  if (/호스트네임이 없습니다|hostname.*not found/i.test(error)) {
+    return "Cloudflare에서 이 도메인 등록이 사라졌습니다. 삭제한 뒤 다시 연결하세요(고객 DNS 설정은 그대로 두면 됩니다).";
+  }
   if (/nxdomain|could not resolve|not resolve|no such host/i.test(error)) return "도메인을 찾지 못했습니다. 주소 철자와 도메인 만료 여부를 확인하세요.";
   if (/caa/i.test(error)) return "도메인의 CAA 설정이 인증서 발급을 막고 있습니다. 등록업체에서 CAA 레코드를 확인해야 합니다.";
   if (/timeout|timed out|unavailable|5\d\d/i.test(error)) return "Cloudflare 확인이 일시적으로 실패했습니다. 잠시 뒤 다시 확인하세요.";

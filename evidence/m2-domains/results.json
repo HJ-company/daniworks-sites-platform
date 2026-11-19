@@ -1,24 +1,24 @@
 {
-  "siteId": "60541087-f48a-40cf-a630-e8c4a1ec456e",
-  "custom": "www.verify-mwnrx6an.co.kr",
+  "siteId": "c13b16b7-fabc-40d8-bebf-b0c43f3f62b3",
+  "custom": "www.verify-mwns1nrl.co.kr",
   "results": [
     {
       "name": "등록: 201 pending, CNAME 안내(fallback 대상), www라 루트 아님",
       "pass": true,
-      "hostname": "www.verify-mwnrx6an.co.kr",
+      "hostname": "www.verify-mwns1nrl.co.kr",
       "status": "pending",
       "instructions": {
         "cname": {
           "type": "CNAME",
-          "name": "www.verify-mwnrx6an.co.kr",
+          "name": "www.verify-mwns1nrl.co.kr",
           "value": "connect.dsites.kr"
         },
         "host": "www",
-        "zone": "verify-mwnrx6an.co.kr",
+        "zone": "verify-mwns1nrl.co.kr",
         "optionalTxt": {
           "type": "TXT",
-          "name": "_cf-custom-hostname.www.verify-mwnrx6an.co.kr",
-          "value": "efa3dcf0-d91b-4041-ad01-5f2a7b51cd6c"
+          "name": "_cf-custom-hostname.www.verify-mwns1nrl.co.kr",
+          "value": "116fee15-e36b-4e8d-97bb-8b5a4f44bf34"
         },
         "apex": false,
         "note": null
@@ -77,7 +77,7 @@
     {
       "name": "서브도메인은 경로를 유지해 301",
       "pass": true,
-      "location": "http://www.verify-mwnrx6an.co.kr/privacy?x=1"
+      "location": "http://www.verify-mwns1nrl.co.kr/privacy?x=1"
     },
     {
       "name": "KV: 커스텀 레코드는 redirect 없음, 서브도메인은 커스텀으로",
@@ -99,7 +99,7 @@
     {
       "name": "중단된 재렌더는 cron이 다시 해서 origin_pending 0",
       "pass": true,
-      "rendered_origin": "{\"origin\":\"http://www.verify-mwnrx6an.co.kr\",\"turnstileFrame\":\"http://127.0.0.1:8788/turnstile-frame\"}"
+      "rendered_origin": "{\"origin\":\"http://www.verify-mwns1nrl.co.kr\",\"turnstileFrame\":\"http://127.0.0.1:8788/turnstile-frame\"}"
     },
     {
       "name": "검증 실패는 failed, 서빙 안 함",

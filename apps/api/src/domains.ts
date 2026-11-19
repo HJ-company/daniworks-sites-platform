@@ -102,7 +102,16 @@ export async function listDomains(env: Env, siteId: string) {
   const { results } = await env.DB.prepare("SELECT * FROM domains WHERE site_id = ? ORDER BY kind DESC, created_at")
     .bind(siteId)
     .all<DomainRow>();
-  return results.map((row) => ({ ...row, verification_records: row.verification_records ? JSON.parse(row.verification_records) : null }));
+  return results.map((row) => ({ ...row, verification_records: withRegistrarHost(row.hostname, row.verification_records) }));
+}
+
+/** Stored instructions, completed with the registrar host field for rows saved before M4. */
+function withRegistrarHost(hostname: string, stored: string | null) {
+  if (!stored) return null;
+  const records = JSON.parse(stored) as { apex: boolean; host?: string | null; zone?: string | null };
+  if (records.host !== undefined) return records;
+  const zone = registrableDomain(hostname);
+  return { ...records, zone, host: records.apex ? "@" : zone ? hostname.slice(0, -(zone.length + 1)) : null };
 }
 
 export async function addDomain(env: Env, site: SiteRow, input: unknown) {
