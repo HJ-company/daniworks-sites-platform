@@ -1,20 +1,5 @@
-import {
-  Alert,
-  Button,
-  Chip,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
-  InputAdornment,
-  Stack,
-  TextField,
-  Typography,
-} from "@mui/material";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
-import { api, won, type BillingStatus, type Payment, type Subscription } from "../../api.js";
-import { ErrorAlert, useToast } from "../../ui.js";
+import { Chip } from "@mui/material";
+import { won, type BillingStatus, type Subscription } from "../../api.js";
 
 const COLORS: Record<BillingStatus, "default" | "info" | "success" | "warning" | "error"> = {
   trial: "default",
@@ -64,119 +49,32 @@ export function billingSummary(sub: Subscription): string {
   }
 }
 
-const digits = (value: string) => value.replace(/[^\d]/g, "");
-
 /**
- * Confirm a deposit. Amount and period come prefilled from the subscription (next unpaid
- * period); the operator can change them, e.g. a customer who paid two months at once.
+ * The message an operator sends an owner who has to pay (billed, overdue or taken down): amount,
+ * period, account and what happens next. Null when there is nothing to ask for. `manualStop`: an operator took the
+ * site down, so paying does not bring it back on its own.
  */
-export function PaymentDialog({
-  open,
-  onClose,
-  siteId,
-  title,
-  subscription,
-}: {
-  open: boolean;
-  onClose: () => void;
-  siteId: string;
-  title: string;
-  subscription: Subscription;
-}) {
-  const queryClient = useQueryClient();
-  const toast = useToast();
-  const [amount, setAmount] = useState(String(subscription.amount));
-  const [payerName, setPayerName] = useState("");
-  const [initialDay] = useState(() => new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 10));
-  const [paidOn, setPaidOn] = useState(initialDay);
-  const [start, setStart] = useState(subscription.nextPeriod.start);
-  const [end, setEnd] = useState(subscription.nextPeriod.end);
-  const [memo, setMemo] = useState("");
-  const save = useMutation({
-    mutationFn: () =>
-      api<{ payment: Payment; site: "resumed" | "suspended" | null }>(`/sites/${siteId}/payments`, {
-        method: "POST",
-        // The period shown is the period recorded. Only when nothing date-related was touched is it
-        // left to the server, which computes the same default and keeps two simultaneous
-        // confirmations from landing on the same period.
-        json: {
-          amount: Number(digits(amount)),
-          payerName,
-          paidOn,
-          memo,
-          ...(start !== subscription.nextPeriod.start || end !== subscription.nextPeriod.end || paidOn !== initialDay
-            ? { periodStart: start, periodEnd: end }
-            : {}),
-        },
-      }),
-    onSuccess: (data) => {
-      toast(data.site === "resumed" ? "입금을 확인했습니다. 사이트를 다시 공개했습니다" : "입금을 확인했습니다");
-      void queryClient.invalidateQueries();
-      onClose();
-    },
-  });
-  const short = Number(digits(amount)) < subscription.amount;
-  return (
-    <Dialog open={open} onClose={onClose} fullWidth maxWidth="xs">
-      <DialogTitle>입금 확인 · {title}</DialogTitle>
-      <DialogContent>
-        <Stack spacing={2} sx={{ mt: 1 }}>
-          <TextField
-            label="입금액"
-            value={amount}
-            onChange={(e) => setAmount(digits(e.target.value))}
-            slotProps={{
-              input: { endAdornment: <InputAdornment position="end">원</InputAdornment> },
-              htmlInput: { inputMode: "numeric", name: "amount" },
-            }}
-            helperText={`청구 금액 ${won(subscription.amount)}(부가세 별도)${short ? " · 청구 금액보다 적습니다" : ""}`}
-          />
-          <TextField
-            label="입금자명"
-            value={payerName}
-            onChange={(e) => setPayerName(e.target.value)}
-            helperText="통장에 찍힌 이름. 나중에 입금을 대조할 때 씁니다"
-            slotProps={{ htmlInput: { name: "payerName" } }}
-          />
-          <TextField label="입금일" type="date" value={paidOn} onChange={(e) => setPaidOn(e.target.value)} slotProps={{ inputLabel: { shrink: true } }} />
-          <Stack direction="row" spacing={1}>
-            <TextField
-              label="이용 시작일"
-              type="date"
-              value={start}
-              onChange={(e) => setStart(e.target.value)}
-              slotProps={{ inputLabel: { shrink: true }, htmlInput: { name: "periodStart" } }}
-              fullWidth
-            />
-            <TextField
-              label="이용 종료일"
-              type="date"
-              value={end}
-              onChange={(e) => setEnd(e.target.value)}
-              slotProps={{ inputLabel: { shrink: true }, htmlInput: { name: "periodEnd" } }}
-              fullWidth
-            />
-          </Stack>
-          <Typography variant="caption" color="text.secondary" data-testid="period-rule">
-            이 입금으로 공개가 유지되는 기간입니다.{" "}
-            {subscription.status === "suspended"
-              ? `공개가 중단된 사이트라 입금일부터 새 기간으로 잡았습니다(중단 기간은 청구하지 않음). 밀린 기간까지 받았다면 시작일을 ${subscription.nextDueOn ?? "지난 기간 다음 날"}로 바꾸세요.`
-              : subscription.status === "overdue"
-                ? "유예 중이라 지난 기간이 끝난 다음 날부터 이어서 잡았습니다."
-                : "다음 미납 기간으로 잡았습니다."}{" "}
-            여러 달치를 한 번에 받았다면 종료일을 늘리세요.
-          </Typography>
-          <TextField label="메모" value={memo} onChange={(e) => setMemo(e.target.value)} multiline minRows={2} />
-          {end < start ? <Alert severity="warning">종료일이 시작일보다 빠릅니다.</Alert> : null}
-          <ErrorAlert error={save.error} />
-        </Stack>
-      </DialogContent>
-      <DialogActions>
-        <Button onClick={onClose}>닫기</Button>
-        <Button variant="contained" onClick={() => save.mutate()} disabled={save.isPending || !amount || end < start}>
-          입금 확인
-        </Button>
-      </DialogActions>
-    </Dialog>
-  );
+export function paymentRequest(name: string, sub: Subscription, account: string | null, manualStop = false): string | null {
+  // Billed but already paid for a period that has not started: nothing more to ask. (Overdue or
+  // suspended with a later prepaid period still owes the gap before it.)
+  if (sub.status === "awaiting" && sub.nextPaidStart) return null;
+  const next: Partial<Record<BillingStatus, string>> = {
+    awaiting: "입금이 확인되면 홈페이지를 공개합니다.",
+    overdue: `${sub.daysOverdue}일 지났습니다. ${sub.graceEndsOn ? dayLabel(sub.graceEndsOn) : "곧"}까지 입금되지 않으면 홈페이지가 '준비 중' 화면으로 바뀝니다.`,
+    suspended: "미납으로 지금 홈페이지에 '준비 중' 화면이 보입니다. 입금이 확인되면 바로 다시 공개됩니다.",
+  };
+  let after = next[sub.status];
+  if (!after) return null; // paid up (or trial, cancelled): nothing to ask for
+  if (manualStop && sub.status !== "awaiting") after = "입금이 확인되면 담당자가 확인 후 홈페이지를 다시 공개합니다.";
+  return [
+    "[홈페이지 이용료 입금 안내]",
+    `사장님, ${name} 홈페이지 이용료 안내드립니다.`,
+    "",
+    `금액: ${won(sub.amount)}(부가세 별도)`,
+    `이용 기간: ${sub.nextPeriod.start} ~ ${sub.nextPeriod.end}`,
+    ...(account ? [`입금 계좌: ${account}`] : []),
+    "",
+    after,
+    "입금자명을 상호로 해 주시면 확인이 빠릅니다.",
+  ].join("\n");
 }

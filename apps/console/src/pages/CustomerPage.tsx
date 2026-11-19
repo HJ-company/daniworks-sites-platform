@@ -1,12 +1,12 @@
-import { Button, LinearProgress, Link, Paper, Stack, Table, TableBody, TableCell, TableHead, TableRow, Typography } from "@mui/material";
-import { useQuery } from "@tanstack/react-query";
+import { Alert, Box, Button, LinearProgress, Link, Paper, Stack, Table, TableBody, TableCell, TableHead, TableRow, Typography } from "@mui/material";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link as RouterLink, useParams } from "react-router";
 import { api, CYCLE_LABEL, won, type CustomerDetail, type Payment } from "../api.js";
-import { ErrorAlert, StatusChip } from "../ui.js";
+import { ErrorAlert, StatusChip, useToast } from "../ui.js";
 import { BillingChip, billingSummary } from "./billing/billing-ui.js";
-import { EditPaymentDialog } from "./billing/PaymentsPage.js";
-import { CustomerDialog } from "./CustomersPage.js";
+import { EditPaymentDialog } from "./billing/payment-dialog.js";
+import { CustomerDialog } from "./customer-dialog.js";
 
 export function CustomerPage() {
   const { customerId = "" } = useParams();
@@ -15,7 +15,7 @@ export function CustomerPage() {
   const detail = useQuery({ queryKey: ["customer", customerId], queryFn: () => api<CustomerDetail>(`/customers/${customerId}`) });
   if (detail.error) return <ErrorAlert error={detail.error} />;
   if (!detail.data) return <LinearProgress />;
-  const { customer, sites, payments } = detail.data;
+  const { customer, sites, payments, unlinkedMatches } = detail.data;
   const info: [string, string | null][] = [
     ["담당자", customer.contact_name],
     ["연락처", customer.phone],
@@ -51,6 +51,7 @@ export function CustomerPage() {
           ))}
         </Stack>
       </Paper>
+      {unlinkedMatches.length ? <UnlinkedMatches customerId={customerId!} sites={unlinkedMatches} /> : null}
       <Paper>
         <Typography variant="subtitle1" sx={{ fontWeight: 700, p: 2, pb: 0 }}>
           사이트 {sites.length}곳
@@ -151,5 +152,34 @@ export function CustomerPage() {
       {editing ? <CustomerDialog customer={customer} onClose={() => setEditing(false)} /> : null}
       {invoicing ? <EditPaymentDialog payment={invoicing} onClose={() => setInvoicing(null)} focusInvoice /> : null}
     </Stack>
+  );
+}
+
+/** Sites with this customer's phone or business number but no customer: link them from here. */
+function UnlinkedMatches({ customerId, sites }: { customerId: string; sites: CustomerDetail["unlinkedMatches"] }) {
+  const queryClient = useQueryClient();
+  const toast = useToast();
+  const link = useMutation({
+    mutationFn: (siteId: string) => api(`/sites/${siteId}`, { method: "PATCH", json: { customerId } }),
+    onSuccess: () => {
+      toast("고객을 연결했습니다");
+      void queryClient.invalidateQueries();
+    },
+  });
+  return (
+    <Alert severity="warning" data-testid="unlinked-matches">
+      같은 연락처인데 고객이 연결되지 않은 사이트가 {sites.length}곳 있습니다. 연결하면 이 고객의 사이트·결제에 함께 잡힙니다.
+      {sites.map((site) => (
+        <Box key={site.id} sx={{ mt: 0.5 }}>
+          <Link component={RouterLink} to={`/sites/${site.id}`}>
+            {site.business_name ?? site.slug}
+          </Link>{" "}
+          <Button size="small" onClick={() => link.mutate(site.id)} disabled={link.isPending} data-testid={`link-${site.id}`}>
+            이 고객으로 연결
+          </Button>
+        </Box>
+      ))}
+      <ErrorAlert error={link.error} />
+    </Alert>
   );
 }

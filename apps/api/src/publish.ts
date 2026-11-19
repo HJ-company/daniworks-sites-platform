@@ -29,6 +29,22 @@ export async function siteOrigin(env: Env, site: SiteRow) {
   return `${env.PUBLIC_SCHEME ?? "https"}://${host}`;
 }
 
+let cssCache: { version: string; text: string } | null = null;
+
+/**
+ * The shared stylesheet of the current asset version, inlined into public and draft pages so
+ * the first paint does not wait for a CSS request. Only the finished text is cached (per isolate
+ * and version): each read stays within its own request, so a cancelled one cannot stall others.
+ */
+export async function sharedCss(env: Env): Promise<string> {
+  if (cssCache?.version === ASSET_VERSION) return cssCache.text;
+  const object = await env.SITES.get(r2SharedKey(`${ASSET_VERSION}/_assets/site.css`));
+  if (!object) throw new HttpError(409, `공용 에셋 ${ASSET_VERSION}이 R2에 없습니다. scripts/upload-shared.mjs를 먼저 실행하세요`);
+  const text = await object.text();
+  cssCache = { version: ASSET_VERSION, text };
+  return text;
+}
+
 async function requireSharedAssets(env: Env) {
   const head = await env.SITES.head(r2SharedKey(`${ASSET_VERSION}/_assets/site.css`));
   if (!head) {
@@ -47,7 +63,7 @@ export async function renderToR2(env: Env, version: VersionRow, origin: string) 
   const config = JSON.parse(version.config) as SiteConfig;
   // HTML comes from the current renderer, so it must point at the current client bundle.
   await requireSharedAssets(env);
-  const { pages } = await renderSite(config, { assetBase: assetBase(), origin, turnstileFrame: turnstileFrameUrl(env) });
+  const { pages } = await renderSite(config, { assetBase: assetBase(), origin, turnstileFrame: turnstileFrameUrl(env), inlineCss: await sharedCss(env) });
   const renderId = crypto.randomUUID().replace(/-/g, "").slice(0, 16);
   const written: string[] = [];
   for (const page of pages) {

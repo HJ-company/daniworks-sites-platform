@@ -1,5 +1,5 @@
 {
-  "siteId": "b0158024-9f09-46f4-a76b-31cba1bacc79",
+  "siteId": "eef99e50-7479-48da-9841-9e531e191145",
   "results": [
     {
       "name": "알림 이메일 설정",
@@ -13,8 +13,8 @@
       "name": "페이지 로드 때는 Turnstile을 불러오지 않음",
       "pass": true,
       "external": [
-        "http://127.0.0.1:8788/turnstile-frame?parent=http%3A%2F%2Finq-mwnvb2pd.localhost%3A8787&round=0",
-        "blob:https://challenges.cloudflare.com/a6223d71-583c-42b9-9ff0-e838e503b4b3"
+        "http://127.0.0.1:8788/turnstile-frame?parent=http%3A%2F%2Finq-mwo05s6w.localhost%3A8787&round=0",
+        "blob:https://challenges.cloudflare.com/73da631a-4e93-4522-80f1-52b59ecb45fd"
       ]
     },
     {
@@ -26,12 +26,12 @@
     {
       "name": "브라우저 시험",
       "pass": true,
-      "id": "5a558f79-6144-40f1-88c1-46b447acd0fd",
+      "id": "b1bfae89-9134-46bf-8244-5f16cabfc3b1",
       "phone": "01012345678",
       "message": "주말반 자리 있나요?\n초급입니다.",
       "page": "/",
       "notify_status": "sent",
-      "created_at": "2026-11-19T18:12:37.785Z"
+      "created_at": "2026-11-19T20:28:28.594Z"
     },
     {
       "name": "사장님 메일 수신: 제목에 상호, 본문에 이름·연락처·내용",

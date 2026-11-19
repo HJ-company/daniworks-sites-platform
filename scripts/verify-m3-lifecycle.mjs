@@ -52,8 +52,10 @@ const zipRes = await fetch(`${API}/sites/${siteId}/export.zip`, { headers: { aut
 const zip = unzipSync(new Uint8Array(await zipRes.arrayBuffer()));
 const names = Object.keys(zip);
 const text = (name) => new TextDecoder().decode(zip[name]);
-check("zip: 페이지 2개, 클라이언트 번들·청크, CSS", zipRes.ok && names.includes("site/index.html") && names.includes("site/privacy/index.html") &&
-  names.some((n) => n.endsWith("/_assets/client.js")) && names.some((n) => n.includes("/_assets/chunks/")) && names.some((n) => n.endsWith("/_assets/site.css")));
+// Since the M4 quality loop the stylesheet is inlined into each page (no separate site.css).
+check("zip: 페이지 2개, 클라이언트 번들·청크, 페이지에 들어간 CSS", zipRes.ok && names.includes("site/index.html") && names.includes("site/privacy/index.html") &&
+  names.some((n) => n.endsWith("/_assets/client.js")) && names.some((n) => n.includes("/_assets/chunks/")) &&
+  (names.some((n) => n.endsWith("/_assets/site.css")) || /<style>\/\*! tailwindcss/.test(text("site/index.html"))));
 check("zip: 업로드 사진과 쓰인 변형만", names.includes(`site/_media/${siteId}/${uploaded.key.split("/")[1]}`) && names.some((n) => n.endsWith(".w800.webp")) &&
   !names.some((n) => n.includes("site-templates/pine-interior.jpg")));
 check("zip: 공개 페이지에 안 쓰인 업로드 사진도 포함", names.includes(`site/_media/${siteId}/${draftPhoto.key.split("/")[1]}`));

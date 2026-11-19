@@ -103,6 +103,7 @@ check("통계 카드(전환 + 7종)", (await page.locator('[data-testid^="metric
 // 8. suspend / resume
 await page.getByTestId("tab-overview").click();
 await page.getByRole("button", { name: "공개 정지" }).click();
+await page.locator("input[name=suspendReason]").fill("검증"); // required since the M4 quality loop
 await page.getByRole("dialog").getByRole("button", { name: "정지" }).click();
 await toast("공개를 정지했습니다");
 check("콘솔 공개 정지 → 503", (await routerRequest(host, "/")).status === 503);

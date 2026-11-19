@@ -1,5 +1,7 @@
+import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import {
   Alert,
+  Box,
   Autocomplete,
   Button,
   Dialog,
@@ -22,10 +24,11 @@ import {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link as RouterLink } from "react-router";
-import { api, CYCLE_LABEL, won, type Cycle, type CustomerSummary, type Payment, type SiteRow, type Subscription } from "../../api.js";
+import { api, CYCLE_LABEL, useMe, won, type Cycle, type CustomerSummary, type Payment, type SiteRow, type Subscription } from "../../api.js";
 import { ErrorAlert, useToast } from "../../ui.js";
-import { BillingChip, billingSummary, PaymentDialog } from "../billing/billing-ui.js";
-import { CustomerDialog } from "../CustomersPage.js";
+import { BillingChip, billingSummary, paymentRequest } from "../billing/billing-ui.js";
+import { PaymentDialog } from "../billing/payment-dialog.js";
+import { CustomerDialog } from "../customer-dialog.js";
 
 export function useSubscription(siteId: string) {
   return useQuery({
@@ -79,6 +82,7 @@ export function SubscriptionCard({ siteId, site }: { siteId: string; site: SiteR
       <Typography variant="body2" color={sub.status === "overdue" || sub.status === "suspended" ? "error" : "text.secondary"} data-testid="billing-summary">
         {billingSummary(sub)}
       </Typography>
+      <PaymentRequest name={site.business_name ?? site.slug} sub={sub} manualStop={site.status === "suspended" && site.suspend_reason === "manual"} />
       {site.status === "suspended" && !site.cancelled_at ? (
         <Alert severity={site.suspend_reason === "billing" ? "error" : "warning"} sx={{ mt: 1 }} data-testid="suspend-reason">
           {site.suspend_reason === "billing"
@@ -190,71 +194,128 @@ function CustomerLink({ siteId, site }: { siteId: string; site: SiteRow }) {
   const options = customers.data?.customers ?? [];
   const current = options.find((c) => c.id === site.customer_id) ?? null;
   return (
-    <Stack direction="row" spacing={1} sx={{ alignItems: "center", mt: 1.5 }}>
-      <Autocomplete<Option>
-        size="small"
-        sx={{ minWidth: 300 }}
-        options={options}
-        value={current}
-        getOptionLabel={(c) => c.name}
-        isOptionEqualToValue={(a, b) => a.id === b.id}
-        // Find by business, owner, phone or business number; always offer to add a new customer.
-        filterOptions={(list, { inputValue }) => {
-          const q = inputValue.trim().toLowerCase();
-          const digits = q.replace(/[^\d]/g, "");
-          const found = (list as CustomerSummary[]).filter(
-            (c) =>
-              !q ||
-              [c.name, c.contact_name].some((v) => v?.toLowerCase().includes(q)) ||
-              (digits.length >= 3 && [c.phone, c.business_number].some((v) => (v ?? "").replace(/[^\d]/g, "").includes(digits))),
-          );
-          return [...found, { id: "__new__", name: q ? `새 고객 추가: ${inputValue.trim()}` : "새 고객 추가" }];
-        }}
-        renderOption={(props, option) => {
-          const { key, ...rest } = props as typeof props & { key: string };
-          return (
-            <li key={key} {...rest}>
-              {option.id === "__new__" ? (
-                <Typography color="primary">+ {option.name}</Typography>
-              ) : (
-                <Stack>
-                  <Typography variant="body2">{option.name}</Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    {[(option as CustomerSummary).contact_name, (option as CustomerSummary).phone].filter(Boolean).join(" · ") || "-"}
-                  </Typography>
-                </Stack>
-              )}
-            </li>
-          );
-        }}
-        onChange={(_, value, reason, details) => {
-          if (value?.id === "__new__") {
-            const typed = (details?.option.name ?? "").replace(/^새 고객 추가:?\s*/, "");
-            setCreating(typed);
-            return;
-          }
-          if (reason === "clear" || value) link.mutate(value?.id ?? null);
-        }}
-        renderInput={(params) => <TextField {...params} label="고객(사장님)" placeholder="업체명, 이름, 전화번호" />}
-      />
-      {current ? (
-        <Link component={RouterLink} to={`/customers/${current.id}`} variant="body2">
-          고객 정보
-        </Link>
-      ) : null}
-      <ErrorAlert error={link.error} />
-      {creating !== null ? (
-        <CustomerDialog
-          // A site's customer is its business: the site's name as 업체명, what was typed (usually
-          // the owner's name) as 담당자, unless it is the business name itself.
-          initial={{
-            name: site.business_name ?? creating,
-            ...(creating && creating !== site.business_name ? { contactName: creating } : {}),
+    <>
+      {site.customer_id ? null : <MissingCustomer site={site} onLink={(id) => link.mutate(id)} busy={link.isPending} />}
+      <Stack direction="row" spacing={1} sx={{ alignItems: "center", mt: 1.5 }}>
+        <Autocomplete<Option>
+          size="small"
+          sx={{ minWidth: 300 }}
+          options={options}
+          value={current}
+          getOptionLabel={(c) => c.name}
+          isOptionEqualToValue={(a, b) => a.id === b.id}
+          // Find by business, owner, phone or business number; always offer to add a new customer.
+          filterOptions={(list, { inputValue }) => {
+            const q = inputValue.trim().toLowerCase();
+            const digits = q.replace(/[^\d]/g, "");
+            const found = (list as CustomerSummary[]).filter(
+              (c) =>
+                !q ||
+                [c.name, c.contact_name].some((v) => v?.toLowerCase().includes(q)) ||
+                (digits.length >= 3 && [c.phone, c.business_number].some((v) => (v ?? "").replace(/[^\d]/g, "").includes(digits))),
+            );
+            return [...found, { id: "__new__", name: q ? `새 고객 추가: ${inputValue.trim()}` : "새 고객 추가" }];
           }}
-          onClose={() => setCreating(null)}
-          onCreated={(customer) => link.mutate(customer.id)}
+          renderOption={(props, option) => {
+            const { key, ...rest } = props as typeof props & { key: string };
+            return (
+              <li key={key} {...rest}>
+                {option.id === "__new__" ? (
+                  <Typography color="primary">+ {option.name}</Typography>
+                ) : (
+                  <Stack>
+                    <Typography variant="body2">{option.name}</Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {[(option as CustomerSummary).contact_name, (option as CustomerSummary).phone].filter(Boolean).join(" · ") || "-"}
+                    </Typography>
+                  </Stack>
+                )}
+              </li>
+            );
+          }}
+          onChange={(_, value, reason, details) => {
+            if (value?.id === "__new__") {
+              const typed = (details?.option.name ?? "").replace(/^새 고객 추가:?\s*/, "");
+              setCreating(typed);
+              return;
+            }
+            if (reason === "clear" || value) link.mutate(value?.id ?? null);
+          }}
+          renderInput={(params) => <TextField {...params} label="고객(사장님)" placeholder="업체명, 이름, 전화번호" />}
         />
+        {current ? (
+          <Link component={RouterLink} to={`/customers/${current.id}`} variant="body2">
+            고객 정보
+          </Link>
+        ) : null}
+        <ErrorAlert error={link.error} />
+        {creating !== null ? (
+          <CustomerDialog
+            // A site's customer is its business: the site's name as 업체명, what was typed (usually
+            // the owner's name) as 담당자, unless it is the business name itself.
+            initial={{
+              name: site.business_name ?? creating,
+              ...(creating && creating !== site.business_name ? { contactName: creating } : {}),
+            }}
+            onClose={() => setCreating(null)}
+            onCreated={(customer) => link.mutate(customer.id)}
+          />
+        ) : null}
+      </Stack>
+    </>
+  );
+}
+
+/** No customer on the site: say so, and offer the customers with the site's phone or business number. */
+function MissingCustomer({ site, onLink, busy }: { site: SiteRow; onLink: (customerId: string) => void; busy: boolean }) {
+  return (
+    <Alert severity="warning" sx={{ mt: 1.5 }} data-testid="customer-missing">
+      연결된 고객(사장님)이 없습니다. 연락처와 고객별 사이트 목록에 잡히도록 연결하세요.
+      {site.customer_suggestions.map((c) => (
+        <Box key={c.id} sx={{ mt: 0.5 }}>
+          같은 연락처의 고객: <b>{c.name}</b> {[c.contact_name, c.phone].filter(Boolean).join(" · ")}{" "}
+          <Button size="small" onClick={() => onLink(c.id)} disabled={busy} data-testid={`suggest-${c.id}`}>
+            이 고객으로 연결
+          </Button>
+        </Box>
+      ))}
+    </Alert>
+  );
+}
+
+/** Billed, overdue or taken down: the payment request to send the owner, readable before copying. */
+function PaymentRequest({ name, sub, manualStop }: { name: string; sub: Subscription; manualStop: boolean }) {
+  const toast = useToast();
+  const me = useMe();
+  const [open, setOpen] = useState(false);
+  const account = me.data?.billingAccount ?? null;
+  const text = paymentRequest(name, sub, account, manualStop);
+  if (!text) return null;
+  return (
+    <Box sx={{ mt: 1 }} data-testid="payment-request">
+      <Stack direction="row" spacing={1}>
+        <Button
+          size="small"
+          variant="outlined"
+          startIcon={<ContentCopyIcon />}
+          onClick={() => void navigator.clipboard.writeText(text).then(() => toast("입금 요청 안내문을 복사했습니다"))}
+        >
+          입금 요청 안내문 복사
+        </Button>
+        <Button size="small" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
+          {open ? "접기" : "안내문 보기"}
+        </Button>
+      </Stack>
+      {open ? (
+        <Box component="pre" sx={{ mt: 1, mb: 0, p: 1.5, bgcolor: "grey.100", borderRadius: 1, whiteSpace: "pre-wrap", fontFamily: "inherit", fontSize: 14 }}>
+          {text}
+        </Box>
       ) : null}
-    </Stack>
+      {me.data && !account ? (
+        <Alert severity="warning" sx={{ mt: 1 }}>
+          입금 계좌가 설정되지 않아 안내문에 계좌가 빠집니다(콘솔 설정 BILLING_ACCOUNT).
+        </Alert>
+      ) : null}
+    </Box>
   );
 }

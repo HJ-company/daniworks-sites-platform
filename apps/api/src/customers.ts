@@ -139,7 +139,30 @@ export async function customerDetail(db: D1Database, id: string) {
     payments.push(...(await sitePayments(db, site.id)));
   }
   payments.sort((a, b) => b.paid_on.localeCompare(a.paid_on));
-  return { customer, sites: withBilling, payments };
+  return { customer, sites: withBilling, payments, unlinkedMatches: await unlinkedMatches(db, customer) };
+}
+
+/**
+ * Sites without a customer whose latest draft has this customer's phone or business number:
+ * offered on the customer's page so their sites and payments add up.
+ */
+async function unlinkedMatches(db: D1Database, customer: CustomerRow) {
+  const phone = digitsOf(customer.phone);
+  const number = digitsOf(customer.business_number);
+  if (phone.length < 9 && number.length !== 10) return [];
+  const { results } = await db
+    .prepare(
+      `SELECT s.id, s.slug, ${BUSINESS_NAME_SQL("s.id", "s.published_version_id")} AS business_name,
+              (SELECT v.config FROM site_versions v WHERE v.site_id = s.id ORDER BY v.number DESC LIMIT 1) AS config
+       FROM sites s WHERE s.customer_id IS NULL AND s.cancelled_at IS NULL ORDER BY s.created_at`,
+    )
+    .all<{ id: string; slug: string; business_name: string | null; config: string | null }>();
+  return results
+    .filter(({ config }) => {
+      const business = config ? (JSON.parse(config) as { business?: { phone?: string; businessNumber?: string } }).business : undefined;
+      return (phone.length >= 9 && digitsOf(business?.phone) === phone) || (number.length === 10 && digitsOf(business?.businessNumber) === number);
+    })
+    .map(({ config: _config, ...site }) => site);
 }
 
 /** PATCH /sites/:id {customerId}: attach (or detach with null) a site to a customer. */

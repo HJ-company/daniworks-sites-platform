@@ -1,0 +1,31 @@
+{
+  "renderVersion": "5a89fdd94e0f-aed96741",
+  "threshold": 0.0001,
+  "apply": true,
+  "tokenLeaks": [],
+  "report": [
+    {
+      "slug": "rp-privacy-mwnxbnb1",
+      "siteId": "27bce252-1e66-4e47-a6c7-fc88e44e7832",
+      "from": "old-assets",
+      "to": "5a89fdd94e0f-aed96741",
+      "renderId": "b5929f1a3b254875",
+      "diffs": {
+        "home-mobile": {
+          "ratio": 0.00016426571741105363
+        },
+        "home-desktop": {
+          "ratio": 0.00006050590034965035
+        },
+        "privacy-mobile": {
+          "ratio": 0.002777402250161477
+        },
+        "privacy-desktop": {
+          "ratio": 0.0012348233995584988
+        }
+      },
+      "same": false,
+      "result": "review"
+    }
+  ]
+}

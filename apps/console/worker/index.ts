@@ -17,6 +17,8 @@ interface Env {
   SESSION_SECRET?: string;
   /** Where operators connect Claude/ChatGPT (`https://api.dsites.kr/mcp`), shown in the help page. */
   MCP_URL?: string;
+  /** Deposit account put into payment requests to owners (`국민 000-00-0000 (주)다니웍스`). */
+  BILLING_ACCOUNT?: string;
 }
 
 interface Session {
@@ -310,7 +312,7 @@ export default {
 
     if (url.pathname === "/auth/me") {
       if (!current) return Response.json({ error: "로그인이 필요합니다" }, { status: 401 });
-      return store(Response.json({ name: current.session.name, email: current.session.email, mcpUrl: env.MCP_URL ?? null }));
+      return store(Response.json({ name: current.session.name, email: current.session.email, mcpUrl: env.MCP_URL ?? null, billingAccount: env.BILLING_ACCOUNT || null }));
     }
 
     if (url.pathname === "/api" || url.pathname.startsWith("/api/")) {

@@ -142,7 +142,7 @@ export function InquiryForm({ block }: { block: InquiryFormBlock }) {
               <span>
                 문의 응대를 위한 개인정보 수집·이용에 동의합니다.{" "}
                 <a href={siteHref("/privacy")} className="underline">
-                  자세히
+                  개인정보처리방침 보기
                 </a>
               </span>
             </label>

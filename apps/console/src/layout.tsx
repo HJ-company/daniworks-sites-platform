@@ -1,7 +1,7 @@
 import AccountCircleIcon from "@mui/icons-material/AccountCircle";
 import { AppBar, Badge, Box, Button, Chip, Container, LinearProgress, Toolbar, Typography } from "@mui/material";
 import { useQuery } from "@tanstack/react-query";
-import { api, type QueueRow } from "./api.js";
+import { api, useMe, type QueueRow } from "./api.js";
 import { Suspense } from "react";
 import { Link as RouterLink, Outlet } from "react-router";
 
@@ -9,14 +9,7 @@ export function Layout() {
   // Sites waiting for a payment, overdue or suspended: the operator's billing to-do.
   const queue = useQuery({ queryKey: ["billing-queue"], queryFn: () => api<{ sites: QueueRow[] }>("/billing/queue") });
   const waiting = queue.data?.sites.length ?? 0;
-  const me = useQuery({
-    queryKey: ["me"],
-    queryFn: async () => {
-      const res = await fetch("/auth/me");
-      return res.ok ? ((await res.json()) as { name: string | null; email: string | null }) : null;
-    },
-    staleTime: Infinity,
-  });
+  const me = useMe();
   return (
     <Box sx={{ minHeight: "100vh", bgcolor: "grey.50" }}>
       <AppBar position="sticky" color="inherit" elevation={0} sx={{ borderBottom: 1, borderColor: "divider" }}>
@@ -40,7 +33,10 @@ export function Layout() {
             분기 리포트
           </Button>
           <Button component={RouterLink} to="/guides">
-            지침
+            제작 지침
+          </Button>
+          <Button component={RouterLink} to="/ai-tools">
+            AI로 만들기
           </Button>
           {me.data ? (
             <Chip

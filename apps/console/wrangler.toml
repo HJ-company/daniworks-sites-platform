@@ -21,6 +21,7 @@ service = "sites-api"
 OIDC_ISSUER = "http://127.0.0.1:8791"
 OIDC_CLIENT_ID = "dsites-console"
 MCP_URL = "http://127.0.0.1:8788/mcp"
+BILLING_ACCOUNT = "로컬은행 000-0000-0000 (예금주 다니웍스, 로컬 예시)"
 
 [env.staging]
 name = "sites-console-staging"
@@ -34,6 +35,8 @@ routes = [{ pattern = "dsites-console.daniworks.kr", custom_domain = true }]
 OIDC_ISSUER = "https://authentik.daniworks.kr/application/o/dsites-console/"
 OIDC_CLIENT_ID = "dsites-console"
 MCP_URL = "https://api.dsites.kr/mcp"
+# Deposit account shown in payment requests to owners. Empty: the console warns and leaves it out.
+BILLING_ACCOUNT = ""
 # Secrets: OIDC_CLIENT_SECRET, SESSION_SECRET (32+ random characters): wrangler secret put … --env staging
 
 [[env.staging.services]]

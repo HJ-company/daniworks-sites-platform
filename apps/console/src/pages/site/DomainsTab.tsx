@@ -147,6 +147,14 @@ export function DomainsTab({ siteId }: { siteId: string }) {
                 >
                   사장님께 보낼 안내문 복사
                 </Button>
+                <Box component="details" sx={{ mt: 1 }}>
+                  <Box component="summary" sx={{ cursor: "pointer", fontSize: 14, color: "text.secondary" }}>
+                    안내문 보기
+                  </Box>
+                  <Box component="pre" sx={{ mt: 1, p: 1.5, bgcolor: "grey.100", borderRadius: 1, whiteSpace: "pre-wrap", fontFamily: "inherit", fontSize: 14 }}>
+                    {customerGuide(d)}
+                  </Box>
+                </Box>
               </>
             ) : null}
             {error && d.status !== "active" ? (

@@ -1,7 +1,7 @@
 import { renderSite, type SiteConfig } from "@sites/renderer";
 import type { Env } from "./env.js";
 import { HttpError } from "./http.js";
-import { assetBase, siteOrigin } from "./publish.js";
+import { assetBase, sharedCss, siteOrigin } from "./publish.js";
 import { getSite, latestVersion, type SiteRow } from "./store.js";
 
 /**
@@ -62,14 +62,18 @@ function notice(status: number, title: string, body: string) {
  * hydration is unaffected; a spacer keeps content clear of it and the site's sticky header
  * (`.builder-navigation`, top: 0) is moved below it so neither covers the other.
  */
-const BANNER =
+const banner = (text: string, background: string) =>
   `<style>.builder-navigation{top:40px!important}</style>` +
   `<div role="status" style="position:fixed;top:0;left:0;right:0;z-index:2147483647;height:40px;box-sizing:border-box;display:flex;align-items:center;justify-content:center;` +
-  `background:#1f2329;color:#fff;font:600 14px/1 system-ui,-apple-system,'Apple SD Gothic Neo','Malgun Gothic',sans-serif;padding:0 12px;white-space:nowrap;overflow:hidden">` +
-  `시안입니다. 아직 공개되지 않은 페이지입니다.</div><div aria-hidden="true" style="height:40px"></div>`;
+  `background:${background};color:#fff;font:600 14px/1 system-ui,-apple-system,'Apple SD Gothic Neo','Malgun Gothic',sans-serif;padding:0 12px;white-space:nowrap;overflow:hidden">` +
+  `${text}</div><div aria-hidden="true" style="height:40px"></div>`;
 
-export function withDraftBanner(html: string) {
-  return html.replace(/<body([^>]*)>/i, (match) => `${match}${BANNER}`);
+const DRAFT = banner("시안입니다. 아직 공개되지 않은 페이지입니다.", "#1f2329");
+/** Version previews on the api host are for operators: say so, so nobody sends them to an owner. */
+const INTERNAL = banner("내부 검수용 미리보기 · 사장님께는 시안 링크를 보내세요", "#b45309");
+
+export function withDraftBanner(html: string, kind: "draft" | "internal" = "draft") {
+  return html.replace(/<body([^>]*)>/i, (match) => `${match}${kind === "internal" ? INTERNAL : DRAFT}`);
 }
 
 export interface DraftPage {
@@ -94,6 +98,7 @@ export async function renderDraft(env: Env, token: string, route: string): Promi
     preview: true,
     turnstileFrame: null,
     linkPrefix: `/preview/${token}`,
+    inlineCss: await sharedCss(env),
   });
   const page = pages.find((entry) => entry.route === route);
   if (!page) return notice(404, "없는 페이지입니다", "시안의 첫 화면으로 돌아가 주세요.");

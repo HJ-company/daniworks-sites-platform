@@ -7,7 +7,6 @@ import {
   DialogContent,
   DialogContentText,
   DialogTitle,
-  InputAdornment,
   Link,
   MenuItem,
   Stack,
@@ -21,9 +20,10 @@ import { DataGrid, type GridColDef } from "@mui/x-data-grid";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link as RouterLink, useSearchParams } from "react-router";
-import { api, CYCLE_LABEL, kst, won, type Payment, type QueueRow } from "../../api.js";
+import { api, CYCLE_LABEL, won, type Payment, type QueueRow } from "../../api.js";
 import { ErrorAlert, useToast } from "../../ui.js";
-import { BillingChip, billingSummary, PaymentDialog } from "./billing-ui.js";
+import { BillingChip, billingSummary } from "./billing-ui.js";
+import { EditPaymentDialog, PaymentDialog } from "./payment-dialog.js";
 
 /** Auto-height rows: keep every cell's content vertically centred. */
 const CENTERED = { "& .MuiDataGrid-cell": { display: "flex", alignItems: "center", py: 0.5 } };
@@ -138,8 +138,10 @@ function History() {
   // Filters live in the address, so coming back (or sharing the link) keeps them.
   const [params, setParams] = useSearchParams();
   // A cleared date stays cleared (`from=`): the api treats an empty bound as unbounded.
-  const from = params.has("from") ? params.get("from")! : monthsAgo(3);
-  const to = params.has("to") ? params.get("to")! : today();
+  // Opens on this month: the question asked most ("이번 달 얼마 들어왔지?").
+  const [monthStart, monthEnd] = monthRange(0);
+  const from = params.has("from") ? params.get("from")! : monthStart;
+  const to = params.has("to") ? params.get("to")! : monthEnd;
   const method = params.get("method") ?? "";
   const search = params.get("q") ?? "";
   // Built from the live address, not the last render: quick successive changes (a date, then a
@@ -282,94 +284,6 @@ function History() {
       {editing ? <EditPaymentDialog payment={editing} onClose={() => setEditing(null)} /> : null}
       {voiding ? <VoidPaymentDialog payment={voiding} onClose={() => setVoiding(null)} /> : null}
     </Stack>
-  );
-}
-
-/** Corrections: the period a payment keeps the site public, payer, invoice date, amount, memo. */
-export function EditPaymentDialog({ payment, onClose, focusInvoice = false }: { payment: Payment; onClose: () => void; focusInvoice?: boolean }) {
-  const queryClient = useQueryClient();
-  const toast = useToast();
-  const [start, setStart] = useState(payment.period_start);
-  const [end, setEnd] = useState(payment.period_end);
-  const [payerName, setPayerName] = useState(payment.payer_name ?? "");
-  const [invoice, setInvoice] = useState(payment.invoice_issued_on ?? "");
-  const [amount, setAmount] = useState(String(payment.amount));
-  const [memo, setMemo] = useState(payment.memo ?? "");
-  // Send only what changed, so a concurrent edit of another field is not undone.
-  const changes = Object.fromEntries(
-    (
-      [
-        ["periodStart", start, payment.period_start],
-        ["periodEnd", end, payment.period_end],
-        ["payerName", payerName, payment.payer_name ?? ""],
-        ["invoiceIssuedOn", invoice, payment.invoice_issued_on ?? ""],
-        ["amount", amount, String(payment.amount)],
-        ["memo", memo, payment.memo ?? ""],
-      ] as const
-    )
-      .filter(([, value, before]) => value !== before)
-      .map(([key, value]) => [key, key === "amount" ? Number(value) : value]),
-  );
-  const save = useMutation({
-    mutationFn: () => api(`/payments/${payment.id}`, { method: "PATCH", json: changes }),
-    onSuccess: () => {
-      toast("결제 기록을 고쳤습니다");
-      void queryClient.invalidateQueries();
-      onClose();
-    },
-  });
-  return (
-    <Dialog open onClose={onClose} fullWidth maxWidth="xs">
-      <DialogTitle>결제 수정 · {payment.business_name ?? payment.site_slug}</DialogTitle>
-      <DialogContent>
-        <Stack spacing={2} sx={{ mt: 1 }}>
-          <DialogContentText variant="body2" data-testid="payment-confirmed-by">
-            {payment.confirmed_by ?? "알 수 없음"}이(가) {kst(payment.created_at)}에 입금을 확인했습니다. 이용 기간을 바꾸면 공개 여부도 바로 다시
-            계산됩니다(기간이 끝나고 14일이 지나면 공개 중단).
-          </DialogContentText>
-          <Stack direction="row" spacing={1}>
-            <TextField label="이용 시작일" type="date" value={start} onChange={(e) => setStart(e.target.value)} slotProps={{ inputLabel: { shrink: true }, htmlInput: { name: "periodStart" } }} fullWidth />
-            <TextField label="이용 종료일" type="date" value={end} onChange={(e) => setEnd(e.target.value)} slotProps={{ inputLabel: { shrink: true }, htmlInput: { name: "periodEnd" } }} fullWidth />
-          </Stack>
-          <TextField label="입금자명" value={payerName} onChange={(e) => setPayerName(e.target.value)} />
-          <TextField
-            label="입금액"
-            value={amount}
-            onChange={(e) => setAmount(e.target.value.replace(/[^\d]/g, ""))}
-            slotProps={{ input: { endAdornment: <InputAdornment position="end">원</InputAdornment> } }}
-          />
-          <TextField
-            label="세금계산서 발행일"
-            type="date"
-            autoFocus={focusInvoice}
-            value={invoice}
-            onChange={(e) => setInvoice(e.target.value)}
-            helperText="홈택스에서 발행한 날. 비우면 미발행"
-            slotProps={{
-              inputLabel: { shrink: true },
-              htmlInput: { name: "invoiceIssuedOn" },
-              input: {
-                endAdornment: (
-                  <InputAdornment position="end">
-                    <Button size="small" onClick={() => setInvoice(today())}>
-                      오늘
-                    </Button>
-                  </InputAdornment>
-                ),
-              },
-            }}
-          />
-          <TextField label="메모" value={memo} onChange={(e) => setMemo(e.target.value)} multiline minRows={2} />
-          <ErrorAlert error={save.error} />
-        </Stack>
-      </DialogContent>
-      <DialogActions>
-        <Button onClick={onClose}>닫기</Button>
-        <Button variant="contained" onClick={() => save.mutate()} disabled={save.isPending || end < start || !Object.keys(changes).length}>
-          저장
-        </Button>
-      </DialogActions>
-    </Dialog>
   );
 }
 
