@@ -160,7 +160,7 @@ export function PaymentDialog({
           <Typography variant="caption" color="text.secondary" data-testid="period-rule">
             이 입금으로 공개가 유지되는 기간입니다.{" "}
             {subscription.status === "suspended"
-              ? "공개가 중단된 사이트라 입금일부터 새 기간으로 잡았습니다(중단 기간은 청구하지 않음). 밀린 유예 기간까지 받았다면 시작일을 앞당기세요."
+              ? `공개가 중단된 사이트라 입금일부터 새 기간으로 잡았습니다(중단 기간은 청구하지 않음). 밀린 기간까지 받았다면 시작일을 ${subscription.nextDueOn ?? "지난 기간 다음 날"}로 바꾸세요.`
               : subscription.status === "overdue"
                 ? "유예 중이라 지난 기간이 끝난 다음 날부터 이어서 잡았습니다."
                 : "다음 미납 기간으로 잡았습니다."}{" "}

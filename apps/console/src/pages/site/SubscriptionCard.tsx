@@ -245,7 +245,12 @@ function CustomerLink({ siteId, site }: { siteId: string; site: SiteRow }) {
       <ErrorAlert error={link.error} />
       {creating !== null ? (
         <CustomerDialog
-          initialName={creating}
+          // A site's customer is its business: the site's name as 업체명, what was typed (usually
+          // the owner's name) as 담당자, unless it is the business name itself.
+          initial={{
+            name: site.business_name ?? creating,
+            ...(creating && creating !== site.business_name ? { contactName: creating } : {}),
+          }}
           onClose={() => setCreating(null)}
           onCreated={(customer) => link.mutate(customer.id)}
         />

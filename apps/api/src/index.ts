@@ -1,4 +1,4 @@
-import { parseSiteConfig, renderSite, SiteConfigError, type SiteConfig } from "@sites/renderer";
+import { parseSiteConfig, renderSite, SiteConfigError, STARTER_TODO, type SiteConfig } from "@sites/renderer";
 import { listAssets, uploadAsset } from "./assets.js";
 import { refreshBlog, refreshDueBlogs } from "./blog.js";
 import {
@@ -179,8 +179,11 @@ async function handle(request: Request, env: Env): Promise<Response> {
     const versions = (await listVersions(env.DB, site.id)) as { preview_token: string }[];
     const purgeAfter = site.cancelled_at ? new Date(Date.parse(site.cancelled_at) + retentionDays(env) * 86_400_000).toISOString() : null;
     const { preview_token: _token, preview_expires_at: _expires, ...rest } = site;
+    // Starter copy still to write in the latest draft: the console warns before it goes to the owner.
+    const latest = await env.DB.prepare("SELECT config FROM site_versions WHERE site_id = ? ORDER BY number DESC LIMIT 1").bind(site.id).first<{ config: string }>();
+    const draftTodos = latest ? latest.config.split(STARTER_TODO).length - 1 : 0;
     return json({
-      site: { ...rest, business_name: await businessName(env.DB, site), purge_after: purgeAfter, draft_link: draftLink(env, site) },
+      site: { ...rest, business_name: await businessName(env.DB, site), purge_after: purgeAfter, draft_link: draftLink(env, site), draft_todos: draftTodos },
       versions: versions.map((v) => ({ ...v, preview_url: previewUrl(env, v.preview_token) })),
     });
   }

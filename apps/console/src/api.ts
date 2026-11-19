@@ -56,6 +56,8 @@ export interface SiteRow extends Omit<SiteSummary, "published_number" | "latest_
   purge_after: string | null;
   /** The customer's draft link, if issued. */
   draft_link: DraftLink | null;
+  /** "(작성 필요)" placeholders left in the latest draft. */
+  draft_todos: number;
 }
 
 export interface DraftLink {

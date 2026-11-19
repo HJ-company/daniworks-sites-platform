@@ -1,4 +1,5 @@
 import { CssBaseline, ThemeProvider, createTheme } from "@mui/material";
+import { koKR } from "@mui/material/locale";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
@@ -15,11 +16,15 @@ const CustomersPage = lazy(() => import("./pages/CustomersPage.js").then((m) => 
 const CustomerPage = lazy(() => import("./pages/CustomerPage.js").then((m) => ({ default: m.CustomerPage })));
 import { ToastProvider } from "./ui.js";
 
-const theme = createTheme({
-  palette: { primary: { main: "#157a5c" } },
-  typography: { fontFamily: '"Pretendard", "Apple SD Gothic Neo", "Noto Sans KR", system-ui, sans-serif' },
-  components: { MuiButton: { defaultProps: { disableElevation: true } } },
-});
+// Korean text for MUI components (the data grid gets its own in grid-locale.ts, loaded with it).
+const theme = createTheme(
+  {
+    palette: { primary: { main: "#157a5c" } },
+    typography: { fontFamily: '"Pretendard", "Apple SD Gothic Neo", "Noto Sans KR", system-ui, sans-serif' },
+    components: { MuiButton: { defaultProps: { disableElevation: true } } },
+  },
+  koKR,
+);
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } } });
 

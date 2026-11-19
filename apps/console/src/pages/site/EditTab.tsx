@@ -8,17 +8,40 @@ import { ErrorAlert, useToast } from "../../ui.js";
 
 type Config = Record<string, unknown> & { business?: Record<string, unknown>; content?: Record<string, unknown> };
 
-/** Business fields edited by form; everything else through the JSON editor. Both edit one config. */
-const FIELDS: { path: [string, string]; label: string; half?: boolean }[] = [
-  { path: ["business", "name"], label: "상호", half: true },
-  { path: ["business", "phone"], label: "전화번호", half: true },
-  { path: ["business", "representative"], label: "대표자", half: true },
-  { path: ["business", "address"], label: "주소", half: true },
-  { path: ["business", "kakaoUrl"], label: "카카오 채널·오픈채팅 URL" },
-  { path: ["business", "mapUrl"], label: "지도 URL", half: true },
-  { path: ["business", "bookingUrl"], label: "네이버 예약 URL", half: true },
-  { path: ["business", "blogUrl"], label: "네이버 블로그 URL" },
+type Field = { path: string[]; label: string; half?: boolean; multiline?: boolean };
+
+/** Fields edited by form (quick fixes); everything else through the JSON editor or the AI tools. Both edit one config. */
+const GROUPS: { title: string; fields: Field[] }[] = [
+  {
+    title: "업체 정보",
+    fields: [
+      { path: ["business", "name"], label: "상호", half: true },
+      { path: ["business", "phone"], label: "전화번호", half: true },
+      { path: ["business", "representative"], label: "대표자", half: true },
+      { path: ["business", "address"], label: "주소", half: true },
+      { path: ["business", "kakaoUrl"], label: "카카오 채널·오픈채팅 URL" },
+      { path: ["business", "mapUrl"], label: "지도 URL", half: true },
+      { path: ["business", "bookingUrl"], label: "네이버 예약 URL", half: true },
+      { path: ["business", "blogUrl"], label: "네이버 블로그 URL" },
+    ],
+  },
+  {
+    title: "첫 화면·검색 문구",
+    fields: [
+      { path: ["content", "hero", "kicker"], label: "첫 화면 작은 제목", half: true },
+      { path: ["content", "hero", "heading"], label: "첫 화면 큰 제목 (줄바꿈 가능)", multiline: true },
+      { path: ["content", "hero", "subheading"], label: "첫 화면 설명", multiline: true },
+      { path: ["meta", "title"], label: "검색 결과 제목" },
+      { path: ["meta", "description"], label: "검색 결과 설명", multiline: true },
+    ],
+  },
 ];
+
+function getIn(config: Config | null, path: string[]): unknown {
+  let node: unknown = config;
+  for (const key of path) node = node && typeof node === "object" ? (node as Record<string, unknown>)[key] : undefined;
+  return node;
+}
 
 export function EditTab({ siteId }: { siteId: string }) {
   const queryClient = useQueryClient();
@@ -47,13 +70,17 @@ export function EditTab({ siteId }: { siteId: string }) {
     }
   }, [text]);
 
-  const setField = (path: [string, string], value: string) => {
+  const setField = (path: string[], value: string) => {
     if (!parsed.config) return;
     const next = structuredClone(parsed.config);
-    const group = (next[path[0]] ?? {}) as Record<string, unknown>;
-    if (value.trim()) group[path[1]] = value;
-    else delete group[path[1]];
-    next[path[0]] = group;
+    let node = next as Record<string, unknown>;
+    for (const key of path.slice(0, -1)) {
+      node[key] = (node[key] && typeof node[key] === "object" ? node[key] : {}) as Record<string, unknown>;
+      node = node[key] as Record<string, unknown>;
+    }
+    const last = path.at(-1)!;
+    if (value.trim()) node[last] = value;
+    else delete node[last];
     setText(JSON.stringify(next, null, 2));
   };
 
@@ -79,34 +106,38 @@ export function EditTab({ siteId }: { siteId: string }) {
   if (latest.error) return <ErrorAlert error={latest.error} />;
   return (
     <Stack spacing={2}>
-      <Paper sx={{ p: 2 }}>
-        <Typography variant="subtitle1" sx={{ fontWeight: 700 }} gutterBottom>
-          업체 정보
-        </Typography>
-        <Grid container spacing={2}>
-          {FIELDS.map((f) => (
-            <Grid key={f.path.join(".")} size={{ xs: 12, sm: f.half ? 6 : 12 }}>
-              <TextField
-                fullWidth
-                size="small"
-                label={f.label}
-                value={String(((parsed.config?.[f.path[0]] ?? {}) as Record<string, unknown>)[f.path[1]] ?? "")}
-                onChange={(e) => setField(f.path, e.target.value)}
-                disabled={!parsed.config || save.isPending}
-                // Values arrive from the JSON after mount; keep labels above them.
-                slotProps={{ htmlInput: { name: f.path.join(".") }, inputLabel: { shrink: true } }}
-              />
-            </Grid>
-          ))}
-        </Grid>
-      </Paper>
+      {GROUPS.map((group) => (
+        <Paper key={group.title} sx={{ p: 2 }}>
+          <Typography variant="subtitle1" sx={{ fontWeight: 700 }} gutterBottom>
+            {group.title}
+          </Typography>
+          <Grid container spacing={2}>
+            {group.fields.map((f) => (
+              <Grid key={f.path.join(".")} size={{ xs: 12, sm: f.half ? 6 : 12 }}>
+                <TextField
+                  fullWidth
+                  size="small"
+                  label={f.label}
+                  multiline={f.multiline}
+                  minRows={f.multiline ? 2 : undefined}
+                  value={String(getIn(parsed.config, f.path) ?? "")}
+                  onChange={(e) => setField(f.path, e.target.value)}
+                  disabled={!parsed.config || save.isPending}
+                  // Values arrive from the JSON after mount; keep labels above them.
+                  slotProps={{ htmlInput: { name: f.path.join(".") }, inputLabel: { shrink: true } }}
+                />
+              </Grid>
+            ))}
+          </Grid>
+        </Paper>
+      ))}
       <Paper sx={{ p: 2 }}>
         <Stack direction="row" sx={{ alignItems: "center", mb: 1 }}>
           <Typography variant="subtitle1" sx={{ fontWeight: 700, flex: 1 }}>
             전체 설정 (JSON) {latest.data ? `· 최신 v${latest.data.version.number} 기준` : ""}
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            문구·사진·FAQ는 여기서 고칩니다
+            나머지 섹션·사진·FAQ는 여기서 고칩니다(큰 수정은 AI 도구로)
           </Typography>
         </Stack>
         <CodeMirror
@@ -140,8 +171,8 @@ export function EditTab({ siteId }: { siteId: string }) {
           초안으로 저장
         </Button>
         {latestPreview ? (
-          <Button href={latestPreview} target="_blank">
-            최신 프리뷰
+          <Button href={latestPreview} target="_blank" title="운영자 검수용 버전 미리보기입니다. 사장님께는 개요의 시안 링크를 보내세요">
+            내부 미리보기
           </Button>
         ) : null}
       </Stack>

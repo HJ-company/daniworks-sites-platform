@@ -1,4 +1,5 @@
 import { Alert, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, Link, Stack, TextField, Typography } from "@mui/material";
+import { gridLocale } from "../grid-locale.js";
 import { DataGrid, type GridColDef } from "@mui/x-data-grid";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -66,7 +67,7 @@ export function CustomersPage() {
           loading={customers.isLoading}
           autoHeight
           disableRowSelectionOnClick
-          localeText={{ noRowsLabel: "고객이 없습니다" }}
+          localeText={{ ...gridLocale, noRowsLabel: "고객이 없습니다" }}
           initialState={{ pagination: { paginationModel: { pageSize: 25 } } }}
           pageSizeOptions={[25, 50, 100]}
         />
@@ -90,18 +91,19 @@ const FIELDS: { key: keyof Customer; body: string; label: string; helper?: strin
 const onlyDigits = (value: string | null | undefined) => (value ?? "").replace(/[^\d]/g, "");
 
 /**
- * Add (no customer) or edit a customer. Only changed fields are sent on edit. `initialName`
- * prefills a new customer; `onCreated` replaces the default jump to the new customer's page.
+ * Add (no customer) or edit a customer. Only changed fields are sent on edit. `initial`
+ * prefills a new customer (keys: name, contactName, phone…); `onCreated` replaces the default
+ * jump to the new customer's page.
  */
 export function CustomerDialog({
   customer,
   onClose,
-  initialName = "",
+  initial = {},
   onCreated,
 }: {
   customer?: Customer;
   onClose: () => void;
-  initialName?: string;
+  initial?: Record<string, string>;
   onCreated?: (customer: Customer) => void;
 }) {
   const queryClient = useQueryClient();
@@ -109,7 +111,7 @@ export function CustomerDialog({
   const navigate = useNavigate();
   const all = useQuery({ queryKey: ["customers"], queryFn: () => api<{ customers: CustomerSummary[] }>("/customers") });
   const [values, setValues] = useState<Record<string, string>>(
-    Object.fromEntries(FIELDS.map((f) => [f.body, (customer?.[f.key] as string | null | undefined) ?? (f.body === "name" ? initialName : "")])),
+    Object.fromEntries(FIELDS.map((f) => [f.body, (customer?.[f.key] as string | null | undefined) ?? initial[f.body] ?? ""])),
   );
   // Same phone or business number as someone else: likely the same owner registered twice.
   const duplicates = (all.data?.customers ?? []).filter(

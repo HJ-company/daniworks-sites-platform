@@ -31,7 +31,9 @@ check("라우터가 시안 제공(게시 전·입금 전에도)", home.status ==
 check("시안 배너, noindex(메타·헤더), 캐시 안 함", home.body.includes("시안입니다. 아직 공개되지 않은 페이지입니다.") &&
   home.body.includes('content="noindex, nofollow"') && home.headers["x-robots-tag"] === "noindex, nofollow" && home.headers["cache-control"] === "no-store");
 check("문의 폼에 '시안에서는 문의가 전송되지 않습니다'", home.body.includes("시안에서는 문의가 전송되지 않습니다"));
-check("사이트 안 링크는 시안 경로 안에서", home.body.includes(`${draftPath(issued.url)}/privacy`));
+check("사이트 안 링크는 시안 경로 안에서(로고는 시안 첫 화면, 경로 중복 없음)", home.body.includes(`${draftPath(issued.url)}/privacy`) &&
+  home.body.includes(`href="${draftPath(issued.url)}/"`) && !home.body.includes(`${draftPath(issued.url)}${draftPath(issued.url)}`));
+check("시안 띠 아래로 사이트 머리글을 내림", home.body.includes(".builder-navigation{top:40px!important}"));
 const privacy = await open(issued.url, "/privacy");
 check("하위 페이지(개인정보처리방침)도 배너와 함께", privacy.status === 200 && privacy.body.includes("시안입니다"));
 check("없는 하위 페이지는 안내 404", (await open(issued.url, "/nope")).status === 404);
@@ -103,6 +105,9 @@ await client.close();
 const consoleConfig = { ...structuredClone(fieldFixture), slug: `draft-ui-${run}` };
 consoleConfig.business.name = `시안화면 ${run}`;
 const uiSite = (await api("POST", "/sites", { config: consoleConfig, createdBy: "operator" })).data.siteId;
+const starter = (await api("POST", "/sites", { starter: { preset: "field", slug: `draft-todo-${run}`, name: "작성중청소", phone: "010-1111-2222" }, createdBy: "operator" })).data.siteId;
+check("시작 설정으로 만든 사이트: 채울 문구 개수", (await api("GET", `/sites/${starter}`)).data.site.draft_todos > 0 &&
+  (await api("GET", `/sites/${uiSite}`)).data.site.draft_todos === 0);
 const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, permissions: ["clipboard-read", "clipboard-write"] });
 const page = await context.newPage();
 const errors = [];
@@ -122,6 +127,17 @@ await page.getByText("시안 링크를 만들었습니다").first().waitFor({ ti
 await page.waitForTimeout(500);
 const replaced = await card.getByTestId("draft-link-url").textContent();
 check("콘솔: 새 링크로 바꾸기(확인 창) → 주소 바뀜, 예전 링크 막힘", replaced !== shownUrl && (await open(shownUrl)).status === 404);
+check("콘솔: 버전 표의 미리보기는 내부용으로 표시", (await page.getByRole("link", { name: "내부 미리보기" }).count()) > 0);
+
+// The owner asks for a new headline: edit it in the form, save, the same link shows it.
+await page.goto(`${CONSOLE}/sites/${uiSite}/edit`, { waitUntil: "networkidle" });
+await page.locator('textarea[name="content.hero.heading"]').fill(`주말에도 레슨합니다 ${run}`);
+await page.getByRole("button", { name: "초안으로 저장" }).click();
+await page.getByText("초안을 저장했습니다").first().waitFor({ timeout: 10000 });
+check("편집 폼에서 첫 화면 큰 제목을 바꾸면 같은 시안 링크에 반영", (await open(replaced)).body.includes(`주말에도 레슨합니다 ${run}`));
+
+await page.goto(`${CONSOLE}/sites/${starter}`, { waitUntil: "networkidle" });
+check("콘솔: 채우지 않은 문구가 있으면 시안 카드에 경고", (await page.getByTestId("draft-todos").textContent({ timeout: 10000 })).includes("(작성 필요)"));
 check("콘솔 페이지 오류 없음", !errors.length, { errors });
 await browser.close();
 

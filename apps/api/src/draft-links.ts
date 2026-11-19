@@ -58,12 +58,14 @@ function notice(status: number, title: string, body: string) {
 }
 
 /**
- * Fixed bar at the top of every draft page. Inserted outside the React root so hydration is
- * unaffected; the body gets matching top padding so nothing hides under it.
+ * Fixed bar at the top of every draft page, 40px tall. Inserted outside the React root so
+ * hydration is unaffected; a spacer keeps content clear of it and the site's sticky header
+ * (`.builder-navigation`, top: 0) is moved below it so neither covers the other.
  */
 const BANNER =
-  `<div role="status" style="position:fixed;top:0;left:0;right:0;z-index:2147483647;background:#1f2329;color:#fff;` +
-  `font:600 14px/1.4 system-ui,-apple-system,'Apple SD Gothic Neo','Malgun Gothic',sans-serif;text-align:center;padding:10px 16px">` +
+  `<style>.builder-navigation{top:40px!important}</style>` +
+  `<div role="status" style="position:fixed;top:0;left:0;right:0;z-index:2147483647;height:40px;box-sizing:border-box;display:flex;align-items:center;justify-content:center;` +
+  `background:#1f2329;color:#fff;font:600 14px/1 system-ui,-apple-system,'Apple SD Gothic Neo','Malgun Gothic',sans-serif;padding:0 12px;white-space:nowrap;overflow:hidden">` +
   `시안입니다. 아직 공개되지 않은 페이지입니다.</div><div aria-hidden="true" style="height:40px"></div>`;
 
 export function withDraftBanner(html: string) {

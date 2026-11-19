@@ -129,7 +129,13 @@ check("결제 내역: 고객 이름으로 검색, 고객 열", await visible(pag
 await page.getByRole("searchbox", { name: "결제 검색" }).fill(`삭제될청소 ${run}`);
 check("결제 내역: 삭제된 사이트는 링크 없이 (삭제됨)", (await visible(page.getByText(`삭제될청소 ${run} (삭제됨)`))) &&
   (await page.getByRole("link", { name: `삭제될청소 ${run}` }).count()) === 0);
+check("검색하면 검색 결과의 건수·합계", (await page.getByTestId("payments-total").textContent()).startsWith("검색 결과"));
+await page.getByRole("searchbox", { name: "결제 검색" }).fill("");
+await page.getByTestId("payments-total").filter({ hasText: /^입금/ }).waitFor({ timeout: 10000 }).catch(() => undefined);
 check("결제 내역 합계 문구에 취소 건 안내", (await page.getByTestId("payments-total").textContent()).includes("취소"));
+await page.reload({ waitUntil: "networkidle" });
+const kept = { url: page.url(), field: await page.locator('input[type="date"]').first().inputValue() };
+check("결제 내역 기간이 주소에 남아 새로고침해도 유지", new URL(kept.url).searchParams.get("from")?.endsWith("-01") && kept.field.endsWith("-01"), kept);
 
 // 9. the site's customer picker: find by owner name, add a new customer in place
 const pickConfig = { ...structuredClone(fieldFixture), slug: `billc-pick-${run}` };
@@ -140,10 +146,12 @@ check("고객 선택: 사장님 이름으로 찾음", await visible(page.getByRo
 await card.getByLabel("고객(사장님)").fill(`최민수${run}`);
 await page.getByRole("option", { name: `+ 새 고객 추가: 최민수${run}` }).click();
 const create = page.getByRole("dialog");
-check("새 고객 추가 창에 입력한 이름", (await create.locator("input[name=name]").inputValue()) === `최민수${run}`);
+check("새 고객 추가 창: 업체명은 사이트 상호, 입력한 이름은 담당자", (await create.locator("input[name=name]").inputValue()) === pickConfig.business.name &&
+  (await create.locator("input[name=contactName]").inputValue()) === `최민수${run}`);
 await create.locator("input[name=businessNumber]").fill("123-45-67890");
 check("같은 사업자번호 고객이 있으면 경고", await visible(create.getByTestId("duplicate-customer")));
 await create.locator("input[name=businessNumber]").fill("");
+await create.locator("input[name=name]").fill(`픽커청소 ${run}`);
 await create.getByRole("button", { name: "저장" }).click();
 check("새 고객을 만들고 바로 사이트에 연결", (await toast("고객을 연결했습니다")) &&
   (await api("GET", `/sites/${pick}`)).data.site.customer_id !== null);

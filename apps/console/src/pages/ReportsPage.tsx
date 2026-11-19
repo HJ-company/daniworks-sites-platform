@@ -1,4 +1,5 @@
 import { Box, Button, Link, MenuItem, Stack, TextField, Typography } from "@mui/material";
+import { gridLocale } from "../grid-locale.js";
 import { DataGrid, type GridColDef } from "@mui/x-data-grid";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
@@ -70,7 +71,7 @@ export function ReportsPage() {
       </Stack>
       <ErrorAlert error={report.error} />
       <Box sx={{ bgcolor: "background.paper" }}>
-        <DataGrid rows={report.data?.sites ?? []} columns={columns} loading={report.isLoading} autoHeight disableRowSelectionOnClick />
+        <DataGrid rows={report.data?.sites ?? []} columns={columns} loading={report.isLoading} autoHeight disableRowSelectionOnClick localeText={gridLocale} />
       </Box>
     </Stack>
   );

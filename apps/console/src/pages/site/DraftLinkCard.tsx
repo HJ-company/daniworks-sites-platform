@@ -56,6 +56,11 @@ export function DraftLinkCard({ siteId, site }: { siteId: string; site: SiteRow 
           </>
         )}
       </Stack>
+      {site.draft_todos > 0 ? (
+        <Alert severity="warning" sx={{ mt: 1 }} data-testid="draft-todos">
+          시안에 아직 채우지 않은 문구 "(작성 필요)"가 {site.draft_todos}곳 있습니다. 사장님께 보내기 전에 편집에서 채우세요.
+        </Alert>
+      ) : null}
       {link ? (
         <>
           <Typography variant="body2" sx={{ mt: 1, wordBreak: "break-all" }} data-testid="draft-link-url">

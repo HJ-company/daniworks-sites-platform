@@ -8,8 +8,8 @@
     {
       "name": "발급: 기본 도메인의 /preview/<40자>, 30일",
       "pass": true,
-      "url": "http://localhost:8787/preview/080198af41fd4569aeca07dd003775a29e67d6ca",
-      "expiresAt": "2026-12-19T17:05:56.156Z",
+      "url": "http://localhost:8787/preview/3e03f169c900437d8e8595405bf434cc8d038c2f",
+      "expiresAt": "2026-12-19T17:38:57.092Z",
       "expired": false
     },
     {
@@ -29,7 +29,11 @@
       "pass": true
     },
     {
-      "name": "사이트 안 링크는 시안 경로 안에서",
+      "name": "사이트 안 링크는 시안 경로 안에서(로고는 시안 첫 화면, 경로 중복 없음)",
+      "pass": true
+    },
+    {
+      "name": "시안 띠 아래로 사이트 머리글을 내림",
       "pass": true
     },
     {
@@ -43,7 +47,7 @@
     {
       "name": "공용 자산을 같은 주소에서 받음",
       "pass": true,
-      "asset": "/_shared/8d91d24157a5/_assets/site.css"
+      "asset": "/_shared/5a89fdd94e0f/_assets/site.css"
     },
     {
       "name": "시안을 고치면 같은 링크에 최신 버전",
@@ -103,18 +107,22 @@
       "name": "MCP site_preview_link: 없으면 만들고, 다시 부르면 같은 링크, reissue면 새 링크",
       "pass": true,
       "first": {
-        "url": "http://localhost:8787/preview/157d7096e81045cda6ca51b3070e251cc634fc54",
-        "expiresAt": "2026-12-19T17:06:00.613Z",
+        "url": "http://localhost:8787/preview/8d43916e54174c54bdafb574e2d4feb247097aa9",
+        "expiresAt": "2026-12-19T17:39:01.317Z",
         "reissued": true
       },
       "again": {
-        "url": "http://localhost:8787/preview/157d7096e81045cda6ca51b3070e251cc634fc54",
-        "expiresAt": "2026-12-19T17:06:00.613Z",
+        "url": "http://localhost:8787/preview/8d43916e54174c54bdafb574e2d4feb247097aa9",
+        "expiresAt": "2026-12-19T17:39:01.317Z",
         "reissued": false
       }
     },
     {
       "name": "MCP 링크도 라우터에서 열림",
+      "pass": true
+    },
+    {
+      "name": "시작 설정으로 만든 사이트: 채울 문구 개수",
       "pass": true
     },
     {
@@ -124,10 +132,22 @@
     {
       "name": "콘솔: 사장님께 보낼 안내문에 상호·링크·만료일",
       "pass": true,
-      "message": "[홈페이지 시안 안내]\n사장님, 시안화면 mwnsxfeh 홈페이지 시안을 준비했습니다. 아래 링크에서 휴대폰으로 확인해 주세요.\n\nhttp://localhost:8787/preview/3e6977e63fc046b9989d716d230bb5096d24a1c5\n\n링크는 2026-12-20까지 열립니다. 고칠 부분은 편하게 말씀해 주세요. 시안을 고쳐도 링크는 그대로입니다."
+      "message": "[홈페이지 시안 안내]\n사장님, 시안화면 mwnu3vv0 홈페이지 시안을 준비했습니다. 아래 링크에서 휴대폰으로 확인해 주세요.\n\nhttp://localhost:8787/preview/dd83b5eaaa15400bbb38c9076bea2d3635252314\n\n링크는 2026-12-20까지 열립니다. 고칠 부분은 편하게 말씀해 주세요. 시안을 고쳐도 링크는 그대로입니다."
     },
     {
       "name": "콘솔: 새 링크로 바꾸기(확인 창) → 주소 바뀜, 예전 링크 막힘",
+      "pass": true
+    },
+    {
+      "name": "콘솔: 버전 표의 미리보기는 내부용으로 표시",
+      "pass": true
+    },
+    {
+      "name": "편집 폼에서 첫 화면 큰 제목을 바꾸면 같은 시안 링크에 반영",
+      "pass": true
+    },
+    {
+      "name": "콘솔: 채우지 않은 문구가 있으면 시안 카드에 경고",
       "pass": true
     },
     {

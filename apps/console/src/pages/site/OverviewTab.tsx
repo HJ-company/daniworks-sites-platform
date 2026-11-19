@@ -147,8 +147,8 @@ export function OverviewTab({ siteId, site, versions }: { siteId: string; site: 
                   <TableCell>{kst(v.created_at)}</TableCell>
                   <TableCell align="right">
                     <Stack direction="row" spacing={1} sx={{ justifyContent: "flex-end" }}>
-                      <Button size="small" href={v.preview_url} target="_blank">
-                        프리뷰
+                      <Button size="small" href={v.preview_url} target="_blank" title="운영자 검수용 버전 미리보기입니다. 사장님께는 시안 링크를 보내세요">
+                        내부 미리보기
                       </Button>
                       {!live && v.first_published_at ? (
                         <Button

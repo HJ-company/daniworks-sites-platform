@@ -16,6 +16,7 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
+import { gridLocale } from "../../grid-locale.js";
 import { DataGrid, type GridColDef } from "@mui/x-data-grid";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -23,6 +24,9 @@ import { Link as RouterLink, useSearchParams } from "react-router";
 import { api, CYCLE_LABEL, won, type Payment, type QueueRow } from "../../api.js";
 import { ErrorAlert, useToast } from "../../ui.js";
 import { BillingChip, billingSummary, PaymentDialog } from "./billing-ui.js";
+
+/** Auto-height rows: keep every cell's content vertically centred. */
+const CENTERED = { "& .MuiDataGrid-cell": { display: "flex", alignItems: "center", py: 0.5 } };
 
 const today = () => new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 10);
 const monthsAgo = (n: number) => {
@@ -61,9 +65,14 @@ function Queue() {
       minWidth: 160,
       valueGetter: (_v, row) => row.business_name ?? row.slug,
       renderCell: ({ row }) => (
-        <Link component={RouterLink} to={`/sites/${row.site_id}`}>
-          {row.business_name ?? row.slug}
-        </Link>
+        <Stack sx={{ lineHeight: 1.3 }}>
+          <Link component={RouterLink} to={`/sites/${row.site_id}`}>
+            {row.business_name ?? row.slug}
+          </Link>
+          <Typography variant="caption" color="text.secondary">
+            {row.slug}
+          </Typography>
+        </Stack>
       ),
     },
     { field: "customer_name", headerName: "고객", width: 140, valueGetter: (v) => v ?? "-" },
@@ -100,11 +109,12 @@ function Queue() {
           rows={queue.data?.sites ?? []}
           getRowId={(row) => row.site_id}
           getRowHeight={() => "auto"}
+          sx={CENTERED}
           columns={columns}
           loading={queue.isLoading}
           autoHeight
           disableRowSelectionOnClick
-          localeText={{ noRowsLabel: "확인할 결제가 없습니다" }}
+          localeText={{ ...gridLocale, noRowsLabel: "확인할 결제가 없습니다" }}
           hideFooter={(queue.data?.sites.length ?? 0) <= 25}
         />
       </Box>
@@ -125,14 +135,28 @@ const monthRange = (offset: number) => {
 type HistoryRow = Payment & { customer_name: string | null; site_exists: boolean };
 
 function History() {
-  const [from, setFrom] = useState(monthsAgo(3));
-  const [to, setTo] = useState(today());
-  const [method, setMethod] = useState("");
-  const [search, setSearch] = useState("");
-  const setRange = ([start, end]: [string, string]) => {
-    setFrom(start);
-    setTo(end);
+  // Filters live in the address, so coming back (or sharing the link) keeps them.
+  const [params, setParams] = useSearchParams();
+  // A cleared date stays cleared (`from=`): the api treats an empty bound as unbounded.
+  const from = params.has("from") ? params.get("from")! : monthsAgo(3);
+  const to = params.has("to") ? params.get("to")! : today();
+  const method = params.get("method") ?? "";
+  const search = params.get("q") ?? "";
+  // Built from the live address, not the last render: quick successive changes (a date, then a
+  // search) must not start from a stale copy and drop each other.
+  const update = (changes: Record<string, string>) => {
+    const next = new URLSearchParams(window.location.search);
+    for (const [key, value] of Object.entries(changes)) {
+      if (value || key === "from" || key === "to") next.set(key, value);
+      else next.delete(key);
+    }
+    setParams(next, { replace: true });
   };
+  const setFrom = (value: string) => update({ from: value });
+  const setTo = (value: string) => update({ to: value });
+  const setMethod = (value: string) => update({ method: value });
+  const setSearch = (value: string) => update({ q: value });
+  const setRange = ([start, end]: [string, string]) => update({ from: start, to: end });
   const [editing, setEditing] = useState<Payment | null>(null);
   const [voiding, setVoiding] = useState<Payment | null>(null);
   const query = new URLSearchParams({ from, to, ...(method ? { method } : {}) });
@@ -230,12 +254,16 @@ function History() {
         />
         <Typography variant="body2" sx={{ flex: 1, textAlign: { sm: "right" } }} data-testid="payments-total">
           {history.data
-            ? `입금 ${history.data.count}건 · 합계 ${won(history.data.total)}${history.data.voided ? ` (취소 ${history.data.voided}건 제외, 목록에는 표시)` : ""}`
+            ? q
+              ? `검색 결과 입금 ${rows.filter((p) => !p.voided_at).length}건 · 합계 ${won(rows.filter((p) => !p.voided_at).reduce((n, p) => n + p.amount, 0))}${history.data.truncated ? ` (최근 ${history.data.payments.length}건 안에서만 찾음)` : ""} (기간 전체 ${won(history.data.total)})`
+              : `입금 ${history.data.count}건 · 합계 ${won(history.data.total)}${history.data.voided ? ` (취소 ${history.data.voided}건 제외, 목록에는 표시)` : ""}`
             : ""}
         </Typography>
       </Stack>
       {history.data?.truncated ? (
-        <Alert severity="info">이 기간의 결제가 많아 최근 {rows.length}건만 목록에 보입니다. 합계는 기간 전체 기준입니다. 기간을 좁혀 보세요.</Alert>
+        <Alert severity="info">
+          이 기간의 결제가 많아 최근 {history.data.payments.length}건만 목록에 보이고 검색도 그 안에서만 합니다. 위의 기간 합계는 기간 전체 기준입니다. 기간을 좁혀 보세요.
+        </Alert>
       ) : null}
       <ErrorAlert error={history.error} />
       <Box sx={{ bgcolor: "background.paper" }}>
@@ -245,7 +273,7 @@ function History() {
           loading={history.isLoading}
           autoHeight
           disableRowSelectionOnClick
-          localeText={{ noRowsLabel: "이 기간의 결제가 없습니다" }}
+          localeText={{ ...gridLocale, noRowsLabel: "이 기간의 결제가 없습니다" }}
           initialState={{ pagination: { paginationModel: { pageSize: 25 } } }}
           pageSizeOptions={[25, 50, 100]}
         />
@@ -314,8 +342,20 @@ export function EditPaymentDialog({ payment, onClose, focusInvoice = false }: { 
             autoFocus={focusInvoice}
             value={invoice}
             onChange={(e) => setInvoice(e.target.value)}
-            slotProps={{ inputLabel: { shrink: true }, htmlInput: { name: "invoiceIssuedOn" } }}
             helperText="홈택스에서 발행한 날. 비우면 미발행"
+            slotProps={{
+              inputLabel: { shrink: true },
+              htmlInput: { name: "invoiceIssuedOn" },
+              input: {
+                endAdornment: (
+                  <InputAdornment position="end">
+                    <Button size="small" onClick={() => setInvoice(today())}>
+                      오늘
+                    </Button>
+                  </InputAdornment>
+                ),
+              },
+            }}
           />
           <TextField label="메모" value={memo} onChange={(e) => setMemo(e.target.value)} multiline minRows={2} />
           <ErrorAlert error={save.error} />

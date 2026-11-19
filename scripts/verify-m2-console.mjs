@@ -71,7 +71,7 @@ check("콘솔에서 게시한 v2가 공개, 주소 반영", live2.status === 200
 await page.getByTestId("version-1").getByRole("button", { name: "롤백" }).click();
 await toast("v1로 되돌렸습니다");
 check("콘솔 롤백 → v1 공개", (await routerRequest(host, "/")).headers["x-site-version"] === "1");
-const previewHref = await page.getByTestId("version-2").getByRole("link", { name: "프리뷰" }).getAttribute("href");
+const previewHref = await page.getByTestId("version-2").getByRole("link", { name: "내부 미리보기" }).getAttribute("href");
 const preview = await fetch(previewHref.replace(/^https?:\/\/[^/]+/, API));
 check("프리뷰 링크는 api 절대 URL이고 열림", previewHref.startsWith("http") && preview.status === 200);
 await shot("overview");

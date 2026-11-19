@@ -1,4 +1,5 @@
 import { Box, Link, Stack, TextField, Typography } from "@mui/material";
+import { gridLocale } from "../grid-locale.js";
 import { DataGrid, type GridColDef } from "@mui/x-data-grid";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
@@ -74,6 +75,7 @@ export function SitesPage() {
       <ErrorAlert error={sites.error} />
       <Box sx={{ bgcolor: "background.paper" }}>
         <DataGrid
+          localeText={gridLocale}
           rows={rows}
           columns={columns}
           loading={sites.isLoading}

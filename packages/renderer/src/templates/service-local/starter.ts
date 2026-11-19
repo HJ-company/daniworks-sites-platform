@@ -9,7 +9,8 @@ export interface StarterInput {
   representative?: string;
 }
 
-const TODO = "(작성 필요)";
+/** Marks copy the operator or the AI still has to write; drafts that contain it are flagged. */
+export const TODO = "(작성 필요)";
 
 /**
  * A valid starting config for a new site from the console: real identity fields, placeholder
