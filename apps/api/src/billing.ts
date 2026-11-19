@@ -447,7 +447,6 @@ export async function sitePayments(db: D1Database, siteId: string) {
   return results;
 }
 
-/** Payment history across sites. Dates filter on the payment day (KST). */
 /**
  * Payment history across sites. Dates filter on the payment day (KST). Rows carry the site's
  * current customer and whether the site still exists (payments outlive purged sites).

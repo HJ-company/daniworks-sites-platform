@@ -151,11 +151,12 @@ async function handle(request: Request, env: Env): Promise<Response> {
   }
 }
 
-/** Routes for authenticated operators (Authentik `operator` group) and scripts. */
+/** What the audit row records about a request's target, filled in by the route that knows. */
 interface AuditNote {
   target: string | null;
 }
 
+/** Routes for authenticated operators (Authentik `operator` group) and scripts. */
 async function operatorRoutes(request: Request, env: Env, url: URL, parts: string[], method: string, actor: Actor, note: AuditNote): Promise<Response> {
 
   // PUT /admin/shared/<version>/<path>: upload one shared asset file.

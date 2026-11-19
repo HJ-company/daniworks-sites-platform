@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { businessBasicTemplate } from "@dani-builder/site-templates";
-import { validateSiteConfig } from "../src/validate.js";
+import { parseSiteConfig } from "../src/validate.js";
+
+const validateSiteConfig = (config: Parameters<typeof parseSiteConfig>[0]) => parseSiteConfig(config).errors;
 import { renderSite } from "../src/render.js";
 import type { SiteConfig } from "../src/site-config.js";
 

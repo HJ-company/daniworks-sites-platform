@@ -161,7 +161,7 @@ export function safeReturn(value: string | null, origin: string) {
   }
 }
 
-async function tokenRequest(env: Env, cfg: NonNullable<ReturnType<typeof config>>, body: Record<string, string>) {
+async function tokenRequest(cfg: NonNullable<ReturnType<typeof config>>, body: Record<string, string>) {
   const { token_endpoint } = await discovery(cfg.issuer);
   const res = await fetch(token_endpoint, {
     method: "POST",
@@ -212,13 +212,13 @@ async function login(request: Request, cfg: NonNullable<ReturnType<typeof config
   return new Response(null, { status: 302, headers: { location: target.toString(), "set-cookie": cookie(request, LOGIN_COOKIE, pending, 600) } });
 }
 
-async function callback(request: Request, env: Env, cfg: NonNullable<ReturnType<typeof config>>) {
+async function callback(request: Request, cfg: NonNullable<ReturnType<typeof config>>) {
   const url = new URL(request.url);
   const pending = await open<{ verifier: string; state: string; nonce: string; back: string }>(cfg.sessionSecret, readCookie(request, LOGIN_COOKIE));
   if (!pending || url.searchParams.get("state") !== pending.state || !url.searchParams.get("code")) {
     return page(400, "로그인을 다시 시작해 주세요", `로그인 요청이 만료되었거나 올바르지 않습니다. <a href="/auth/login">다시 로그인</a>`);
   }
-  const tokens = await tokenRequest(env, cfg, {
+  const tokens = await tokenRequest(cfg, {
     grant_type: "authorization_code",
     code: url.searchParams.get("code")!,
     redirect_uri: `${url.origin}/auth/callback`,
@@ -257,7 +257,7 @@ async function callback(request: Request, env: Env, cfg: NonNullable<ReturnType<
  * the winner's new session. Once the token has actually expired a loser answers 401 and the SPA
  * retries with the winner's cookie (api.ts); there is no shared store to coordinate across isolates.
  */
-async function currentSession(request: Request, env: Env, cfg: NonNullable<ReturnType<typeof config>>) {
+async function currentSession(request: Request, cfg: NonNullable<ReturnType<typeof config>>) {
   const session = await open<Session>(cfg.sessionSecret, readSessionCookie(request));
   if (!session) return null;
   const now = Date.now() / 1000;
@@ -266,7 +266,7 @@ async function currentSession(request: Request, env: Env, cfg: NonNullable<Retur
   if (!session.rt) return stillValid;
   try {
     // Refused, unreachable or invalid alike: keep the current token while it lasts.
-    const tokens = await tokenRequest(env, cfg, { grant_type: "refresh_token", refresh_token: session.rt });
+    const tokens = await tokenRequest(cfg, { grant_type: "refresh_token", refresh_token: session.rt });
     if (!tokens) return stillValid;
     const next = await sessionFrom(cfg, tokens, session.rt);
     return next.operator ? { session: next.session, renewed: true } : null;
@@ -292,7 +292,7 @@ export default {
     const url = new URL(request.url);
 
     if (url.pathname === "/auth/login") return login(request, cfg);
-    if (url.pathname === "/auth/callback") return callback(request, env, cfg);
+    if (url.pathname === "/auth/callback") return callback(request, cfg);
     if (url.pathname === "/auth/logout") return logout(request, cfg);
     if (url.pathname === "/auth/logged-out") return page(200, "로그아웃했습니다", `<a href="/auth/login">다시 로그인</a>`);
 
@@ -300,7 +300,7 @@ export default {
     // page's parallel chunk loads out of the refresh race.
     if (url.pathname.startsWith("/assets/")) return env.ASSETS.fetch(request);
 
-    const current = await currentSession(request, env, cfg);
+    const current = await currentSession(request, cfg);
     const store = async (res: Response) => {
       if (!current?.renewed) return res;
       const cookies = sessionCookies(request, await seal(cfg.sessionSecret, current.session));

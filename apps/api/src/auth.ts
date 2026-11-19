@@ -12,7 +12,6 @@ export interface Actor {
   type: "user" | "script";
   id: string;
   name: string | null;
-  groups: string[];
   via: "console" | "mcp" | "script";
 }
 
@@ -59,7 +58,7 @@ export async function authenticate(request: Request, env: Env): Promise<Actor> {
   if (!env.ADMIN_TOKEN) throw new HttpError(500, "ADMIN_TOKEN이 설정되지 않았습니다");
   const token = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ?? "";
   if (!token) throw new HttpError(401, "인증이 필요합니다");
-  if (sameSecret(token, env.ADMIN_TOKEN)) return { type: "script", id: "script", name: "스크립트", groups: [OPERATOR_GROUP], via: "script" };
+  if (sameSecret(token, env.ADMIN_TOKEN)) return { type: "script", id: "script", name: "스크립트", via: "script" };
 
   let unverified: JWTPayload;
   try {
@@ -84,7 +83,7 @@ export async function authenticate(request: Request, env: Env): Promise<Actor> {
   const groups = Array.isArray(payload.groups) ? payload.groups.filter((g): g is string => typeof g === "string") : [];
   if (!groups.includes(OPERATOR_GROUP)) throw new HttpError(403, "운영자 권한이 없습니다. 관리자에게 operator 그룹을 요청하세요");
   const name = typeof payload.name === "string" ? payload.name : typeof payload.preferred_username === "string" ? payload.preferred_username : null;
-  return { type: "user", id: payload.sub!, name, groups, via: client.via };
+  return { type: "user", id: payload.sub!, name, via: client.via };
 }
 
 /** RFC 9728 metadata MCP clients read after a 401 to find Authentik. */

@@ -76,7 +76,3 @@ export function parseSiteConfig(input: SiteConfigInput | unknown): Validation {
   return errors.length ? { ok: false, errors } : { ok: true, config: input as LegacySiteConfig, errors: [] };
 }
 
-/** Errors only; kept for callers that already hold a parsed config. */
-export function validateSiteConfig(config: SiteConfigInput): string[] {
-  return parseSiteConfig(config).errors;
-}

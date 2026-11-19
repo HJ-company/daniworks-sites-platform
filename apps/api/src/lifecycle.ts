@@ -8,7 +8,6 @@ import { bumpRevision, refreshBilling } from "./billing.js";
 import { removeDomain } from "./domains.js";
 import { routesOf, syncHostRecordsNow } from "./routes.js";
 import { acquireRoutesLease, getSite, releaseRoutesLease, type SiteRow } from "./store.js";
-export { ensureNotPurged } from "./purge-guard.js";
 
 const now = () => new Date().toISOString();
 export const retentionDays = (env: Env) => Number(env.RETENTION_DAYS ?? 365);

@@ -53,7 +53,7 @@ export async function findSite(env: Env, idOrSlug: string): Promise<SiteRow> {
   return getSite(env.DB, bySlug?.id ?? idOrSlug);
 }
 
-/** Console "new site": either a full config or starter fields expanded server-side. */
+/** POST /sites: either a full config or starter fields expanded server-side (scripts, seed). */
 export function configFromBody(body: { config?: unknown; starter?: Partial<StarterInput> }): unknown {
   if (body.config !== undefined) return body.config;
   const starter = body.starter;

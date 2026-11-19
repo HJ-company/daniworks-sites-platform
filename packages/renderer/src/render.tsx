@@ -9,8 +9,6 @@ export interface RenderOptions {
   assetBase: string;
   /** Public origin (`https://jefes.dsites.kr`) for canonical, OG and structured data URLs. */
   origin?: string;
-  /** Skip the client bundle to measure server-only output. */
-  hydrate?: boolean;
   /** Preview renders: noindex, no canonical, inquiry form disabled. */
   preview?: boolean;
   /** Prefix for root-relative site links (previews: `/preview/<token>`). */
@@ -35,9 +33,9 @@ export interface RenderResult {
   /** Home page HTML. */
   html: string;
   pages: RenderedPage[];
-  ms: number;
 }
 
+/** Must match the id client.tsx reads the page data from. */
 const DATA_ID = "__SITE_DATA__";
 
 function escapeJson(value: unknown) {
@@ -111,7 +109,6 @@ async function renderPage(config: SiteConfig, sitePage: SitePage, options: Rende
   const stream = await renderToReadableStream(<SiteView data={page.data} />);
   await stream.allReady;
   const body = await new Response(stream).text();
-  const hydrate = options.hydrate ?? true;
   const { title, description } = config.meta;
   const lang = ("lang" in config.meta && config.meta.lang) || "ko";
   const home = page.route === "/";
@@ -151,8 +148,8 @@ ${options.inlineCss ? `<style>${options.inlineCss.replace(/<\/style/gi, "<\\/sty
 </head>
 <body${page.data.site ? ' class="has-contact-bar"' : ""}>
 <div id="root">${body}</div>
-${hydrate ? `<script id="${DATA_ID}" type="application/json">${escapeJson(page.data)}</script>
-<script type="module" fetchpriority="low" src="${options.assetBase}/_assets/client.js"></script>` : ""}
+<script id="${DATA_ID}" type="application/json">${escapeJson(page.data)}</script>
+<script type="module" fetchpriority="low" src="${options.assetBase}/_assets/client.js"></script>
 </body>
 </html>`;
   return { route: page.route, path: page.route === "/" ? "index.html" : `${page.route.slice(1)}/index.html`, html };
@@ -160,11 +157,8 @@ ${hydrate ? `<script id="${DATA_ID}" type="application/json">${escapeJson(page.d
 
 /** Config → one HTML document per page. Runs in workerd and Node. */
 export async function renderSite(input: SiteConfigInput, options: RenderOptions): Promise<RenderResult> {
-  const started = Date.now();
   const config = requireValidConfig(input);
   const pages: RenderedPage[] = [];
   for (const page of sitePagesFor(config, options.assetBase)) pages.push(await renderPage(config, page, options));
-  return { html: pages[0]!.html, pages, ms: Date.now() - started };
+  return { html: pages[0]!.html, pages };
 }
-
-export { DATA_ID };

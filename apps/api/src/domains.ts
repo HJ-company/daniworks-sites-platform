@@ -3,15 +3,13 @@ import type { Env } from "./env.js";
 import { HttpError } from "./http.js";
 import { kvHostKey } from "./keys.js";
 import { renderKeyOf, rerenderLive, siteOrigin } from "./publish.js";
-import { kvWrite, syncHostRecordsNow } from "./routes.js";
+import { kvWrite } from "./routes.js";
 import { SaasClient, type CustomHostname } from "./saas.js";
 import { acquireRoutesLease, getSite, releaseRoutesLease, type SiteRow } from "./store.js";
 
 export const INCLUDED_HOSTNAMES = 100;
 /** The platform's own zone; never connectable as a customer domain in any environment. */
 const PLATFORM_ZONE = "dsites.kr";
-
-/** Public suffixes common for Korean small businesses; the label before one is the apex. */
 
 export interface DomainRow {
   hostname: string;
