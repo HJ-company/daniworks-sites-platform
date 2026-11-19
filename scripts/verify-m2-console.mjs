@@ -88,7 +88,7 @@ await page.getByTestId("tab-domains").click();
 await page.locator("input[name=hostname]").fill(`www.console-${run}.co.kr`);
 await page.getByRole("button", { name: "연결" }).click();
 const domainCard = page.getByTestId(`domain-www.console-${run}.co.kr`);
-check("도메인 등록과 CNAME 안내 표시", (await domainCard.textContent({ timeout: 10000 })).includes("fallback.dsites.kr"));
+check("도메인 등록과 CNAME 안내 표시", (await domainCard.textContent({ timeout: 10000 })).includes("connect.dsites.kr"));
 await domainCard.getByRole("button", { name: "삭제" }).click();
 check("도메인 삭제", await domainCard.waitFor({ state: "detached", timeout: 10000 }).then(() => true).catch(() => false));
 

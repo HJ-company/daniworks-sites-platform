@@ -35,7 +35,7 @@ const added = await api("POST", `/sites/${siteId}/domains`, { hostname: `https:/
 check(
   "등록: 201 pending, CNAME 안내(fallback 대상), www라 루트 아님",
   added.status === 201 && added.data.hostname === custom && added.data.status === "pending" &&
-    added.data.instructions.cname.value === "fallback.dsites.kr" && added.data.instructions.apex === false &&
+    added.data.instructions.cname.value === "connect.dsites.kr" && added.data.instructions.apex === false &&
     added.data.instructions.optionalTxt?.name === `_cf-custom-hostname.${custom}`,
   added.data,
 );

@@ -104,7 +104,7 @@ policy: https://app.notion.com/p/41cecd5a3ac28107820effaeb6cb4fc8
 | `<slug>.dsites.kr` | 공개 사이트 기본 주소 |
 | `dsites.kr/preview/{token}` | 고객용 시안 링크 |
 | `api.dsites.kr` | 플랫폼 API, MCP(`/mcp`), 버전 프리뷰, Turnstile 프레임 |
-| fallback origin(`*.dsites.kr` 하위) | 커스텀 도메인 CNAME 대상 |
+| `connect.dsites.kr` | 커스텀 도메인 CNAME 대상(for SaaS fallback origin) |
 | `dsites-console.daniworks.kr` | 관리자 콘솔 |
 | `authentik.daniworks.kr` | 운영자 로그인(OIDC·OAuth) |
 
@@ -267,7 +267,7 @@ packages/
 
 | 단계 | 내용 | 비고 |
 | --- | --- | --- |
-| 4-A 정합화 | 보관 기간 기본값 365일, 중단 페이지(업체명만, 503 + `Retry-After`), CNAME 대상 정리(코드 `fallback.dsites.kr` ↔ 스테이징 `connect.dsites.kr`) | 작은 수정 |
+| 4-A 정합화 | 보관 기간 기본값 365일, 중단 페이지(업체명만, 503 + `Retry-After`), CNAME 대상 정리(`connect.dsites.kr`로 통일) | 작은 수정 |
 | 4-B 고객·구독·입금 | `customers` 확장, `subscriptions`·`payments`, 게시 시 구독 검사, 상태 전이, 연체 cron(14일 유예 → 자동 중단, 입금 시 재공개), 콘솔 결제·고객 화면 | 첫 고객 오픈의 전제 |
 | 4-C 시안 링크 | 사이트 단위 토큰(30일), `dsites.kr/preview/{token}` 서빙, 배너·문의 차단·수집 끔·만료 페이지, 콘솔 복사·폐기·재발급, `site_preview_link` | 4-B와 병행 가능 |
 | 4-D Authentik | 콘솔 OIDC(Access 대체, `dsites-console.daniworks.kr`), MCP OAuth(보호 자원 메타데이터, JWKS 검증, 그룹), `audit_log`. 실측 표 완료 | Authentik provider 2개 생성 필요(사용자 작업) |

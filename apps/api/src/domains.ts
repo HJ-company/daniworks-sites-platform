@@ -51,7 +51,7 @@ export function isApex(hostname: string) {
 
 /** DNS instructions shown to the operator and, later, the customer. */
 export function instructions(env: Env, hostname: string, cf: CustomHostname) {
-  const target = env.DOMAIN_CNAME_TARGET ?? `fallback.${env.BASE_DOMAIN}`;
+  const target = env.DOMAIN_CNAME_TARGET ?? `connect.${env.BASE_DOMAIN}`;
   const apex = isApex(hostname);
   return {
     cname: { type: "CNAME", name: hostname, value: target },
