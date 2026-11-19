@@ -1,6 +1,6 @@
 {
-  "slug": "m1-mwnrvxbz",
-  "siteId": "f31abc14-71c3-4f2a-befb-257742997c88",
+  "slug": "m1-mwnsffug",
+  "siteId": "85b7679f-e57a-4ff7-b3db-ec4a937f19dc",
   "results": [
     {
       "name": "인증 없는 요청은 401",
@@ -9,7 +9,7 @@
     {
       "name": "사이트 생성 201",
       "pass": true,
-      "hostname": "m1-mwnrvxbz.localhost"
+      "hostname": "m1-mwnsffug.localhost"
     },
     {
       "name": "입금 전 게시는 409",
@@ -26,8 +26,8 @@
     {
       "name": "v1 게시 후 공개",
       "pass": true,
-      "publishMs": 48,
-      "propagationMs": 5
+      "publishMs": 95,
+      "propagationMs": 8
     },
     {
       "name": "v2 초안 생성 201",
@@ -40,13 +40,13 @@
     {
       "name": "v2 게시 후 공개",
       "pass": true,
-      "publishMs": 60,
-      "propagationMs": 3
+      "publishMs": 88,
+      "propagationMs": 5
     },
     {
       "name": "v1로 롤백",
       "pass": true,
-      "propagationMs": 4
+      "propagationMs": 5
     },
     {
       "name": "게시된 적 없는 버전으로 롤백은 409",

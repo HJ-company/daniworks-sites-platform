@@ -79,7 +79,8 @@ export function PaymentDialog({
   const toast = useToast();
   const [amount, setAmount] = useState(String(subscription.amount));
   const [payerName, setPayerName] = useState("");
-  const [paidOn, setPaidOn] = useState(new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 10));
+  const [initialDay] = useState(() => new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 10));
+  const [paidOn, setPaidOn] = useState(initialDay);
   const [start, setStart] = useState(subscription.nextPeriod.start);
   const [end, setEnd] = useState(subscription.nextPeriod.end);
   const [memo, setMemo] = useState("");
@@ -87,14 +88,17 @@ export function PaymentDialog({
     mutationFn: () =>
       api<{ payment: Payment; site: "resumed" | "suspended" | null }>(`/sites/${siteId}/payments`, {
         method: "POST",
-        // Untouched dates are left to the server: it picks the next unpaid period and keeps two
-        // simultaneous confirmations from landing on the same one.
+        // The period shown is the period recorded. Only when nothing date-related was touched is it
+        // left to the server, which computes the same default and keeps two simultaneous
+        // confirmations from landing on the same period.
         json: {
           amount: Number(digits(amount)),
           payerName,
           paidOn,
           memo,
-          ...(start !== subscription.nextPeriod.start || end !== subscription.nextPeriod.end ? { periodStart: start, periodEnd: end } : {}),
+          ...(start !== subscription.nextPeriod.start || end !== subscription.nextPeriod.end || paidOn !== initialDay
+            ? { periodStart: start, periodEnd: end }
+            : {}),
         },
       }),
     onSuccess: (data) => {

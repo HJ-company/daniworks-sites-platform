@@ -1,10 +1,10 @@
 {
-  "siteId": "14fc9315-7069-47f9-9023-8e4dab600210",
+  "siteId": "47172190-7bad-4eb0-a34d-62d686d72696",
   "results": [
     {
       "name": null,
       "pass": true,
-      "siteId": "14fc9315-7069-47f9-9023-8e4dab600210",
+      "siteId": "47172190-7bad-4eb0-a34d-62d686d72696",
       "status": "active",
       "pointer": null,
       "redirectTo": null
@@ -16,17 +16,17 @@
     {
       "name": "상쾌공간",
       "pass": true,
-      "siteId": "14fc9315-7069-47f9-9023-8e4dab600210",
+      "siteId": "47172190-7bad-4eb0-a34d-62d686d72696",
       "status": "active",
       "pointer": {
-        "versionId": "cf51ee63-d215-48e7-bb0d-f3be6572b8a4",
+        "versionId": "d256e18e-ac40-4261-a827-5115d400e030",
         "number": 1,
-        "publishedAt": "2026-11-19T16:32:13.431Z",
+        "publishedAt": "2026-11-19T16:52:59.602Z",
         "pages": [
           "/",
           "/privacy"
         ],
-        "renderId": "696fe94ee3c44c7d"
+        "renderId": "366c3f1957904425"
       },
       "redirectTo": null
     },
@@ -51,11 +51,11 @@
       "pass": true,
       "d1": {
         "status": "suspended",
-        "published": "ef8ef4e2-3b34-43d4-85a1-5faf0a6bd9cc"
+        "published": "9d12399b-bcd9-4476-9b22-fa18b5d2d9b3"
       },
       "kv": {
         "status": "suspended",
-        "pointer": "ef8ef4e2-3b34-43d4-85a1-5faf0a6bd9cc"
+        "pointer": "9d12399b-bcd9-4476-9b22-fa18b5d2d9b3"
       }
     },
     {
@@ -63,14 +63,14 @@
       "pass": true,
       "kv": "suspended",
       "synced": {
-        "routes_synced_at": "2026-11-19T16:32:15.811Z",
-        "updated_at": "2026-11-19T16:32:15.811Z"
+        "routes_synced_at": "2026-11-19T16:53:01.636Z",
+        "updated_at": "2026-11-19T16:53:01.636Z"
       }
     },
     {
       "name": "매시간 점검: 동기화 표시가 있어도 KV가 틀리면 찾아서 복구",
       "pass": true,
-      "marker": "2026-11-19T16:32:19.862Z",
+      "marker": "2026-11-19T16:53:04.887Z",
       "kv": "active"
     },
     {

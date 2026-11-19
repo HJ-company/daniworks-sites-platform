@@ -1,11 +1,11 @@
 {
-  "at": "2026-11-19T15:50:04.044Z",
+  "at": "2026-11-19T16:56:24.756Z",
   "summary": [
     {
       "step": "m1",
       "ok": true,
-      "passed": 18,
-      "total": 18,
+      "passed": 19,
+      "total": 19,
       "seconds": 6,
       "failed": []
     },
@@ -14,7 +14,7 @@
       "ok": true,
       "passed": 28,
       "total": 28,
-      "seconds": 50,
+      "seconds": 51,
       "failed": []
     },
     {
@@ -22,7 +22,7 @@
       "ok": true,
       "passed": 26,
       "total": 26,
-      "seconds": 5,
+      "seconds": 4,
       "failed": []
     },
     {
@@ -52,8 +52,8 @@
     {
       "step": "m2-mcp",
       "ok": true,
-      "passed": 19,
-      "total": 19,
+      "passed": 20,
+      "total": 20,
       "seconds": 1,
       "failed": []
     },
@@ -62,7 +62,7 @@
       "ok": true,
       "passed": 30,
       "total": 30,
-      "seconds": 15,
+      "seconds": 16,
       "failed": []
     },
     {
@@ -86,7 +86,7 @@
       "ok": true,
       "passed": 10,
       "total": 10,
-      "seconds": 65,
+      "seconds": 64,
       "failed": []
     },
     {
@@ -116,9 +116,25 @@
     {
       "step": "m4-alignment",
       "ok": true,
-      "passed": 7,
-      "total": 7,
-      "seconds": 2,
+      "passed": 17,
+      "total": 17,
+      "seconds": 6,
+      "failed": []
+    },
+    {
+      "step": "m4-billing",
+      "ok": true,
+      "passed": 41,
+      "total": 41,
+      "seconds": 4,
+      "failed": []
+    },
+    {
+      "step": "m4-billing-console",
+      "ok": true,
+      "passed": 18,
+      "total": 18,
+      "seconds": 7,
       "failed": []
     }
   ]
