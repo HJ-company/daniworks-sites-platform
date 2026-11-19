@@ -11,7 +11,7 @@
     {
       "name": "새 사이트: 구독 시안, 월 30,000원, 게시 불가 표시",
       "pass": true,
-      "siteId": "0f35a138-1215-4caf-a07f-58bad956f4e6",
+      "siteId": "192dfb2c-5e1d-468b-a931-6741e4120362",
       "cycle": "monthly",
       "amount": 30000,
       "status": "trial",
@@ -19,6 +19,7 @@
       "billedAt": null,
       "paidThrough": null,
       "latestEnd": null,
+      "nextPaidStart": null,
       "nextDueOn": null,
       "graceEndsOn": null,
       "graceDaysLeft": null,
@@ -58,9 +59,9 @@
     {
       "name": "입금 확인 → 활성, 기본 기간 오늘부터 한 달",
       "pass": true,
-      "id": "defab943-d915-4845-a36d-69b1735de46a",
-      "site_id": "0f35a138-1215-4caf-a07f-58bad956f4e6",
-      "site_slug": "bill-mwnruarr",
+      "id": "4b86ee51-9490-432f-b929-85ee9e414cfc",
+      "site_id": "192dfb2c-5e1d-468b-a931-6741e4120362",
+      "site_slug": "bill-mwnsee56",
       "business_name": "상쾌공간",
       "amount": 33000,
       "method": "manual",
@@ -74,8 +75,8 @@
       "memo": null,
       "voided_at": null,
       "void_reason": null,
-      "created_at": "2026-11-19T16:35:30.596Z",
-      "updated_at": "2026-11-19T16:35:30.596Z"
+      "created_at": "2026-11-19T16:51:08.049Z",
+      "updated_at": "2026-11-19T16:51:08.049Z"
     },
     {
       "name": "입금 날짜·기간 형식 검증",
@@ -100,20 +101,21 @@
     {
       "name": "기간이 끝난 지 3일: 연체, 유예 11일 남음, 공개 유지",
       "pass": true,
-      "site_id": "0f35a138-1215-4caf-a07f-58bad956f4e6",
-      "slug": "bill-mwnruarr",
-      "customer_id": "83976ea3-2455-4d56-8181-ef14176c83aa",
+      "site_id": "192dfb2c-5e1d-468b-a931-6741e4120362",
+      "slug": "bill-mwnsee56",
+      "customer_id": "1c5a4033-0e91-4469-92b8-81cc7da07f79",
       "suspend_reason": null,
-      "customer_name": "상쾌공간 mwnruarr",
+      "customer_name": "상쾌공간 mwnsee56",
       "business_name": "상쾌공간",
-      "siteId": "0f35a138-1215-4caf-a07f-58bad956f4e6",
+      "siteId": "192dfb2c-5e1d-468b-a931-6741e4120362",
       "cycle": "monthly",
       "amount": 33000,
       "status": "overdue",
       "statusLabel": "연체",
-      "billedAt": "2026-11-19T16:35:30.585Z",
+      "billedAt": "2026-11-19T16:51:08.036Z",
       "paidThrough": "2026-11-17",
       "latestEnd": "2026-11-17",
+      "nextPaidStart": null,
       "nextDueOn": "2026-11-18",
       "graceEndsOn": "2026-12-01",
       "graceDaysLeft": 11,
@@ -189,16 +191,16 @@
       "pass": true
     },
     {
-      "name": "상쾌공간 mwnruarr",
+      "name": "상쾌공간 mwnsee56",
       "pass": true,
-      "id": "83976ea3-2455-4d56-8181-ef14176c83aa",
+      "id": "1c5a4033-0e91-4469-92b8-81cc7da07f79",
       "contact_name": "김철수",
       "phone": "010-0000-0001",
       "email": null,
       "billing_cycle": null,
       "status": "active",
-      "created_at": "2026-11-19T16:35:30.533Z",
-      "updated_at": "2026-11-19T16:35:30.533Z",
+      "created_at": "2026-11-19T16:51:07.987Z",
+      "updated_at": "2026-11-19T16:51:07.987Z",
       "external_ref": "https://notion.so/lead-1",
       "business_number": "123-45-67890",
       "invoice_email": "tax@example.test",
@@ -210,6 +212,10 @@
     },
     {
       "name": "결제 내역: 입금일 필터, 취소 건 포함 표시",
+      "pass": true
+    },
+    {
+      "name": "결제 내역 합계는 서버 집계(취소 제외)",
       "pass": true
     },
     {

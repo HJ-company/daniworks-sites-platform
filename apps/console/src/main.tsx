@@ -10,6 +10,9 @@ import { SitePage } from "./pages/SitePage.js";
 
 const SitesPage = lazy(() => import("./pages/SitesPage.js").then((m) => ({ default: m.SitesPage })));
 const ReportsPage = lazy(() => import("./pages/ReportsPage.js").then((m) => ({ default: m.ReportsPage })));
+const PaymentsPage = lazy(() => import("./pages/billing/PaymentsPage.js").then((m) => ({ default: m.PaymentsPage })));
+const CustomersPage = lazy(() => import("./pages/CustomersPage.js").then((m) => ({ default: m.CustomersPage })));
+const CustomerPage = lazy(() => import("./pages/CustomerPage.js").then((m) => ({ default: m.CustomerPage })));
 import { ToastProvider } from "./ui.js";
 
 const theme = createTheme({
@@ -28,6 +31,9 @@ const router = createBrowserRouter([
       { index: true, element: <SitesPage /> },
       { path: "sites/new", element: <NewSitePage /> },
       { path: "reports", element: <ReportsPage /> },
+      { path: "payments", element: <PaymentsPage /> },
+      { path: "customers", element: <CustomersPage /> },
+      { path: "customers/:customerId", element: <CustomerPage /> },
       { path: "sites/:siteId/:tab?", element: <SitePage /> },
     ],
   },

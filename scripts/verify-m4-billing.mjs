@@ -148,6 +148,9 @@ const listed = (await api("GET", "/customers")).data.customers.find((c) => c.id 
 check("고객 목록: 사이트 수, 월 청구 합계, 확인 필요 표시", listed?.site_count === 1 && listed.monthly_total === 33000 && listed.attention === 1, listed);
 const history = (await api("GET", `/payments?from=${today}&to=${today}`)).data.payments.filter((p) => p.site_id === siteId);
 check("결제 내역: 입금일 필터, 취소 건 포함 표시", history.length === 4 && history.some((p) => p.voided_at));
+const range = (await api("GET", `/payments?from=${today}&to=${today}`)).data;
+check("결제 내역 합계는 서버 집계(취소 제외)", range.count === range.payments.filter((p) => !p.voided_at).length &&
+  range.total === range.payments.filter((p) => !p.voided_at).reduce((n, p) => n + p.amount, 0) && range.truncated === false);
 check("결제 내역 필터 형식 검증", (await api("GET", "/payments?from=yesterday")).status === 422);
 const siteList = (await api("GET", "/sites")).data.sites.find((x) => x.id === siteId);
 check("사이트 목록에 구독 상태·고객명", siteList?.billing_status === "suspended" && siteList.customer_name === customer.name);

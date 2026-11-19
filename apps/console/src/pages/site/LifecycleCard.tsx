@@ -12,11 +12,8 @@ export function LifecycleCard({ siteId, site }: { siteId: string; site: SiteRow 
   const navigate = useNavigate();
   const [dialog, setDialog] = useState<"cancel" | "purge" | null>(null);
   const [typed, setTyped] = useState("");
-  const refresh = () => {
-    void queryClient.invalidateQueries({ queryKey: ["site", siteId] });
-    void queryClient.invalidateQueries({ queryKey: ["sites"] });
-    void queryClient.invalidateQueries({ queryKey: ["domains", siteId] });
-  };
+  // Cancellation touches routing, domains and billing: refresh everything.
+  const refresh = () => void queryClient.invalidateQueries();
   const run = useMutation({
     mutationFn: ({ action }: { action: "cancel" | "reactivate" | "purge" }) =>
       api<{ purgeAfter?: string }>(`/sites/${siteId}/${action}`, { method: "POST", json: action === "purge" ? { confirmSlug: typed } : {} }),

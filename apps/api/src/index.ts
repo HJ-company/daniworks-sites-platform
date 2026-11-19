@@ -147,7 +147,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
   if (parts[0] === "payments") {
     if (parts.length === 1 && method === "GET") {
       const filter = { from: url.searchParams.get("from"), to: url.searchParams.get("to"), method: url.searchParams.get("method") };
-      return json({ payments: await listPayments(env.DB, filter) });
+      return json(await listPayments(env.DB, filter));
     }
     // PATCH /payments/:id {periodStart, periodEnd, payerName, invoiceIssuedOn, memo, amount}; POST /payments/:id/void {reason}
     if (parts.length === 2 && method === "PATCH") return json({ payment: await updatePayment(env, parts[1]!, await readJson(request)) });

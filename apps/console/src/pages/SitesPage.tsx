@@ -5,6 +5,7 @@ import { useState } from "react";
 import { Link as RouterLink } from "react-router";
 import { api, kst, type SiteSummary } from "../api.js";
 import { ErrorAlert, StatusChip } from "../ui.js";
+import { BillingChip } from "./billing/billing-ui.js";
 
 const columns: GridColDef<SiteSummary>[] = [
   {
@@ -26,6 +27,12 @@ const columns: GridColDef<SiteSummary>[] = [
   },
   { field: "hostname", headerName: "대표 주소", flex: 1.2, minWidth: 200 },
   {
+    field: "billing_status",
+    headerName: "구독",
+    width: 100,
+    renderCell: ({ row }) => <BillingChip status={row.billing_status} />,
+  },
+  {
     field: "status",
     headerName: "상태",
     width: 100,
@@ -43,7 +50,7 @@ const columns: GridColDef<SiteSummary>[] = [
 
 /** Case-insensitive match on business name, slug and address. */
 const matches = (site: SiteSummary, query: string) =>
-  [site.business_name, site.slug, site.hostname].some((value) => value?.toLowerCase().includes(query));
+  [site.business_name, site.slug, site.hostname, site.customer_name].some((value) => value?.toLowerCase().includes(query));
 
 export function SitesPage() {
   const sites = useQuery({ queryKey: ["sites"], queryFn: () => api<{ sites: SiteSummary[] }>("/sites") });
@@ -58,7 +65,7 @@ export function SitesPage() {
       <TextField
         type="search"
         size="small"
-        placeholder="상호, 영문 주소, 도메인으로 찾기"
+        placeholder="상호, 영문 주소, 도메인, 고객으로 찾기"
         value={search}
         onChange={(e) => setSearch(e.target.value)}
         sx={{ maxWidth: 420 }}

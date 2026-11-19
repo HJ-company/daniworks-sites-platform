@@ -1,8 +1,13 @@
-import { AppBar, Box, Button, Container, LinearProgress, Toolbar, Typography } from "@mui/material";
+import { AppBar, Badge, Box, Button, Container, LinearProgress, Toolbar, Typography } from "@mui/material";
+import { useQuery } from "@tanstack/react-query";
+import { api, type QueueRow } from "./api.js";
 import { Suspense } from "react";
 import { Link as RouterLink, Outlet } from "react-router";
 
 export function Layout() {
+  // Sites waiting for a payment, overdue or suspended: the operator's billing to-do.
+  const queue = useQuery({ queryKey: ["billing-queue"], queryFn: () => api<{ sites: QueueRow[] }>("/billing/queue") });
+  const waiting = queue.data?.sites.length ?? 0;
   return (
     <Box sx={{ minHeight: "100vh", bgcolor: "grey.50" }}>
       <AppBar position="sticky" color="inherit" elevation={0} sx={{ borderBottom: 1, borderColor: "divider" }}>
@@ -11,6 +16,17 @@ export function Layout() {
             스타터 홈페이지 운영
           </Typography>
           <Box sx={{ flex: 1 }} />
+          <Button component={RouterLink} to="/">
+            사이트
+          </Button>
+          <Button component={RouterLink} to="/customers">
+            고객
+          </Button>
+          <Badge badgeContent={waiting} color="warning" overlap="rectangular" data-testid="nav-payments-badge">
+            <Button component={RouterLink} to="/payments">
+              결제
+            </Button>
+          </Badge>
           <Button component={RouterLink} to="/reports">
             분기 리포트
           </Button>

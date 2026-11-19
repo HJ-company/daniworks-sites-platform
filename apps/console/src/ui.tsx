@@ -20,7 +20,7 @@ export function StatusChip({ status, cancelled, unpublished }: { status: string;
   if (unpublished && status === "active") return <Chip size="small" label="미공개" color="default" variant="outlined" />;
   const map: Record<string, { label: string; color: "success" | "warning" | "default" | "error" | "info" }> = {
     active: { label: "운영", color: "success" },
-    suspended: { label: "정지", color: "warning" },
+    suspended: { label: "공개 중단", color: "warning" },
     pending: { label: "검증 대기", color: "info" },
     failed: { label: "실패", color: "error" },
     removing: { label: "삭제 중", color: "default" },

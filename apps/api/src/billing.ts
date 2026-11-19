@@ -197,6 +197,8 @@ export async function subscriptionOf(db: D1Database, siteId: string, on = today(
     paidThrough,
     /** A prepaid period further out, if any. */
     latestEnd,
+    /** Start of the next paid period that has not begun yet (prepaid), if any. */
+    nextPaidStart: periods.map((p) => p.start).filter((start) => start > on).sort()[0] ?? null,
     nextDueOn: paidThrough ? addDays(paidThrough, 1) : null,
     graceEndsOn,
     graceDaysLeft: status === "overdue" && graceEndsOn ? daysBetween(on, graceEndsOn) : null,
@@ -462,12 +464,19 @@ export async function listPayments(db: D1Database, filter: { from?: string | nul
     where.push("method = ?");
     binds.push(filter.method);
   }
-  const { results } = await db
-    .prepare(`SELECT * FROM payments WHERE ${where.join(" AND ")} ORDER BY paid_on DESC, created_at DESC LIMIT 1000`)
-    .bind(...binds)
-    .all<PaymentRow>();
-  return results;
+  const [rows, totals] = await db.batch<PaymentRow | { count: number; total: number }>([
+    db.prepare(`SELECT * FROM payments WHERE ${where.join(" AND ")} ORDER BY paid_on DESC, created_at DESC LIMIT ${HISTORY_LIMIT}`).bind(...binds),
+    // Totals over the whole range (voided payments excluded), whatever the list shows.
+    db
+      .prepare(`SELECT COUNT(*) AS count, COALESCE(SUM(amount), 0) AS total FROM payments WHERE ${where.join(" AND ")} AND voided_at IS NULL`)
+      .bind(...binds),
+  ]);
+  const payments = rows!.results as PaymentRow[];
+  const sum = totals!.results[0] as { count: number; total: number };
+  return { payments, count: sum.count, total: sum.total, truncated: payments.length === HISTORY_LIMIT };
 }
+
+const HISTORY_LIMIT = 1000;
 
 /** Work list for the payments screen: billed but unpaid, overdue, suspended for non-payment. */
 export async function billingQueue(db: D1Database, on = today()) {

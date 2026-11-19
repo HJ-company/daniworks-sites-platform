@@ -42,10 +42,14 @@ export interface SiteSummary {
   hostname: string;
   /** From the live version's config (else the latest draft's). */
   business_name: string | null;
+  billing_status: BillingStatus | null;
+  customer_id: string | null;
+  customer_name: string | null;
+  suspend_reason: "billing" | "manual" | null;
   updated_at: string;
 }
 
-export interface SiteRow extends Omit<SiteSummary, "published_number" | "latest_number" | "hostname"> {
+export interface SiteRow extends Omit<SiteSummary, "published_number" | "latest_number" | "hostname" | "billing_status" | "customer_name"> {
   published_at: string | null;
   origin_pending: number;
   /** When a cancelled site's data may be deleted. */
@@ -142,3 +146,93 @@ export const METRIC_LABELS: Record<MetricEvent, string> = {
   inquiry: "문의 접수",
 };
 export const METRIC_ORDER: MetricEvent[] = ["pageview", "tel", "kakao", "map", "booking", "inquiry_cta", "inquiry"];
+
+export type BillingStatus = "trial" | "awaiting" | "active" | "overdue" | "suspended" | "cancelled";
+export type Cycle = "monthly" | "yearly";
+
+export interface Subscription {
+  siteId: string;
+  cycle: Cycle;
+  /** KRW supply price (VAT excluded). */
+  amount: number;
+  status: BillingStatus;
+  statusLabel: string;
+  billedAt: string | null;
+  /** Last paid day that matters today (KST date). */
+  paidThrough: string | null;
+  latestEnd: string | null;
+  nextPaidStart: string | null;
+  nextDueOn: string | null;
+  graceEndsOn: string | null;
+  graceDaysLeft: number | null;
+  daysOverdue: number | null;
+  canPublish: boolean;
+  nextPeriod: { start: string; end: string };
+}
+
+export interface Payment {
+  id: string;
+  site_id: string;
+  site_slug: string;
+  business_name: string | null;
+  amount: number;
+  method: "manual" | "pg";
+  payer_name: string | null;
+  paid_on: string;
+  period_start: string;
+  period_end: string;
+  confirmed_by: string | null;
+  invoice_issued_on: string | null;
+  memo: string | null;
+  voided_at: string | null;
+  void_reason: string | null;
+  created_at: string;
+}
+
+export interface QueueRow extends Subscription {
+  site_id: string;
+  slug: string;
+  customer_id: string | null;
+  customer_name: string | null;
+  business_name: string | null;
+  suspend_reason: "billing" | "manual" | null;
+}
+
+export interface Customer {
+  id: string;
+  name: string;
+  contact_name: string | null;
+  phone: string | null;
+  email: string | null;
+  business_number: string | null;
+  invoice_email: string | null;
+  external_ref: string | null;
+  memo: string | null;
+  status: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CustomerSummary extends Customer {
+  site_count: number;
+  monthly_total: number;
+  site_names: string | null;
+  attention: number;
+}
+
+export interface CustomerDetail {
+  customer: Customer;
+  sites: {
+    id: string;
+    slug: string;
+    status: string;
+    cancelled_at: string | null;
+    published_version_id: string | null;
+    business_name: string | null;
+    subscription: Subscription;
+  }[];
+  payments: Payment[];
+}
+
+export const won = (amount: number) => `${amount.toLocaleString("ko-KR")}원`;
+export const CYCLE_LABEL: Record<Cycle, string> = { monthly: "월", yearly: "연" };
