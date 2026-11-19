@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-19T16:56:24.756Z",
+  "at": "2026-11-19T18:16:04.810Z",
   "summary": [
     {
       "step": "m1",
@@ -14,7 +14,7 @@
       "ok": true,
       "passed": 28,
       "total": 28,
-      "seconds": 51,
+      "seconds": 52,
       "failed": []
     },
     {
@@ -38,7 +38,7 @@
       "ok": true,
       "passed": 24,
       "total": 24,
-      "seconds": 10,
+      "seconds": 11,
       "failed": []
     },
     {
@@ -94,7 +94,7 @@
       "ok": true,
       "passed": 14,
       "total": 14,
-      "seconds": 48,
+      "seconds": 49,
       "failed": []
     },
     {
@@ -132,9 +132,25 @@
     {
       "step": "m4-billing-console",
       "ok": true,
-      "passed": 18,
-      "total": 18,
-      "seconds": 7,
+      "passed": 30,
+      "total": 30,
+      "seconds": 11,
+      "failed": []
+    },
+    {
+      "step": "m4-draft-links",
+      "ok": true,
+      "passed": 34,
+      "total": 34,
+      "seconds": 8,
+      "failed": []
+    },
+    {
+      "step": "m4-auth",
+      "ok": true,
+      "passed": 30,
+      "total": 30,
+      "seconds": 10,
       "failed": []
     }
   ]

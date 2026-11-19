@@ -13,7 +13,7 @@ export class ApiError extends Error {
   }
 }
 
-export async function api<T>(path: string, init: RequestInit & { json?: unknown } = {}): Promise<T> {
+export async function api<T>(path: string, init: RequestInit & { json?: unknown } = {}, attempt = 0): Promise<T> {
   const { json, ...rest } = init;
   const res = await fetch(`/api${path}`, {
     ...rest,
@@ -22,6 +22,15 @@ export async function api<T>(path: string, init: RequestInit & { json?: unknown 
   });
   const text = await res.text();
   const data = text ? (JSON.parse(text) as unknown) : null;
+  if (res.status === 401 && (data as { login?: string } | null)?.login) {
+    // A parallel request may be renewing the session right now: retry with its cookie.
+    if (attempt < 2 && !(rest.body instanceof ReadableStream)) {
+      await new Promise((resolve) => setTimeout(resolve, attempt === 0 ? 300 : 1000));
+      return api<T>(path, init, attempt + 1);
+    }
+    // Session over (logged out elsewhere, refresh refused): back through the login, then here.
+    window.location.assign(`/auth/login?return=${encodeURIComponent(window.location.pathname + window.location.search)}`);
+  }
   if (!res.ok) {
     const body = data as { error?: string; details?: unknown } | null;
     throw new ApiError(res.status, body?.error ?? `HTTP ${res.status}`, body?.details);

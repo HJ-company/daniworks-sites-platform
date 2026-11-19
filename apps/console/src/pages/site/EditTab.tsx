@@ -97,6 +97,7 @@ export function EditTab({ siteId }: { siteId: string }) {
       toast(`v${number} 초안을 저장했습니다`);
       setNote("");
       await queryClient.invalidateQueries({ queryKey: ["site", siteId] });
+      await queryClient.invalidateQueries({ queryKey: ["audit", siteId] });
       await queryClient.invalidateQueries({ queryKey: ["latest", siteId] });
     },
   });

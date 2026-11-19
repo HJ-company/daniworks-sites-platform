@@ -31,6 +31,7 @@ export function DraftLinkCard({ siteId, site }: { siteId: string; site: SiteRow 
       setConfirm(null);
       toast(action === "issue" ? "시안 링크를 만들었습니다" : "시안 링크를 막았습니다");
       void queryClient.invalidateQueries({ queryKey: ["site", siteId] });
+      void queryClient.invalidateQueries({ queryKey: ["audit", siteId] });
     },
   });
   if (site.cancelled_at) return null;

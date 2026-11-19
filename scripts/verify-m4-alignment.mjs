@@ -1,9 +1,8 @@
 // M4 step 4-A: code aligned with the PRD. Suspended sites show only the business name (503,
 // Retry-After, no contact details), and the console fixes from the first product-owner test
 // (business names, unpublished state, domain guide, plain-language cancel and suspend dialogs).
-import { api, chromium, evidence, localD1, localKv, routerRequest, uploadShared, paySite } from "./lib/verify.mjs";
+import { api, chromium, evidence, localD1, localKv, routerRequest, uploadShared, paySite, consoleLogin, CONSOLE } from "./lib/verify.mjs";
 
-const CONSOLE = process.env.CONSOLE_URL ?? "http://127.0.0.1:8789";
 
 const { fieldFixture } = await import("../packages/renderer/src/templates/service-local/fixtures.ts");
 const ev = evidence("m4-alignment");
@@ -56,6 +55,7 @@ check("API 목록·상세에 상호", listed.find((s) => s.id === siteId)?.busin
 const browser = await chromium().launch();
 const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, permissions: ["clipboard-read", "clipboard-write"] });
 const page = await context.newPage();
+await consoleLogin(page);
 const errors = [];
 page.on("pageerror", (e) => errors.push(String(e)));
 const shot = (name) => page.screenshot({ path: `${ev.dir}/${name}.png`, fullPage: true });

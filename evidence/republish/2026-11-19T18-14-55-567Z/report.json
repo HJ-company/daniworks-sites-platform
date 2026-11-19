@@ -1,0 +1,33 @@
+{
+  "renderVersion": "5a89fdd94e0f-aed96741",
+  "threshold": 0.0001,
+  "apply": true,
+  "tokenLeaks": [],
+  "report": [
+    {
+      "slug": "rp-tall-mwnvdfdk",
+      "siteId": "538749c5-ab7f-494b-b633-025dec58a78b",
+      "from": "old-assets",
+      "to": "5a89fdd94e0f-aed96741",
+      "renderId": "30cb9d99bf574e1f",
+      "diffs": {
+        "home-mobile": {
+          "ratio": 1,
+          "reason": "size 390x6915 → 390x6940"
+        },
+        "home-desktop": {
+          "ratio": 1,
+          "reason": "size 1280x5720 → 1280x5801"
+        },
+        "privacy-mobile": {
+          "ratio": 0
+        },
+        "privacy-desktop": {
+          "ratio": 0
+        }
+      },
+      "same": false,
+      "result": "review"
+    }
+  ]
+}

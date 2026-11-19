@@ -1,5 +1,5 @@
 {
-  "slug": "mcp-mwnsywa0",
+  "slug": "mcp-mwnvbfl1",
   "results": [
     {
       "name": "토큰 없는 MCP 요청은 401",
@@ -50,10 +50,10 @@
     {
       "name": "site_create: 사이트와 프리뷰 URL",
       "pass": true,
-      "siteId": "6e544288-7f79-4228-8fd7-1e47946a03b6",
-      "versionId": "83909b53-1103-4e20-bddc-61fb952c06f1",
-      "hostname": "mcp-mwnsywa0.localhost",
-      "previewUrl": "http://127.0.0.1:8788/preview/97b851762ccf4eae86b8f3e05cd0031f"
+      "siteId": "9a27dceb-5609-4c44-b3f6-ef499b7f1e0b",
+      "versionId": "c6a93e84-8793-4f7e-929a-c734881c7995",
+      "hostname": "mcp-mwnvbfl1.localhost",
+      "previewUrl": "http://127.0.0.1:8788/preview/b4694aaa65074fc7aab7c2acbf23a5fb"
     },
     {
       "name": "프리뷰 URL 열림",
@@ -62,8 +62,8 @@
     {
       "name": "asset_upload(base64): key·크기",
       "pass": true,
-      "key": "m:6e544288-7f79-4228-8fd7-1e47946a03b6/9ea3888a0c09e05d62de.jpg",
-      "url": "/_media/6e544288-7f79-4228-8fd7-1e47946a03b6/9ea3888a0c09e05d62de.jpg",
+      "key": "m:9a27dceb-5609-4c44-b3f6-ef499b7f1e0b/9ea3888a0c09e05d62de.jpg",
+      "url": "/_media/9a27dceb-5609-4c44-b3f6-ef499b7f1e0b/9ea3888a0c09e05d62de.jpg",
       "width": 1200,
       "height": 800,
       "bytes": 26878
@@ -71,8 +71,8 @@
     {
       "name": "asset_upload(url, 외부): 네이버 RSS 썸네일을 원본 크기(900px)로",
       "pass": true,
-      "key": "m:6e544288-7f79-4228-8fd7-1e47946a03b6/67e27c24d87c60c58c07.jpg",
-      "url": "/_media/6e544288-7f79-4228-8fd7-1e47946a03b6/67e27c24d87c60c58c07.jpg",
+      "key": "m:9a27dceb-5609-4c44-b3f6-ef499b7f1e0b/67e27c24d87c60c58c07.jpg",
+      "url": "/_media/9a27dceb-5609-4c44-b3f6-ef499b7f1e0b/67e27c24d87c60c58c07.jpg",
       "width": 900,
       "height": 675,
       "bytes": 190053

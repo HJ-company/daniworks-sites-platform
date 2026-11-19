@@ -17,6 +17,11 @@ PUBLIC_SCHEME = "http"
 API_ORIGIN = "http://127.0.0.1:8788"
 # Customer draft links: the router answers /preview/<token> on the bare base domain.
 PREVIEW_ORIGIN = "http://localhost:8787"
+# Authentik stand-in (docker/oidc-mock.mjs): one issuer locally, one per application in Authentik.
+CONSOLE_OIDC_ISSUER = "http://127.0.0.1:8791"
+CONSOLE_OIDC_CLIENT_ID = "dsites-console"
+MCP_OIDC_ISSUER = "http://127.0.0.1:8791"
+MCP_OIDC_CLIENT_ID = "dsites-mcp"
 # Cloudflare's always-pass test key; the matching test secret goes in .dev.vars.
 TURNSTILE_SITE_KEY = "1x00000000000000000000AA"
 MAIL_MODE = "mailpit"
@@ -58,6 +63,10 @@ BASE_DOMAIN = "dsites.kr"
 PUBLIC_SCHEME = "https"
 API_ORIGIN = "https://api.dsites.kr"
 PREVIEW_ORIGIN = "https://dsites.kr"
+CONSOLE_OIDC_ISSUER = "https://authentik.daniworks.kr/application/o/dsites-console/"
+CONSOLE_OIDC_CLIENT_ID = "dsites-console"
+MCP_OIDC_ISSUER = "https://authentik.daniworks.kr/application/o/dsites-mcp/"
+MCP_OIDC_CLIENT_ID = "dsites-mcp"
 # TURNSTILE_SITE_KEY: widget whose hostnames include api.dsites.kr (the frame host).
 # TURNSTILE_SECRET, HASH_PEPPER: `wrangler secret put ... --env staging`
 MAIL_MODE = "binding"

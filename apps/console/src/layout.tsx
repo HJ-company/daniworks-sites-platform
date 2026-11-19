@@ -8,6 +8,14 @@ export function Layout() {
   // Sites waiting for a payment, overdue or suspended: the operator's billing to-do.
   const queue = useQuery({ queryKey: ["billing-queue"], queryFn: () => api<{ sites: QueueRow[] }>("/billing/queue") });
   const waiting = queue.data?.sites.length ?? 0;
+  const me = useQuery({
+    queryKey: ["me"],
+    queryFn: async () => {
+      const res = await fetch("/auth/me");
+      return res.ok ? ((await res.json()) as { name: string | null; email: string | null }) : null;
+    },
+    staleTime: Infinity,
+  });
   return (
     <Box sx={{ minHeight: "100vh", bgcolor: "grey.50" }}>
       <AppBar position="sticky" color="inherit" elevation={0} sx={{ borderBottom: 1, borderColor: "divider" }}>
@@ -32,6 +40,14 @@ export function Layout() {
           </Button>
           <Button component={RouterLink} to="/sites/new" variant="contained">
             새 사이트
+          </Button>
+          {me.data ? (
+            <Typography variant="body2" color="text.secondary" data-testid="signed-in" title={me.data.email ?? ""}>
+              {me.data.name ?? me.data.email}
+            </Typography>
+          ) : null}
+          <Button href="/auth/logout" size="small" color="inherit">
+            로그아웃
           </Button>
         </Toolbar>
       </AppBar>

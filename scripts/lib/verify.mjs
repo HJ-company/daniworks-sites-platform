@@ -55,6 +55,18 @@ export async function paySite(siteId) {
   return paid.data;
 }
 
+export const CONSOLE = process.env.CONSOLE_URL ?? "http://127.0.0.1:8789";
+
+/**
+ * M4 4-D: the console needs an Authentik login. Locally the stand-in (docker/oidc-mock.mjs)
+ * lists test users: kim and lee are operators, guest has no group.
+ */
+export async function consoleLogin(page, user = "kim") {
+  await page.goto(`${CONSOLE}/auth/login`, { waitUntil: "domcontentloaded" });
+  await page.locator(`button[value="${user}"]`).click();
+  await page.waitForURL((url) => url.origin === new URL(CONSOLE).origin && !url.pathname.startsWith("/auth/"), { timeout: 15000 });
+}
+
 export function routerRequest(host, path = "/", { method = "GET", body, headers = {} } = {}) {
   return new Promise((resolve, reject) => {
     const req = http.request(

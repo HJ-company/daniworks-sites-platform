@@ -2,10 +2,9 @@
 // (served by the router on the bare base domain), always the latest version, 30 days, with a
 // draft banner, no inquiries and no tracking. Reissue and revoke stop the old link.
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
-import { API, ROUTER_PORT, TOKEN, api, chromium, evidence, inspectPage, localD1, routerRequest, uploadShared, viewports } from "./lib/verify.mjs";
+import { API, ROUTER_PORT, TOKEN, api, chromium, evidence, inspectPage, localD1, routerRequest, uploadShared, viewports, consoleLogin, CONSOLE } from "./lib/verify.mjs";
 
 const { fieldFixture } = await import("../packages/renderer/src/templates/service-local/fixtures.ts");
-const CONSOLE = process.env.CONSOLE_URL ?? "http://127.0.0.1:8789";
 const ev = evidence("m4-draft-links");
 const { check } = ev;
 const run = Date.now().toString(36);
@@ -110,6 +109,7 @@ check("시작 설정으로 만든 사이트: 채울 문구 개수", (await api("
   (await api("GET", `/sites/${uiSite}`)).data.site.draft_todos === 0);
 const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, permissions: ["clipboard-read", "clipboard-write"] });
 const page = await context.newPage();
+await consoleLogin(page);
 const errors = [];
 page.on("pageerror", (e) => errors.push(String(e)));
 await page.goto(`${CONSOLE}/sites/${uiSite}`, { waitUntil: "networkidle" });

@@ -132,7 +132,7 @@ policy: https://app.notion.com/p/41cecd5a3ac28107820effaeb6cb4fc8
 
 - 다니웍스 운영자 전용. Vite + React CSR + MUI. 화면과 정책은 [관리자 콘솔](admin-console.md).
 - 역할: 검수, 게시·롤백, 입금 확인, 연체·해지, 도메인, 문의·통계·리포트, 전체 재게시. 사이트 제작과 콘텐츠 작성은 MCP가 맡고, 콘솔에서는 급한 오타 수정만 한다.
-- 인증: Authentik OIDC(Authorization Code + PKCE). 콘솔 Worker가 세션을 들고 Authentik 액세스 토큰을 API에 넘기며, API가 JWKS로 검증해 운영자 ID를 감사 기록에 남긴다. 스크립트는 고정 토큰(`ADMIN_TOKEN`)을 쓴다.
+- 인증: Authentik OIDC(Authorization Code + PKCE). 콘솔 Worker가 세션(암호화 쿠키)을 들고 Authentik 액세스 토큰을 API에 넘기며, API가 JWKS로 검증해 운영자 이름을 작업 기록(`audit_log`)에 남긴다. 스크립트는 고정 토큰(`ADMIN_TOKEN`)을 쓴다. 설정은 [관리자 콘솔 4절](admin-console.md#mcp-인증).
 
 ### 4-9. 고객 콘솔 (보류)
 
@@ -273,7 +273,7 @@ packages/
 | 4-A 정합화 (완료) | 보관 기간 기본값 365일, 중단 페이지(업체명만, 503 + `Retry-After`), CNAME 대상 정리(`connect.dsites.kr`로 통일), 1차 화면 테스트 반영(상호 표시·검색, 도메인 안내문, 쉬운 해지 안내) | |
 | 4-B 고객·구독·입금 (완료) | `customers` 확장, `subscriptions`·`payments`, 게시 시 구독 검사, 상태 전이, 매시간 결제 상태 갱신(14일 유예 → 자동 중단, 입금 시 재공개), 콘솔 결제·고객 화면 | |
 | 4-C 시안 링크 (완료) | 사이트 단위 토큰(30일), `dsites.kr/preview/{token}` 서빙(라우터 → api RPC), 배너·문의 차단·수집 끔·만료 페이지, 콘솔 복사·안내문·막기·새 링크, `site_preview_link`, 편집 탭 첫 화면 문구 폼 | 스테이징은 `dsites.kr` 루트에 DNS 레코드 필요 |
-| 4-D Authentik | 콘솔 OIDC(Access 대체, `dsites-console.daniworks.kr`), MCP OAuth(보호 자원 메타데이터, JWKS 검증, 그룹), `audit_log`. 실측 표 완료 | Authentik provider 2개 생성 필요(사용자 작업) |
+| 4-D Authentik (로컬 완료) | 콘솔 OIDC(Access 대체, `dsites-console.daniworks.kr`), MCP OAuth(보호 자원 메타데이터, JWKS 검증, 그룹), `audit_log`와 작업 기록 카드. 로컬은 Authentik 목업으로 실측 | 실제 Authentik 애플리케이션 2개 생성과 커넥터 실측은 M5 |
 | 4-E MCP 제작 도구 | `customer_*`, `guide_*`(스키마 문서 자동 생성 포함), `asset_import_url`·`asset_list`·`asset_delete`, `image_generate`, 콘솔 제작 화면을 오타 수정 수준으로 축소 | `OPENAI_IMAGE_MODEL` 결정 필요 |
 
 ## 10. 미결 사항
@@ -287,6 +287,8 @@ packages/
 - 출시 시 스테이징 분리: 지금은 `dsites.kr`을 스테이징으로 같이 쓴다. 별도 존(도메인)이 필요하다
 
 ## 11. 결정 기록
+
+- 2026-11-20: 콘솔·MCP 인증은 Authentik 애플리케이션 2개(각자 issuer)로 하고, API가 issuer·aud로 둘을 구분해 검증한다. 콘솔은 서버(Worker)가 토큰을 쥐는 BFF 방식이고 세션은 상태 없는 암호화 쿠키다(KV를 두지 않음). 로컬 검증은 Authentik 목업으로 한다.
 
 - 2026-11-20: 시안 링크는 라우터가 기본 도메인 루트(`dsites.kr/preview/<token>`)에서 api RPC로 렌더해 준다. 항상 최신 버전, 30일, 새 링크를 만들면 예전 링크는 막힌다. 버전 프리뷰(`api.dsites.kr/preview/`)는 운영자 내부 검수용으로 남긴다. 콘솔 편집은 업체 정보와 첫 화면·검색 문구까지 폼으로 하고, 나머지는 JSON 또는 AI 도구로 한다.
 

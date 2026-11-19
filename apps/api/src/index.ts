@@ -23,7 +23,8 @@ import { allInquiries, inquiriesCsv, listInquiries, requireEmail } from "./inqui
 import { currentQuarter, kstDay, metricsReport, quarterlyCsv, quarterlyOverview, quarterlyReport } from "./metrics.js";
 import { turnstileFrame } from "./turnstile.js";
 import type { Env } from "./env.js";
-import { HttpError, json, readJson, requireAdmin } from "./http.js";
+import { actionOf, audit, authenticate, mcpChallenge, protectedResourceMetadata, type Actor } from "./auth.js";
+import { HttpError, json, readJson } from "./http.js";
 import { MEDIA_PATH, r2MediaKey, r2SharedKey } from "./keys.js";
 import { addDomain, auditOrigins, domainQuota, listDomains, maintainDomains, refreshDomain, removeDomain, type DomainRow } from "./domains.js";
 import { templateSeedExport } from "./handoff.js";
@@ -94,10 +95,60 @@ async function handle(request: Request, env: Env): Promise<Response> {
     });
   }
 
-  requireAdmin(request, env.ADMIN_TOKEN);
+  // RFC 9728: where MCP clients (Claude, ChatGPT) find the authorization server (Authentik).
+  if (method === "GET" && (url.pathname === "/.well-known/oauth-protected-resource" || url.pathname === "/.well-known/oauth-protected-resource/mcp")) {
+    return json(protectedResourceMetadata(env));
+  }
 
-  // MCP tools for AI agents (Streamable HTTP, stateless). Same admin token.
-  if (url.pathname === "/mcp") return handleMcp(request, env);
+  let actor: Actor;
+  try {
+    actor = await authenticate(request, env);
+  } catch (error) {
+    // MCP clients start the OAuth flow from this challenge.
+    if (url.pathname === "/mcp" && error instanceof HttpError && error.status === 401) {
+      return new Response(JSON.stringify({ error: error.message }), {
+        status: 401,
+        headers: { "content-type": "application/json; charset=utf-8", "www-authenticate": mcpChallenge(env) },
+      });
+    }
+    throw error;
+  }
+
+  // MCP tools for AI agents (Streamable HTTP, stateless).
+  if (url.pathname === "/mcp") return handleMcp(request, env, actor);
+  if (method === "GET" || method === "HEAD") return operatorRoutes(request, env, url, parts, method, actor);
+
+  // Every change is recorded with who made it, refused ones included.
+  let status = 500;
+  let createdSiteId: string | null = null;
+  // Payment corrections belong to the payment's site history.
+  const paymentSite =
+    parts[0] === "payments" && parts[1]
+      ? ((await env.DB.prepare("SELECT site_id FROM payments WHERE id = ?").bind(parts[1]).first<{ site_id: string }>())?.site_id ?? null)
+      : null;
+  try {
+    const response = await operatorRoutes(request, env, url, parts, method, actor);
+    status = response.status;
+    // A new site's id is only known from the answer.
+    if (method === "POST" && parts.length === 1 && parts[0] === "sites" && status === 201) {
+      createdSiteId = ((await response.clone().json()) as { siteId?: string }).siteId ?? null;
+    }
+    return response;
+  } catch (error) {
+    status = error instanceof HttpError ? error.status : error instanceof SiteConfigError ? 422 : 500;
+    throw error;
+  } finally {
+    await audit(env, actor, {
+      action: actionOf(method, parts),
+      siteId: parts[0] === "sites" && parts[1] ? parts[1] : (paymentSite ?? createdSiteId),
+      target: parts[0] === "payments" || parts[0] === "customers" ? (parts[1] ?? null) : null,
+      status,
+    });
+  }
+}
+
+/** Routes for authenticated operators (Authentik `operator` group) and scripts. */
+async function operatorRoutes(request: Request, env: Env, url: URL, parts: string[], method: string, actor: Actor): Promise<Response> {
 
   // PUT /admin/shared/<version>/<path>: upload one shared asset file.
   if (method === "PUT" && parts[0] === "admin" && parts[1] === "shared" && parts.length > 3) {
@@ -198,6 +249,16 @@ async function handle(request: Request, env: Env): Promise<Response> {
     return json({ site: await getSite(env.DB, site.id) });
   }
 
+  // GET /sites/:id/audit: recent changes to this site and who made them.
+  if (method === "GET" && parts.length === 3 && parts[2] === "audit") {
+    const { results } = await env.DB.prepare(
+      "SELECT actor_type, actor_name, via, action, status, created_at FROM audit_log WHERE site_id = ? ORDER BY created_at DESC LIMIT 50",
+    )
+      .bind(site.id)
+      .all();
+    return json({ entries: results });
+  }
+
   // Customer draft link: POST issues (or reissues: the old link stops), DELETE revokes.
   if (parts.length === 3 && parts[2] === "draft-link") {
     if (method === "POST") return json({ draftLink: await issueDraftLink(env, site) }, 201);
@@ -216,7 +277,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
     if (parts.length === 4 && parts[3] === "bill" && method === "POST") return json({ subscription: await billSite(env, site) });
   }
   if (method === "POST" && parts.length === 3 && parts[2] === "payments") {
-    return json(await recordPayment(env, site, await readJson(request), "operator"), 201);
+    return json(await recordPayment(env, site, await readJson(request), actor.name ?? actor.id), 201);
   }
 
   // Custom domains: GET list, POST {hostname}, POST /:host/refresh, DELETE /:host

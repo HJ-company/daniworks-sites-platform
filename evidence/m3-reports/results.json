@@ -1,5 +1,5 @@
 {
-  "siteId": "f3e62e64-92d3-4842-9ba3-dd58033e9d35",
+  "siteId": "3be78f58-2a7b-48f2-ada9-0b1918bddfe9",
   "results": [
     {
       "name": "분기 합계(경계일 포함, 다음 분기 제외)",
@@ -57,7 +57,7 @@
       "name": "과거 분기에서 사이트로 들어가도 같은 분기(Q3 전환 2)",
       "pass": true,
       "q3": "연락 전환(전화·카톡·지도·예약·문의)2신규",
-      "url": "http://127.0.0.1:8789/sites/f3e62e64-92d3-4842-9ba3-dd58033e9d35/stats?quarter=2026-Q3"
+      "url": "http://127.0.0.1:8789/sites/3be78f58-2a7b-48f2-ada9-0b1918bddfe9/stats?quarter=2026-Q3"
     }
   ]
 }

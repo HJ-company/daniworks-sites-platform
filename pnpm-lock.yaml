@@ -38,6 +38,9 @@ importers:
       fflate:
         specifier: 0.8.3
         version: 0.8.3
+      jose:
+        specifier: 6.2.17
+        version: 6.2.17
       tldts:
         specifier: 7.4.19
         version: 7.4.19

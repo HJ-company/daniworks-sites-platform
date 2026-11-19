@@ -10,6 +10,7 @@ import {
 import { z } from "zod";
 import { uploadAsset } from "./assets.js";
 import { draftLink, issueDraftLink } from "./draft-links.js";
+import { audit, type Actor } from "./auth.js";
 import type { Env } from "./env.js";
 import { HttpError } from "./http.js";
 import { publish, rollback } from "./publish.js";
@@ -231,7 +232,76 @@ function createServer(env: Env) {
   return server;
 }
 
-/** `/mcp` endpoint. The caller has passed admin auth; a fresh server serves each request. */
-export function handleMcp(request: Request, env: Env) {
-  return createMcpHandler(() => createServer(env)).fetch(request);
+/** Tools that only read: not worth an audit row. */
+const READ_ONLY = new Set(["template_list", "template_get", "site_get", "site_validate", "site_preview_url"]);
+
+/** JSON-RPC messages in an MCP HTTP response: a JSON body, or server-sent events. */
+type RpcMessage = { id?: unknown; error?: unknown; result?: { isError?: boolean; structuredContent?: { siteId?: unknown }; content?: { text?: string }[] } };
+
+/** The site a successful site_create made, from its result. */
+function createdSite(answer: RpcMessage | undefined): string | null {
+  const structured = answer?.result?.structuredContent?.siteId;
+  if (typeof structured === "string") return structured;
+  try {
+    const parsed = JSON.parse(answer?.result?.content?.[0]?.text ?? "{}") as { siteId?: unknown };
+    return typeof parsed.siteId === "string" ? parsed.siteId : null;
+  } catch {
+    return null;
+  }
+}
+
+function rpcMessages(contentType: string, body: string): RpcMessage[] {
+  const texts = contentType.includes("text/event-stream")
+    ? body.split("\n").filter((line) => line.startsWith("data:")).map((line) => line.slice(5).trim())
+    : [body];
+  return texts.flatMap((text) => {
+    try {
+      const parsed = JSON.parse(text) as unknown;
+      return (Array.isArray(parsed) ? parsed : [parsed]) as RpcMessage[];
+    } catch {
+      return [];
+    }
+  });
+}
+
+/**
+ * `/mcp` endpoint. The caller is authenticated (Authentik operator or script); a fresh server
+ * serves each request. Changing tool calls are audited with the person behind them and their
+ * real outcome: a call is refused unless its JSON-RPC answer is a result without `isError`
+ * (tool refusals, input validation and unknown tools all arrive over HTTP 200).
+ */
+export async function handleMcp(request: Request, env: Env, actor: Actor) {
+  const calls: { id: unknown; name: string; site: string | null }[] = [];
+  if (request.method === "POST") {
+    try {
+      const body = (await request.clone().json()) as unknown;
+      for (const message of Array.isArray(body) ? body : [body]) {
+        const m = message as { id?: unknown; method?: string; params?: { name?: string; arguments?: { site?: unknown } } };
+        if (m?.method === "tools/call" && m.params?.name && !READ_ONLY.has(m.params.name)) {
+          calls.push({ id: m.id, name: m.params.name, site: typeof m.params.arguments?.site === "string" ? m.params.arguments.site : null });
+        }
+      }
+    } catch {
+      // Not JSON: the MCP handler answers with the protocol error.
+    }
+  }
+  const streamed = await createMcpHandler(() => createServer(env)).fetch(request);
+  if (!calls.length) return streamed;
+  // The body may still be streaming while the tool runs: read it to the end before auditing.
+  const body = await streamed.text();
+  const answers = rpcMessages(streamed.headers.get("content-type") ?? "", body);
+  for (const call of calls) {
+    const answer = answers.find((m) => m.id === call.id);
+    const succeeded = streamed.ok && answer !== undefined && !answer.error && answer.result?.isError !== true;
+    // Tools take a slug or an id; the audit keys on the id so the site's history shows the call.
+    // A new site's id comes from the creation result.
+    const siteId =
+      call.name === "site_create" && succeeded
+        ? createdSite(answer)
+        : call.site
+          ? ((await env.DB.prepare("SELECT id FROM sites WHERE slug = ?1 OR id = ?1").bind(call.site).first<{ id: string }>())?.id ?? null)
+          : null;
+    await audit(env, actor, { action: `MCP ${call.name}`, siteId, target: call.site, status: streamed.ok ? (succeeded ? 200 : 422) : streamed.status });
+  }
+  return new Response(body, streamed);
 }

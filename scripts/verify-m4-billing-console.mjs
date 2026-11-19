@@ -1,10 +1,9 @@
 // M4 step 4-B (console): customers, the subscription card, the payments work queue and history,
 // in a browser. Publishing is blocked until a deposit is confirmed; editing a payment's period
 // moves the site between public and the preparing page.
-import { api, chromium, evidence, localD1, routerRequest, uploadShared } from "./lib/verify.mjs";
+import { api, chromium, evidence, localD1, routerRequest, uploadShared, consoleLogin, CONSOLE } from "./lib/verify.mjs";
 
 const { fieldFixture } = await import("../packages/renderer/src/templates/service-local/fixtures.ts");
-const CONSOLE = process.env.CONSOLE_URL ?? "http://127.0.0.1:8789";
 const ev = evidence("m4-billing-console");
 const { check } = ev;
 const run = Date.now().toString(36);
@@ -20,6 +19,7 @@ const addDays = (day, n) => new Date(Date.parse(`${day}T00:00:00Z`) + n * 86_400
 const browser = await chromium().launch();
 const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
 const page = await context.newPage();
+await consoleLogin(page);
 const errors = [];
 page.on("pageerror", (e) => errors.push(String(e)));
 const shot = (name) => page.screenshot({ path: `${ev.dir}/${name}.png`, fullPage: true });

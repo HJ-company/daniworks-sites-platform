@@ -22,6 +22,7 @@ const steps = [
   ["m4-billing", "verify-m4-billing.mjs"],
   ["m4-billing-console", "verify-m4-billing-console.mjs"],
   ["m4-draft-links", "verify-m4-draft-links.mjs"],
+  ["m4-auth", "verify-m4-auth.mjs"],
 ];
 const only = process.argv.slice(2);
 const summary = [];

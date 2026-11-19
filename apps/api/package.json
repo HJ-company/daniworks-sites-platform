@@ -15,6 +15,7 @@
     "@sites/renderer": "workspace:*",
     "@sites/schema": "workspace:*",
     "fflate": "0.8.3",
+    "jose": "6.2.17",
     "tldts": "7.4.19",
     "zod": "4.6.7"
   },

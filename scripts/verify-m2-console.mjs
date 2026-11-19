@@ -2,10 +2,9 @@
 // create → edit (form + JSON) → validate → draft → publish → rollback → photos (browser resize)
 // → domain → inquiries CSV → stats → suspend/resume. No credential ever reaches the browser.
 import { createRequire } from "node:module";
-import { API, ROUTER_PORT, chromium, evidence, paySite, routerRequest, uploadShared } from "./lib/verify.mjs";
+import { API, ROUTER_PORT, chromium, evidence, paySite, routerRequest, uploadShared, consoleLogin, CONSOLE } from "./lib/verify.mjs";
 
 const sharp = createRequire(new URL("../packages/renderer/package.json", import.meta.url))("sharp");
-const CONSOLE = process.env.CONSOLE_URL ?? "http://127.0.0.1:8789";
 const ev = evidence("m2-console");
 const { check } = ev;
 const run = Date.now().toString(36);
@@ -16,6 +15,7 @@ uploadShared();
 const browser = await chromium().launch();
 const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, permissions: ["clipboard-read", "clipboard-write"] });
 const page = await context.newPage();
+await consoleLogin(page);
 const errors = [];
 const bodies = [];
 page.on("pageerror", (e) => errors.push(String(e)));

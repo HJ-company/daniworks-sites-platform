@@ -79,7 +79,7 @@ product: 스타터 홈페이지
 | `authentik.daniworks.kr` | 운영자 로그인(OIDC) |
 
 - 공개 사이트는 `dsites.kr` 존에 둔다. for SaaS 라우터가 존의 `*/*` 라우트를 잡아야 해서 daniworks.kr 존에는 둘 수 없다. 1단계 와일드카드라 Universal SSL로 덮여 ACM이 필요 없다.
-- 콘솔 로그인은 Authentik OIDC(Authorization Code + PKCE)다. 운영자 계정은 Authentik에서 관리하고 콘솔에는 두지 않는다. M2의 Cloudflare Access(`admin.dsites.kr`)를 대체한다.
+- 콘솔 로그인은 Authentik OIDC(Authorization Code + PKCE)다. 운영자 계정은 Authentik에서 관리하고 콘솔에는 두지 않는다. M2의 Cloudflare Access(`admin.dsites.kr`)를 대체했다(4-D).
 - 콘솔 Worker가 OIDC 세션을 들고(브라우저에는 세션 쿠키만), API 요청에 Authentik 액세스 토큰을 붙인다. API는 MCP와 같은 경로로 JWKS 검증해 운영자를 식별한다. 게시·롤백·입금 확인 기록에 운영자 ID를 남긴다.
 - 스크립트용 고정 토큰(`ADMIN_TOKEN`)은 배포·공용 에셋 업로드·재게시 등 사람이 없는 작업에만 쓴다.
 
@@ -100,17 +100,32 @@ daniworks-home과 다른 점: **프록시를 두지 않는다.** 게이트웨이
 
 권한은 Authentik 그룹으로 나눈다. `operator`는 전체, 셀프서비스 고객은 `customer` 그룹 + customer_id 클레임으로 본인 사이트만 접근한다. 도구는 하나로 둔다.
 
-M2 실측(mcp-inspector로 먼저, 이후 Claude·ChatGPT 실제 커넥터):
+설정 값(M4 4-D 구현 기준). Authentik은 애플리케이션마다 issuer가 다르므로 둘을 따로 만든다.
 
-| 항목 | 결과 |
-| --- | --- |
-| 메타데이터 탐색 → Authentik 로그인 → 토큰 발급 | 미실행 |
-| Authentik 인가 서버 discovery(RFC8414 또는 OIDC fallback) | 미실행 |
-| 토큰 `aud`·`groups` 클레임 | 미실행 |
-| 도구 목록·호출, 그룹별 거절 | 미실행 |
-| 세션 유지, 만료 후 갱신·재로그인 | 미실행 |
-| Claude 커넥터 연결 | 미실행 |
-| ChatGPT 커넥터 연결(Developer mode 가능 여부 포함) | 미실행 |
+| 항목 | 콘솔 | MCP |
+| --- | --- | --- |
+| Authentik 애플리케이션 slug(issuer) | `dsites-console` (`https://authentik.daniworks.kr/application/o/dsites-console/`) | `dsites-mcp` (`…/application/o/dsites-mcp/`) |
+| Client | Confidential, `dsites-console` | Confidential, `dsites-mcp` |
+| Redirect URI | `https://dsites-console.daniworks.kr/auth/callback` | Claude·ChatGPT·mcp-inspector 콜백(위 표) |
+| Scope | `openid profile email offline_access` + `groups` 매핑 | 같음 |
+| 접근 | Authentik 그룹 `operator` | 같음 |
+| Worker 설정 | 콘솔: `OIDC_ISSUER`, `OIDC_CLIENT_ID`, secret `OIDC_CLIENT_SECRET`, `SESSION_SECRET`(32자 이상) | api: `CONSOLE_OIDC_*`, `MCP_OIDC_*`(issuer·client id) |
+
+- 콘솔 Worker가 코드를 토큰으로 바꾸고 암호화한 HttpOnly 쿠키(필요하면 여러 개로 나눔)에 둔다. API 호출에는 운영자 본인의 액세스 토큰을 붙이고, 만료 60초 전부터 갱신한다.
+- API는 토큰의 issuer·aud로 콘솔·MCP를 구분해 JWKS로 검증하고 `operator` 그룹이 없으면 403을 준다. 스크립트용 `ADMIN_TOKEN`은 그대로 쓴다.
+- 모든 변경(거부 포함)은 `audit_log`에 남는다. 사이트 개요의 "작업 기록"에 누가(운영자 이름·AI 도구·스크립트) 무엇을 했는지 보인다. 입금 확인자는 로그인한 운영자 이름이다.
+
+실측(로컬은 Authentik 목업 `docker/oidc-mock.mjs`, `verify-m4-auth.mjs`). 실제 Authentik과 커넥터는 공개 주소가 필요해 스테이징(M5)에서 잰다.
+
+| 항목 | 로컬(목업) | 스테이징(실제 Authentik) |
+| --- | --- | --- |
+| 401 → 보호 자원 메타데이터 → 인가 서버 → 로그인(PKCE S256) → 토큰 | 통과 | 미실행 |
+| Authentik 인가 서버 discovery(RFC8414 또는 OIDC fallback) | 통과(목업은 둘 다 제공) | 미실행: Authentik이 RFC8414 경로를 주는지 확인 |
+| 토큰 `aud`·`groups` 클레임 | 통과 | 미실행: scope mapping으로 `groups` 추가 필요 |
+| 도구 목록·호출, 그룹 없는 계정 403, 위조·만료 토큰 401 | 통과 | 미실행 |
+| 콘솔 세션 유지, 만료 전 갱신, 동시 요청, 만료 후 복귀, 로그아웃 | 통과 | 미실행 |
+| Claude 커넥터 연결 | - | 미실행 |
+| ChatGPT 커넥터 연결(Developer mode 가능 여부 포함) | - | 미실행 |
 
 ## 5. MCP 도구
 

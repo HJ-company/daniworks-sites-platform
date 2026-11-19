@@ -6,13 +6,12 @@ import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, extname, join } from "node:path";
 import { readFile } from "node:fs/promises";
-import { API, TOKEN, api, chromium, evidence, localD1, localKv, routerRequest, uploadShared, paySite } from "./lib/verify.mjs";
+import { API, TOKEN, api, chromium, evidence, localD1, localKv, routerRequest, uploadShared, paySite, consoleLogin, CONSOLE } from "./lib/verify.mjs";
 
 const { unzipSync } = createRequire(new URL("../apps/api/package.json", import.meta.url))("fflate");
 const sharp = createRequire(new URL("../packages/renderer/package.json", import.meta.url))("sharp");
 const { fieldFixture } = await import("../packages/renderer/src/templates/service-local/fixtures.ts");
 const CF_MOCK = process.env.CF_MOCK_URL ?? "http://127.0.0.1:8790";
-const CONSOLE = process.env.CONSOLE_URL ?? "http://127.0.0.1:8789";
 const ev = evidence("m3-lifecycle");
 const { check } = ev;
 const run = Date.now().toString(36);
@@ -165,6 +164,7 @@ check("완전 삭제: KV 정리, 주소 404, API 404", localKv("get", `host:${ho
 // 4. console: cancel needs the slug typed
 const other = await api("POST", "/sites", { config: { ...structuredClone(fieldFixture), slug: `life2-${run}` }, createdBy: "operator" });
 const tab = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+await consoleLogin(tab);
 await tab.goto(`${CONSOLE}/sites/${other.data.siteId}`, { waitUntil: "networkidle" });
 await tab.getByRole("button", { name: "해지", exact: true }).click();
 const confirm = tab.getByRole("dialog").getByRole("button", { name: "해지" });
