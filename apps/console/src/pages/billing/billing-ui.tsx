@@ -70,7 +70,7 @@ export function paymentRequest(name: string, sub: Subscription, account: string 
     "[홈페이지 이용료 입금 안내]",
     `사장님, ${name} 홈페이지 이용료 안내드립니다.`,
     "",
-    `금액: ${won(sub.amount)}(부가세 별도)`,
+    `금액: ${won(sub.amount)}(부가세 포함)`,
     `이용 기간: ${sub.nextPeriod.start} ~ ${sub.nextPeriod.end}`,
     ...(account ? [`입금 계좌: ${account}`] : []),
     "",

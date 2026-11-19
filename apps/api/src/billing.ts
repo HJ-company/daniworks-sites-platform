@@ -24,8 +24,12 @@ export type Cycle = "monthly" | "yearly";
 export type BillingStatus = "trial" | "awaiting" | "active" | "overdue" | "suspended" | "cancelled";
 
 export const GRACE_DAYS = 14;
-/** Default supply prices in KRW (VAT excluded); editable per site. */
-export const DEFAULT_AMOUNT: Record<Cycle, number> = { monthly: 30_000, yearly: 360_000 };
+/**
+ * Default prices in KRW, VAT included (supply price 30,000 a month or 360,000 a year plus 10%);
+ * editable per site. Every amount (subscriptions, payments) is VAT-inclusive: what the owner
+ * deposits and the operator matches.
+ */
+export const DEFAULT_AMOUNT: Record<Cycle, number> = { monthly: 33_000, yearly: 396_000 };
 const PUBLISHABLE: BillingStatus[] = ["active", "overdue"];
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;

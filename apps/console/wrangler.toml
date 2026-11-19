@@ -35,8 +35,9 @@ routes = [{ pattern = "dsites-console.daniworks.kr", custom_domain = true }]
 OIDC_ISSUER = "https://authentik.daniworks.kr/application/o/dsites-console/"
 OIDC_CLIENT_ID = "dsites-console"
 MCP_URL = "https://api.dsites.kr/mcp"
-# Deposit account shown in payment requests to owners. Empty: the console warns and leaves it out.
-BILLING_ACCOUNT = ""
+# Deposit account shown in payment requests to owners. Staging placeholder: put the real
+# account here before the production launch (empty: the console warns and leaves it out).
+BILLING_ACCOUNT = "다니웍스은행 000-000000-00-000 (예금주 (주)다니웍스, 스테이징 임시값)"
 # Secrets: OIDC_CLIENT_SECRET, SESSION_SECRET (32+ random characters): wrangler secret put … --env staging
 
 [[env.staging.services]]

@@ -1,0 +1,31 @@
+{
+  "renderVersion": "0b2e5db82328-5fe3fce3",
+  "threshold": 0.0001,
+  "apply": true,
+  "tokenLeaks": [],
+  "report": [
+    {
+      "slug": "rp-privacy-mwo6nzhr",
+      "siteId": "73db89b8-f279-4e2c-b700-015b3a9ee409",
+      "from": "old-assets",
+      "to": "0b2e5db82328-5fe3fce3",
+      "renderId": "71b4f0107a1a4b89",
+      "diffs": {
+        "home-mobile": {
+          "ratio": 0.00016426571741105363
+        },
+        "home-desktop": {
+          "ratio": 0.00006050590034965035
+        },
+        "privacy-mobile": {
+          "ratio": 0.002777402250161477
+        },
+        "privacy-desktop": {
+          "ratio": 0.0012348233995584988
+        }
+      },
+      "same": false,
+      "result": "review"
+    }
+  ]
+}

@@ -118,7 +118,7 @@ check("고객 화면에서 연결하면 사이트 목록에 들어감", await pa
 await page.goto(`${CONSOLE}/sites/${billed.siteId}`, { waitUntil: "networkidle" });
 await page.getByTestId("payment-request").getByRole("button", { name: "안내문 보기" }).click();
 const request = await page.getByTestId("payment-request").locator("pre").textContent();
-check("청구된 사이트: 입금 요청 안내문(금액·기간·계좌)", request.includes("[홈페이지 이용료 입금 안내]") && request.includes("30,000원") && request.includes("입금 계좌: 로컬은행"), { request });
+check("청구된 사이트: 입금 요청 안내문(금액·기간·계좌)", request.includes("[홈페이지 이용료 입금 안내]") && request.includes("33,000원(부가세 포함)") && request.includes("입금 계좌: 로컬은행"), { request });
 await page.getByRole("button", { name: "입금 확인" }).click();
 await page.getByRole("dialog").getByRole("button", { name: "입금 확인" }).click();
 check("입금 확인 알림에 상호와 납부 기간", await page.getByText(new RegExp(`${billed.config.business.name} 입금을 확인했습니다 · .+까지 납부`)).waitFor({ timeout: 10000 }).then(() => true).catch(() => false));

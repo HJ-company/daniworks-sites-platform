@@ -23,7 +23,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link as RouterLink } from "react-router";
-import { api, CYCLE_LABEL, useMe, won, type Cycle, type CustomerSummary, type Payment, type SiteRow, type Subscription } from "../../api.js";
+import { api, CYCLE_LABEL, useMe, vatNote, won, type Cycle, type CustomerSummary, type Payment, type SiteRow, type Subscription } from "../../api.js";
 import { ErrorAlert, useToast } from "../../ui.js";
 import { BillingChip, billingSummary, paymentRequest } from "../billing/billing-ui.js";
 import { PaymentDialog } from "../billing/payment-dialog.js";
@@ -65,7 +65,10 @@ export function SubscriptionCard({ siteId, site }: { siteId: string; site: SiteR
         </Typography>
         <BillingChip status={sub.status} />
         <Typography variant="body2" sx={{ flex: 1 }}>
-          {CYCLE_LABEL[sub.cycle]} {won(sub.amount)}(부가세 별도)
+          {CYCLE_LABEL[sub.cycle]} {won(sub.amount)}
+          <Typography component="span" variant="caption" color="text.secondary" sx={{ ml: 0.5 }}>
+            ({vatNote(sub.amount)})
+          </Typography>
           <Button size="small" onClick={() => setEditing(true)} disabled={sub.status === "cancelled"}>
             변경
           </Button>
@@ -150,19 +153,19 @@ function PlanDialog({ siteId, subscription, onClose }: { siteId: string; subscri
             onChange={(e) => {
               const next = e.target.value as Cycle;
               setCycle(next);
-              // Default prices: 30,000원 a month, 360,000원 a year (supply price).
-              setAmount(String(next === "yearly" ? 360_000 : 30_000));
+              // Default prices, VAT included: 33,000원 a month, 396,000원 a year.
+              setAmount(String(next === "yearly" ? 396_000 : 33_000));
             }}
           >
             <MenuItem value="monthly">월 단위</MenuItem>
             <MenuItem value="yearly">연 단위</MenuItem>
           </TextField>
           <TextField
-            label="금액(공급가, 부가세 별도)"
+            label="금액(부가세 포함)"
             value={amount}
             onChange={(e) => setAmount(e.target.value.replace(/[^\d]/g, ""))}
             slotProps={{ input: { endAdornment: <InputAdornment position="end">원</InputAdornment> }, htmlInput: { inputMode: "numeric" } }}
-            helperText="이미 받은 입금의 기간은 바뀌지 않습니다. 다음 입금부터 적용됩니다."
+            helperText={`${Number(amount) ? `${vatNote(Number(amount))}. ` : ""}이미 받은 입금의 기간은 바뀌지 않습니다. 다음 입금부터 적용됩니다.`}
           />
           <ErrorAlert error={save.error} />
         </Stack>

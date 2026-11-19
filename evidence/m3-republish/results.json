@@ -1,9 +1,9 @@
 {
   "ids": {
-    "rp-same-mwo1b4h1": "cc496003-e6ca-4066-a283-b72e0b3068d2",
-    "rp-changed-mwo1b4h1": "1fae6aca-435d-4e2e-af4d-ab561af6a347"
+    "rp-same-mwo6nzhr": "52a7f08f-d748-42ba-8204-4b3325caeeaf",
+    "rp-changed-mwo6nzhr": "41c996a6-f03c-4066-856d-0bc8d7664320"
   },
-  "run": "2026-11-19T21-00-35-271Z",
+  "run": "2026-11-19T23-30-33-652Z",
   "results": [
     {
       "name": "공개 화면에는 블로그 카드가 있음(비교 조건)",

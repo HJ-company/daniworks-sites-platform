@@ -60,7 +60,7 @@ check("확인 필요 목록에 사이트", await visible(page.getByTestId(`pay-$
 await shot("queue");
 await page.getByTestId(`pay-${config.slug}`).click();
 const pay = page.getByRole("dialog");
-check("입금 확인 창: 청구 금액·다음 기간 기본값", (await pay.locator("input[name=amount]").inputValue()) === "30000" &&
+check("입금 확인 창: 청구 금액·다음 기간 기본값", (await pay.locator("input[name=amount]").inputValue()) === "33000" &&
   (await pay.locator("input[name=periodStart]").inputValue()) === today);
 await pay.locator("input[name=payerName]").fill("김사장");
 await pay.getByRole("button", { name: "입금 확인" }).click();
