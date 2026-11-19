@@ -2,7 +2,7 @@ import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import { Alert, Box, Button, Link, Paper, Stack, Typography } from "@mui/material";
 import { Link as RouterLink } from "react-router";
 import { useMe } from "../api.js";
-import { useToast } from "../ui.js";
+import { useCopy } from "../copy-message.js";
 
 const FIRST_REQUEST = `아래 리드로 스타터 홈페이지 시안을 만들어 줘. 게시는 하지 말고 시안 링크까지만.
 사이트 영문 주소는 (예: green-tennis)로 해 줘.
@@ -11,10 +11,9 @@ const FIRST_REQUEST = `아래 리드로 스타터 홈페이지 시안을 만들�
 
 /** How operators connect Claude or ChatGPT to the platform's tools, in plain words. */
 export function AiToolsPage() {
-  const toast = useToast();
   const me = useMe();
   const url = me.data?.mcpUrl ?? null;
-  const copy = (text: string, done: string) => void navigator.clipboard.writeText(text).then(() => toast(done));
+  const copy = useCopy();
   return (
     <Stack spacing={2} sx={{ maxWidth: 820 }}>
       <Typography variant="h5" sx={{ fontWeight: 700 }}>

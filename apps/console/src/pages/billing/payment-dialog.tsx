@@ -13,11 +13,10 @@ import {
 } from "@mui/material";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { api, kst, won, type Payment, type Subscription } from "../../api.js";
+import { api, kst, kstToday, won, type Payment, type Subscription } from "../../api.js";
 import { ErrorAlert, useToast } from "../../ui.js";
 import { dayLabel } from "./billing-ui.js";
 
-const today = () => new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 10);
 const digits = (value: string) => value.replace(/[^\d]/g, "");
 
 /**
@@ -41,7 +40,7 @@ export function PaymentDialog({
   const toast = useToast();
   const [amount, setAmount] = useState(String(subscription.amount));
   const [payerName, setPayerName] = useState("");
-  const [initialDay] = useState(() => new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 10));
+  const [initialDay] = useState(kstToday);
   const [paidOn, setPaidOn] = useState(initialDay);
   const [start, setStart] = useState(subscription.nextPeriod.start);
   const [end, setEnd] = useState(subscription.nextPeriod.end);
@@ -203,7 +202,7 @@ export function EditPaymentDialog({ payment, onClose, focusInvoice = false }: { 
               input: {
                 endAdornment: (
                   <InputAdornment position="end">
-                    <Button size="small" onClick={() => setInvoice(today())}>
+                    <Button size="small" onClick={() => setInvoice(kstToday())}>
                       오늘
                     </Button>
                   </InputAdornment>

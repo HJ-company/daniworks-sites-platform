@@ -156,6 +156,9 @@ export interface GuideSummary {
 
 export type MetricEvent = "pageview" | "tel" | "kakao" | "map" | "booking" | "inquiry_cta" | "inquiry";
 
+/** Today in Korea (YYYY-MM-DD): payment days and periods are KST dates. */
+export const kstToday = () => new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 10);
+
 export const kst = (iso: string | null) =>
   iso ? new Date(new Date(iso).getTime() + 9 * 3600_000).toISOString().replace("T", " ").slice(0, 16) : "-";
 

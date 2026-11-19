@@ -1,6 +1,6 @@
 {
-  "slug": "m1-mwo045wu",
-  "siteId": "1b54d566-cde6-4be8-ac7d-e5d7315971b3",
+  "slug": "m1-mwo173zm",
+  "siteId": "b95cd0c5-73d1-43bb-8912-53737fa280b2",
   "results": [
     {
       "name": "인증 없는 요청은 401",
@@ -9,7 +9,7 @@
     {
       "name": "사이트 생성 201",
       "pass": true,
-      "hostname": "m1-mwo045wu.localhost"
+      "hostname": "m1-mwo173zm.localhost"
     },
     {
       "name": "입금 전 게시는 409",
@@ -26,7 +26,7 @@
     {
       "name": "v1 게시 후 공개",
       "pass": true,
-      "publishMs": 82,
+      "publishMs": 81,
       "propagationMs": 6
     },
     {
@@ -40,7 +40,7 @@
     {
       "name": "v2 게시 후 공개",
       "pass": true,
-      "publishMs": 80,
+      "publishMs": 78,
       "propagationMs": 4
     },
     {

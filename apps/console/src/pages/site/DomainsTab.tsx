@@ -19,17 +19,14 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { api, kst, type DomainRow } from "../../api.js";
 import { ErrorAlert, StatusChip, useToast } from "../../ui.js";
+import { CopyableMessage, useCopy } from "../../copy-message.js";
 import { customerGuide, domainErrorText, hostLabel } from "./domain-guide.js";
 
 function CopyButton({ text, label }: { text: string; label: string }) {
-  const toast = useToast();
+  const copy = useCopy();
   return (
     <Tooltip title={`${label} 복사`}>
-      <IconButton
-        size="small"
-        aria-label={`${label} 복사`}
-        onClick={() => void navigator.clipboard.writeText(text).then(() => toast(`${label}을(를) 복사했습니다`))}
-      >
+      <IconButton size="small" aria-label={`${label} 복사`} onClick={() => copy(text, `${label}을(를) 복사했습니다`)}>
         <ContentCopyIcon fontSize="inherit" />
       </IconButton>
     </Tooltip>
@@ -139,22 +136,7 @@ export function DomainsTab({ siteId }: { siteId: string }) {
                   {records.optionalTxt ? " TXT는 이 도메인으로 다른 홈페이지를 운영 중이라 끊김 없이 옮겨야 할 때만 추가합니다." : ""}
                 </Alert>
                 {records.note ? <Alert severity="warning" sx={{ mt: 1 }}>{records.note}</Alert> : null}
-                <Button
-                  sx={{ mt: 1 }}
-                  variant="outlined"
-                  startIcon={<ContentCopyIcon />}
-                  onClick={() => void navigator.clipboard.writeText(customerGuide(d)).then(() => toast("사장님께 보낼 안내문을 복사했습니다"))}
-                >
-                  사장님께 보낼 안내문 복사
-                </Button>
-                <Box component="details" sx={{ mt: 1 }}>
-                  <Box component="summary" sx={{ cursor: "pointer", fontSize: 14, color: "text.secondary" }}>
-                    안내문 보기
-                  </Box>
-                  <Box component="pre" sx={{ mt: 1, p: 1.5, bgcolor: "grey.100", borderRadius: 1, whiteSpace: "pre-wrap", fontFamily: "inherit", fontSize: 14 }}>
-                    {customerGuide(d)}
-                  </Box>
-                </Box>
+                <CopyableMessage text={customerGuide(d)} copyLabel="사장님께 보낼 안내문 복사" copied="사장님께 보낼 안내문을 복사했습니다" />
               </>
             ) : null}
             {error && d.status !== "active" ? (

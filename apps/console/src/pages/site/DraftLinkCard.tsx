@@ -3,6 +3,7 @@ import { Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogContent
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { api, kst, type DraftLink, type SiteRow } from "../../api.js";
+import { CopyableMessage, useCopy } from "../../copy-message.js";
 import { ErrorAlert, useToast } from "../../ui.js";
 
 /** Message the operator pastes into KakaoTalk with the draft link. */
@@ -22,9 +23,8 @@ export function DraftLinkCard({ siteId, site }: { siteId: string; site: SiteRow 
   const queryClient = useQueryClient();
   const toast = useToast();
   const [confirm, setConfirm] = useState<"reissue" | "revoke" | null>(null);
-  const [showMessage, setShowMessage] = useState(false);
   const link = site.draft_link;
-  const copy = (text: string, done: string) => void navigator.clipboard.writeText(text).then(() => toast(done));
+  const copy = useCopy();
   const change = useMutation({
     mutationFn: (action: "issue" | "revoke") =>
       api<{ draftLink: DraftLink | null }>(`/sites/${siteId}/draft-link`, { method: action === "issue" ? "POST" : "DELETE", json: {} }),
@@ -84,31 +84,17 @@ export function DraftLinkCard({ siteId, site }: { siteId: string; site: SiteRow 
             </Typography>
           )}
           {!link.expired ? (
-            <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
-              <Button size="small" variant="outlined" startIcon={<ContentCopyIcon />} onClick={() => copy(link.url, "시안 링크를 복사했습니다")}>
-                링크 복사
-              </Button>
-              <Button
-                size="small"
-                variant="outlined"
-                startIcon={<ContentCopyIcon />}
-                onClick={() => copy(draftMessage(site.business_name ?? site.slug, link), "사장님께 보낼 안내문을 복사했습니다")}
-              >
-                안내문 복사
-              </Button>
-              <Button size="small" onClick={() => setShowMessage((v) => !v)} aria-expanded={showMessage}>
-                {showMessage ? "안내문 접기" : "안내문 보기"}
-              </Button>
-            </Stack>
-          ) : null}
-          {showMessage && !link.expired ? (
-            <Box
-              component="pre"
-              data-testid="draft-message"
-              sx={{ mt: 1, mb: 0, p: 1.5, bgcolor: "grey.100", borderRadius: 1, whiteSpace: "pre-wrap", fontFamily: "inherit", fontSize: 14 }}
-            >
-              {draftMessage(site.business_name ?? site.slug, link)}
-            </Box>
+            <CopyableMessage
+              text={draftMessage(site.business_name ?? site.slug, link)}
+              copyLabel="안내문 복사"
+              copied="사장님께 보낼 안내문을 복사했습니다"
+              testid="draft-message"
+              before={
+                <Button size="small" variant="outlined" startIcon={<ContentCopyIcon />} onClick={() => copy(link.url, "시안 링크를 복사했습니다")}>
+                  링크 복사
+                </Button>
+              }
+            />
           ) : null}
         </>
       ) : (
