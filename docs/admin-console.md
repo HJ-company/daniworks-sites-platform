@@ -57,9 +57,9 @@ product: 스타터 홈페이지
 
 ### 시안 링크
 
-- 형식: `https://dsites.daniworks.kr/preview/{token}`
+- 형식: `https://dsites.kr/preview/{token}`
 - 사이트 단위 토큰이다. 항상 최신 draft를 보여주므로 시안을 고쳐도 링크가 바뀌지 않는다.
-- 내부 검수용으로는 버전 단위 프리뷰 링크를 따로 둔다(M1의 `/preview/:token`).
+- 내부 검수용으로는 버전 단위 프리뷰 링크를 따로 둔다(M1의 `api.dsites.kr/preview/<token>`).
 - 유효기간은 30일(확정). 콘솔에서 폐기·재발급한다. 만료되면 안내 페이지를 보여준다.
 - 시안 화면에서만 달라지는 것:
   - 상단 고정 배너: "시안입니다. 아직 공개되지 않은 페이지입니다."
@@ -72,15 +72,16 @@ product: 스타터 홈페이지
 
 | 주소 | 용도 |
 | --- | --- |
-| `<slug>.dsites.daniworks.kr` | 공개 사이트 기본 주소 |
-| `dsites.daniworks.kr/preview/{token}` | 시안 |
+| `<slug>.dsites.kr` | 공개 사이트 기본 주소 |
+| `dsites.kr/preview/{token}` | 시안 |
+| `api.dsites.kr` | 플랫폼 API, MCP(`/mcp`), 버전 프리뷰 |
 | `dsites-console.daniworks.kr` | 관리자 콘솔 |
 | `authentik.daniworks.kr` | 운영자 로그인(OIDC) |
 
-- 콘솔 로그인은 Authentik OIDC(Authorization Code + PKCE)다. 운영자 계정은 Authentik에서 관리하고 콘솔에는 두지 않는다.
-- API는 Authentik 액세스 토큰을 JWKS로 검증해 운영자를 식별한다. 게시·롤백·입금 확인 기록에 운영자 ID를 남긴다.
-- 스크립트용 고정 토큰(`ADMIN_TOKEN`)은 배포·공용 에셋 업로드 등 사람이 없는 작업에만 쓴다.
-- `*.dsites.daniworks.kr`은 2단계 와일드카드라 Cloudflare 기본 인증서(Universal SSL, `*.daniworks.kr`까지만)로 덮이지 않는다. Advanced Certificate Manager(월 $10)가 필요하다.
+- 공개 사이트는 `dsites.kr` 존에 둔다. for SaaS 라우터가 존의 `*/*` 라우트를 잡아야 해서 daniworks.kr 존에는 둘 수 없다. 1단계 와일드카드라 Universal SSL로 덮여 ACM이 필요 없다.
+- 콘솔 로그인은 Authentik OIDC(Authorization Code + PKCE)다. 운영자 계정은 Authentik에서 관리하고 콘솔에는 두지 않는다. M2의 Cloudflare Access(`admin.dsites.kr`)를 대체한다.
+- 콘솔 Worker가 OIDC 세션을 들고(브라우저에는 세션 쿠키만), API 요청에 Authentik 액세스 토큰을 붙인다. API는 MCP와 같은 경로로 JWKS 검증해 운영자를 식별한다. 게시·롤백·입금 확인 기록에 운영자 ID를 남긴다.
+- 스크립트용 고정 토큰(`ADMIN_TOKEN`)은 배포·공용 에셋 업로드·재게시 등 사람이 없는 작업에만 쓴다.
 
 ### MCP 인증
 
@@ -146,7 +147,7 @@ context7처럼 MCP를 연결하면 제작에 필요한 지침을 바로 찾아 �
 | `asset_upload` | 작은 파일 직접 업로드(base64) |
 | `asset_list`, `asset_delete` | 사이트별 자산 관리 |
 
-- CDN 주소: `dsites.daniworks.kr/assets/<siteId>/<hash>.webp`. 내용 해시 경로라 영구 캐시. 설정에는 키만 저장한다.
+- 저장·서빙은 M2의 사진 경로(R2, WebP 변형 3종, 내용 해시 키)를 그대로 쓴다. 설정에는 키만 저장한다.
 - 생성 이미지는 배경·일러스트·분위기 이미지에만 쓴다. 시공 사례·음식·매장 등 실제 작업물은 고객 사진만 쓴다.
 - 예외: 고객이 직접 요청하면 실제 작업물 용도로도 생성한다. `image_generate`에 `customer_request`(요청 경로·일시·내용 요약)를 받아 자산에 남긴다. 요청 기록 없이는 기본 용도만 허용한다.
 - 자산에 `ai_generated`를 기록한다.
@@ -210,12 +211,16 @@ context7처럼 MCP를 연결하면 제작에 필요한 지침을 바로 찾아 �
 
 ## 8. 우선순위
 
-| 단계 | 범위 |
-| --- | --- |
-| M2 | MCP 서버 + Authentik OAuth(실측 표 완료), MCP 도구(고객·사이트 생성, draft 저장, 지침 문서 읽기·편집, 이미지 생성·가져오기, 시안 링크), 게시 시 결제 검사, 콘솔: 로그인, 사이트 상세(개요·버전), 입금 확인, 고객 상세 |
-| M3 | 홈(오늘 할 일), 도메인 관제, 연체 처리, 리포트, 통계 |
-| 셀프서비스 | Authentik 고객 그룹·가입, 고객 콘솔, PG |
-| 차후 | 해지 1년 경과 데이터 자동 삭제 |
+PRD [9절 마일스톤](prd.md#9-마일스톤)과 같은 단계 이름을 쓴다.
+
+| 단계 | 범위 | 현재 |
+| --- | --- | --- |
+| M2·M3 (완료) | MCP 도구 10종(고정 토큰), 콘솔 v1(Access, 사이트 생성·편집 포함), 사이트 상세(버전·도메인·문의·통계·리포트), 해지·인출, 전체 재게시 | 로컬 완료 |
+| M4 운영 체계 | 4-A 정합화, 4-B 고객·구독·입금(게시 시 결제 검사, 연체 처리, 결제·고객 화면), 4-C 시안 링크, 4-D Authentik(콘솔·MCP, 실측 표 완료, `audit_log`), 4-E MCP 제작 도구(고객, 지침 문서, 이미지 생성·가져오기, 자산 관리) | 미착수 |
+| M5 첫 고객 오픈 | 스테이징 전체 배포와 실측 | 미착수 |
+| M6 10곳 운영 | 홈(오늘 할 일), 도메인 관제, 운영 메뉴(지침·이미지·리포트 현황) | 미착수 |
+| 셀프서비스 | Authentik 고객 그룹·가입, 고객 콘솔, PG | 보류 |
+| 차후 | 해지 1년 경과 데이터 자동 삭제 | - |
 
 ## 9. 미결 사항
 
