@@ -9,6 +9,7 @@ import {
 import { z } from "zod";
 import { deleteAsset, listAssets, uploadAsset } from "./assets.js";
 import { createCustomer, customerDetail, duplicatesOf, findCustomers } from "./customers.js";
+import { generateImage, PURPOSES, SIZES } from "./images.js";
 import { draftLink, issueDraftLink } from "./draft-links.js";
 import { actorName, audit, type Actor } from "./auth.js";
 import { createGuide, getGuide, guideSnapshot, listGuides, updateGuide } from "./guides.js";
@@ -57,7 +58,7 @@ const TEMPLATES = [
 const INSTRUCTIONS = `스타터 홈페이지 사이트 제작 도구.
 1. 제작 전에 guide_list로 지침을 보고 guide_get으로 스키마(schema-site-config), 업종 지침, 작성 규칙, 상품·계약 요약을 읽는다. 필요한 부분만 query로 찾아 읽어도 된다.
 2. 고객(사장님)을 customer_get으로 찾고 없으면 customer_create로 등록한 뒤 site_create에 customerId를 넘긴다.
-3. site_validate로 검증하고 site_create·site_update_draft로 저장한다. 사진은 고객 사진(asset_upload)을 쓰고 작성 규칙의 이미지 용도를 따른다.
+3. site_validate로 검증하고 site_create·site_update_draft로 저장한다. 사진은 고객 사진(asset_upload)이 먼저이고, AI 이미지(image_generate)는 작성 규칙의 이미지 용도를 따른다.
 4. 사장님께는 site_preview_link의 시안 링크를 보낸다. 게시(site_publish)는 운영자 검수와 입금 확인 뒤에만 된다.
 5. 지침이 틀렸거나 빠졌으면 guide_update로 고친다(섹션 단위, baseVersion으로 충돌 확인).`;
 
@@ -107,6 +108,26 @@ function createServer(env: Env, actor: Actor) {
         if (same.length) throw new HttpError(409, "같은 전화번호·사업자번호의 고객이 이미 있습니다. 그 고객에 사이트를 연결하세요", { existing: same });
         return { customer: await createCustomer(env.DB, input) };
       }),
+  );
+
+  server.registerTool(
+    "image_generate",
+    {
+      description:
+        "AI로 이미지를 만들어 사이트 사진으로 저장하고 설정에 넣을 key·width·height를 돌려준다. purpose: background·illustration·mood는 언제나, " +
+        "work(시공 사례·음식·매장 같은 실제 작업물)는 고객이 요청했을 때만이며 customerRequest(경로·일시·요약)가 필요하다. 작성 규칙의 이미지 용도를 따른다.",
+      inputSchema: z.object({
+        site: siteRef,
+        prompt: z.string().min(1).max(4000),
+        purpose: z.enum(PURPOSES),
+        size: z.enum(SIZES).optional().describe("기본 1536x1024(가로)"),
+        customerRequest: z
+          .object({ channel: z.string().max(30), requestedAt: z.string().max(40), summary: z.string().max(300) })
+          .optional()
+          .describe("purpose가 work일 때 필수: 사장님이 언제 어디서 무엇을 요청했는지"),
+      }),
+    },
+    async ({ site: ref, ...input }) => run(async () => ({ ...(await generateImage(env, await findSite(env, ref), input)) })),
   );
 
   server.registerTool(

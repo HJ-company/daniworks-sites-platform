@@ -7,7 +7,7 @@ STATE=/state
 : "${ADMIN_TOKEN:=dev-admin-token}"
 
 # wrangler reads secrets from .dev.vars; generate it from the container environment.
-env | grep -E '^(ADMIN_TOKEN|TURNSTILE_SECRET|HASH_PEPPER|MAIL_|CF_|ACCESS_|BLOG_)' > apps/api/.dev.vars || true
+env | grep -E '^(ADMIN_TOKEN|TURNSTILE_SECRET|HASH_PEPPER|MAIL_|CF_|BLOG_|OPENAI_|IMAGE_)' > apps/api/.dev.vars || true
 
 (cd apps/api && pnpm exec wrangler d1 migrations apply DB --local --persist-to "$STATE")
 

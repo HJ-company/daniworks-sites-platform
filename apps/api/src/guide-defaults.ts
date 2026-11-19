@@ -52,7 +52,7 @@ export const GUIDE_DEFAULTS: GuideDefault[] = [
 ## 이미지 용도
 
 - 시공 사례·음식·매장·수업 장면처럼 실제 작업물은 고객 사진만 쓴다.
-- AI 생성 이미지는 배경·일러스트·분위기 이미지에만 쓴다(purpose: background, illustration, mood).
+- AI 생성 이미지(image_generate)는 배경·일러스트·분위기 이미지에만 쓴다(purpose: background, illustration, mood).
 - 예외: 고객이 직접 요청하면 실제 작업물 용도(purpose: work)로도 만든다. 이때 customerRequest에 요청 경로(카톡 등)·일시·내용 요약을 반드시 남긴다.
 - alt는 사진 내용을 설명한다. 키워드를 나열하지 않는다.
 `,

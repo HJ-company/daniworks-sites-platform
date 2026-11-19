@@ -6,6 +6,7 @@
       "tools": [
         "customer_get",
         "customer_create",
+        "image_generate",
         "asset_list",
         "asset_delete",
         "guide_list",
@@ -37,6 +38,8 @@
         "design",
         "industry-cafe-mwnweiil",
         "industry-cafe-mwnwgvkn",
+        "industry-cafe-mwnwk59x",
+        "industry-cafe-mwnwpbk9",
         "industry-service-local",
         "product-policy",
         "writing-rules"
@@ -61,7 +64,7 @@
     {
       "name": "섹션 단위 수정 → 새 버전, 다른 섹션은 그대로",
       "pass": true,
-      "version": 4
+      "version": 6
     },
     {
       "name": "읽은 뒤 다른 수정이 있었으면 거부(baseVersion)",
@@ -87,13 +90,15 @@
       "name": "AI가 만든 버전에 참고한 지침 버전 기록",
       "pass": true,
       "stamp": {
-        "industry-service-local": 4,
+        "industry-service-local": 6,
         "writing-rules": 1,
         "product-policy": 1,
         "design": 1,
         "industry-cafe-mwnweiil": 1,
         "industry-cafe-mwnwgvkn": 1,
-        "industry-cafe-mwnwk59x": 1
+        "industry-cafe-mwnwk59x": 1,
+        "industry-cafe-mwnwpbk9": 1,
+        "industry-cafe-mwnwredg": 1
       }
     },
     {
@@ -150,6 +155,41 @@
     },
     {
       "name": "콘솔 API로도 같은 규칙(DELETE)",
+      "pass": true
+    },
+    {
+      "name": "image_generate(배경): 가로 1536px 사진으로 저장, 출처·용도·프롬프트·비용 기록",
+      "pass": true,
+      "row": {
+        "key": "m:9d74a679-12ba-4610-97a0-27c295b5350e/08f8f2d5a739f67901d0.jpg",
+        "width": 1536,
+        "height": 1024,
+        "bytes": 43636,
+        "original_name": "ai:gpt-image-1",
+        "source": "ai",
+        "prompt": "밝은 거실 배경, 사람 없음",
+        "purpose": "background",
+        "customer_request": null,
+        "cost_usd": 0.04,
+        "created_at": "2026-11-19T18:53:16.189Z",
+        "url": "/_media/9d74a679-12ba-4610-97a0-27c295b5350e/08f8f2d5a739f67901d0.jpg",
+        "in_use": false
+      }
+    },
+    {
+      "name": "image_generate(실제 작업물): 고객 요청 없으면 거부",
+      "pass": true
+    },
+    {
+      "name": "image_generate(실제 작업물, 요청 있음): 요청 기록과 함께 저장",
+      "pass": true
+    },
+    {
+      "name": "OpenAI가 거부하면 이유와 함께 도구 오류",
+      "pass": true
+    },
+    {
+      "name": "이미지 생성은 작업 기록에(누가·어느 사이트)",
       "pass": true
     }
   ]

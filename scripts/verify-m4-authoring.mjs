@@ -111,5 +111,26 @@ const takenOver = await call("asset_delete", { site: config.slug, key: doomed.da
 check("10분 넘게 멈춘 삭제는 이어받아 끝냄", !takenOver.isError && (await fetch(`${API}${doomed.data.url}`)).status === 404);
 check("콘솔 API로도 같은 규칙(DELETE)", (await api("DELETE", `/sites/${site.data.siteId}/assets/${used.data.key.split("/")[1]}`)).status === 409);
 
+// 5. AI images: background freely, real work only on the customer's request (recorded)
+const bg = await call("image_generate", { site: config.slug, prompt: "밝은 거실 배경, 사람 없음", purpose: "background" });
+const bgRow = (await call("asset_list", { site: config.slug })).data.assets.find((a) => a.key === bg.data.key);
+check("image_generate(배경): 가로 1536px 사진으로 저장, 출처·용도·프롬프트·비용 기록", !bg.isError && bg.data.width === 1536 && bg.data.aiGenerated &&
+  bgRow?.source === "ai" && bgRow.purpose === "background" && bgRow.prompt.includes("거실") && bgRow.cost_usd === 0.04 &&
+  (await fetch(`${API}${bg.data.url}`)).status === 200, { row: bgRow });
+const noRequest = await call("image_generate", { site: config.slug, prompt: "입주청소 전후 주방", purpose: "work" });
+check("image_generate(실제 작업물): 고객 요청 없으면 거부", noRequest.isError && JSON.stringify(noRequest.data).includes("고객 요청"));
+const work = await call("image_generate", {
+  site: config.slug,
+  prompt: "입주청소 전후 주방",
+  purpose: "work",
+  size: "1024x1024",
+  customerRequest: { channel: "카톡", requestedAt: "2026-11-20", summary: "사장님이 작업 사진 대신 예시 이미지를 요청" },
+});
+const workRow = (await call("asset_list", { site: config.slug })).data.assets.find((a) => a.key === work.data.key);
+check("image_generate(실제 작업물, 요청 있음): 요청 기록과 함께 저장", !work.isError && workRow?.purpose === "work" && workRow.customer_request?.channel === "카톡");
+const refused = await call("image_generate", { site: config.slug, prompt: "__fail__", purpose: "mood" });
+check("OpenAI가 거부하면 이유와 함께 도구 오류", refused.isError && JSON.stringify(refused.data).includes("safety"));
+check("이미지 생성은 작업 기록에(누가·어느 사이트)", (await api("GET", `/sites/${site.data.siteId}/audit`)).data.entries.some((e) => e.action === "MCP image_generate" && e.status === 200));
+
 await client.close();
 ev.finish();

@@ -1,8 +1,12 @@
 // Stand-in for the Cloudflare for SaaS custom hostnames API (same paths and envelope), so the
 // api Worker's real client runs unchanged in Docker. In-memory; restart clears it.
 // Control (tests only): POST /__mock/:hostname/activate | /fail | /pending | /delete, GET /__mock/calls
+// Also stands in for OpenAI's Images API (/openai/v1/images/generations) for image_generate.
 import http from "node:http";
 import { randomUUID } from "node:crypto";
+import { createRequire } from "node:module";
+
+const sharp = createRequire(new URL("../packages/renderer/package.json", import.meta.url))("sharp");
 
 const TOKEN = process.env.CF_API_TOKEN ?? "mock-token";
 const hostnames = new Map();
@@ -51,6 +55,22 @@ http
       return ok(res, { outage });
     }
     if (url.pathname === "/health") return ok(res, { ok: true });
+
+    // OpenAI Images API stand-in: POST /openai/v1/images/generations answers like gpt-image
+    // (base64 PNG in data[0].b64_json). A prompt containing "__fail__" gets OpenAI's error shape.
+    if (url.pathname === "/openai/v1/images/generations" && req.method === "POST") {
+      if (req.headers.authorization !== `Bearer ${process.env.OPENAI_API_KEY ?? "mock-openai-key"}`) {
+        return send(res, 401, { error: { message: "Incorrect API key provided", type: "invalid_request_error" } });
+      }
+      const body = JSON.parse(raw || "{}");
+      if (String(body.prompt).includes("__fail__")) {
+        return send(res, 400, { error: { message: "Your request was rejected by the safety system.", type: "image_generation_user_error" } });
+      }
+      const [width, height] = String(body.size ?? "1024x1024").split("x").map(Number);
+      const hue = [...String(body.prompt)].reduce((n, c) => (n * 31 + c.charCodeAt(0)) % 360, 7);
+      const png = await sharp({ create: { width, height, channels: 3, background: `hsl(${hue}, 45%, 60%)` } }).png().toBuffer();
+      return send(res, 200, { created: Math.floor(Date.now() / 1000), data: [{ b64_json: png.toString("base64") }], usage: { total_tokens: 1000 } });
+    }
 
     // Naver blog RSS fixtures: /fixtures/naver-rss/<id>.xml. "missing" answers 404.
     const rss = url.pathname.match(/^\/fixtures\/naver-rss\/([A-Za-z0-9_-]+)\.xml$/);

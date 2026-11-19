@@ -21,6 +21,10 @@ services:
       CF_ZONE_ID: mock-zone
       CF_API_TOKEN: mock-token
       BLOG_RSS_BASE: http://cf-mock:8790/fixtures/naver-rss
+      OPENAI_API_KEY: mock-openai-key
+      OPENAI_BASE_URL: http://cf-mock:8790/openai/v1
+      OPENAI_IMAGE_MODEL: gpt-image-1
+      IMAGE_COST_USD: "0.04"
     ports:
       - "8787:8787" # router: http://<slug>.localhost:8787
       - "8788:8788" # api
