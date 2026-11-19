@@ -1,7 +1,7 @@
 // M2 step 2-8: custom domains through the Cloudflare for SaaS API (cf-mock in Docker).
 // register → instructions → pending (not served) → activation by cron → custom host serves,
 // subdomain 301s, canonical moves → removal restores the subdomain; failure and quota paths.
-import { API, ROUTER_PORT, api, chromium, evidence, localD1, localKv, routerRequest, uploadShared } from "./lib/verify.mjs";
+import { API, ROUTER_PORT, api, chromium, evidence, localD1, localKv, routerRequest, uploadShared, paySite } from "./lib/verify.mjs";
 
 const { fieldFixture } = await import("../packages/renderer/src/templates/service-local/fixtures.ts");
 const CF_MOCK = process.env.CF_MOCK_URL ?? "http://127.0.0.1:8790";
@@ -24,6 +24,7 @@ const sub = `${config.slug}.localhost`;
 const custom = `www.verify-${run}.co.kr`;
 const created = await api("POST", "/sites", { config, createdBy: "operator" });
 const siteId = created.data.siteId;
+await paySite(siteId);
 await api("POST", `/sites/${siteId}/publish`);
 // A second published version, so rollback after the domain change can be checked.
 const v2 = await api("POST", `/sites/${siteId}/versions`, { config: { ...config, meta: { ...config.meta, title: "두 번째 버전" } } });
@@ -98,6 +99,7 @@ check("검증 실패는 failed, 서빙 안 함", refreshed.data.status === "fail
 
 // 5b. an active hostname that Cloudflare later moves falls back to the subdomain (cron)
 const extra = `shop-${run}.example.com`;
+await paySite(other.data.siteId);
 await api("POST", `/sites/${other.data.siteId}/publish`);
 await api("POST", `/sites/${other.data.siteId}/domains`, { hostname: extra });
 await mock(extra, "activate");

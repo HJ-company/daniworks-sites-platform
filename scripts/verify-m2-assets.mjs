@@ -1,7 +1,7 @@
 // M2 step 2-3: photo upload. Orientation, downsizing, WebP variants, limits, idempotency,
 // serving from API (preview) and router (published), and use inside a published v2 site.
 import { createRequire } from "node:module";
-import { API, ROUTER_PORT, TOKEN, api, chromium, evidence, inspectPage, routerRequest, uploadShared, viewports } from "./lib/verify.mjs";
+import { API, ROUTER_PORT, TOKEN, api, chromium, evidence, inspectPage, routerRequest, uploadShared, viewports, paySite } from "./lib/verify.mjs";
 
 const sharp = createRequire(new URL("../packages/renderer/package.json", import.meta.url))("sharp");
 const { lessonFixture } = await import("../packages/renderer/src/templates/service-local/fixtures.ts");
@@ -43,6 +43,7 @@ uploadShared();
 const config = { ...structuredClone(lessonFixture), slug: `assets-${run}` };
 const created = await api("POST", "/sites", { config, createdBy: "operator" });
 const siteId = created.data.siteId;
+await paySite(siteId);
 check("사이트 생성", created.status === 201);
 
 // 1. sideways photo (downsized by the console): 2000×1500 stored landscape, EXIF orientation 6

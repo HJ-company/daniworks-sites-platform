@@ -48,6 +48,13 @@ export async function api(method, path, body, { auth = true, headers = {} } = {}
 }
 
 /** Request to the router with a Host header (Node cannot resolve *.localhost). */
+/** M4: nothing is published before a payment. Records one so a test site may go public. */
+export async function paySite(siteId) {
+  const paid = await api("POST", `/sites/${siteId}/payments`, { payerName: "검증" });
+  if (paid.status !== 201) throw new Error(`payment for ${siteId}: ${paid.status} ${JSON.stringify(paid.data)}`);
+  return paid.data;
+}
+
 export function routerRequest(host, path = "/", { method = "GET", body, headers = {} } = {}) {
   return new Promise((resolve, reject) => {
     const req = http.request(

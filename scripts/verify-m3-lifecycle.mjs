@@ -6,7 +6,7 @@ import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, extname, join } from "node:path";
 import { readFile } from "node:fs/promises";
-import { API, TOKEN, api, chromium, evidence, localD1, localKv, routerRequest, uploadShared } from "./lib/verify.mjs";
+import { API, TOKEN, api, chromium, evidence, localD1, localKv, routerRequest, uploadShared, paySite } from "./lib/verify.mjs";
 
 const { unzipSync } = createRequire(new URL("../apps/api/package.json", import.meta.url))("fflate");
 const sharp = createRequire(new URL("../packages/renderer/package.json", import.meta.url))("sharp");
@@ -24,6 +24,7 @@ const host = `${config.slug}.localhost`;
 const custom = `www.life-${run}.co.kr`;
 const created = await api("POST", "/sites", { config, createdBy: "operator" });
 const siteId = created.data.siteId;
+await paySite(siteId);
 
 // A real-looking site: an uploaded hero photo, a custom domain, an inquiry, metrics.
 const photo = await sharp({ create: { width: 1200, height: 800, channels: 3, background: "#58a" } }).jpeg().toBuffer();

@@ -2,7 +2,7 @@
 // create → edit (form + JSON) → validate → draft → publish → rollback → photos (browser resize)
 // → domain → inquiries CSV → stats → suspend/resume. No credential ever reaches the browser.
 import { createRequire } from "node:module";
-import { API, ROUTER_PORT, chromium, evidence, routerRequest, uploadShared } from "./lib/verify.mjs";
+import { API, ROUTER_PORT, chromium, evidence, paySite, routerRequest, uploadShared } from "./lib/verify.mjs";
 
 const sharp = createRequire(new URL("../packages/renderer/package.json", import.meta.url))("sharp");
 const CONSOLE = process.env.CONSOLE_URL ?? "http://127.0.0.1:8789";
@@ -59,7 +59,8 @@ check("수정 후 검증 통과", fixed, { errors: fixed ? null : await page.get
 await page.getByRole("button", { name: "초안으로 저장" }).click();
 check("초안 저장(v2)", await toast("v2 초안을 저장했습니다"));
 
-// 4. publish and roll back from the version table
+// 4. publish and roll back from the version table (M4: after a payment)
+await paySite(siteId);
 await page.getByTestId("tab-overview").click();
 await page.getByTestId("version-1").getByRole("button", { name: "게시" }).click();
 await toast("v1을 게시했습니다");

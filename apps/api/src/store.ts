@@ -11,6 +11,7 @@ export interface SiteRow {
   notify_email: string | null;
   template_version: string | null;
   cancelled_at: string | null;
+  suspend_reason: "billing" | "manual" | null;
   published_at: string | null;
   routes_synced_at: string | null;
   origin_pending: number;
@@ -73,7 +74,14 @@ export async function listVersions(db: D1Database, siteId: string) {
   return results;
 }
 
-export async function createSite(db: D1Database, config: SiteConfig, createdBy: CreatedBy, hostname: string) {
+/** `extra` statements (the subscription, the customer link) commit together with the site. */
+export async function createSite(
+  db: D1Database,
+  config: SiteConfig,
+  createdBy: CreatedBy,
+  hostname: string,
+  extra: (siteId: string) => D1PreparedStatement[] = () => [],
+) {
   const exists = await db.prepare("SELECT id FROM sites WHERE slug = ?").bind(config.slug).first();
   if (exists) throw new HttpError(409, `이미 쓰는 slug입니다: ${config.slug}`);
   const siteId = crypto.randomUUID();
@@ -91,6 +99,7 @@ export async function createSite(db: D1Database, config: SiteConfig, createdBy: 
     db
       .prepare("INSERT INTO domains (hostname, site_id, kind, created_at) VALUES (?, ?, 'subdomain', ?)")
       .bind(hostname, siteId, at),
+    ...extra(siteId),
   ]);
   return { siteId, versionId };
 }
@@ -170,8 +179,12 @@ export async function versionByPreviewToken(db: D1Database, previewToken: string
   return row;
 }
 
+/** Operator suspend/resume. A manual suspension is never lifted by an incoming payment. */
 export async function setSiteStatus(db: D1Database, siteId: string, status: "active" | "suspended") {
-  await db.prepare("UPDATE sites SET status = ?, updated_at = ? WHERE id = ?").bind(status, now(), siteId).run();
+  await db
+    .prepare("UPDATE sites SET status = ?, suspend_reason = ?, updated_at = ? WHERE id = ?")
+    .bind(status, status === "suspended" ? "manual" : null, now(), siteId)
+    .run();
 }
 
 /** Authoritative serving state from D1: site row plus the published version, if any. */
@@ -254,7 +267,10 @@ export async function listSites(db: D1Database, baseDomain: string) {
   const { results } = await db
     .prepare(
       `SELECT s.id, s.slug, s.template_id, s.status, s.cancelled_at, s.published_version_id, s.published_at,
-              s.notify_email, s.created_at, s.updated_at, ${BUSINESS_NAME_SQL("s.id", "s.published_version_id")} AS business_name,
+              s.notify_email, s.created_at, s.updated_at, s.customer_id, s.suspend_reason,
+              ${BUSINESS_NAME_SQL("s.id", "s.published_version_id")} AS business_name,
+              (SELECT status FROM subscriptions WHERE site_id = s.id) AS billing_status,
+              (SELECT name FROM customers WHERE id = s.customer_id) AS customer_name,
               (SELECT number FROM site_versions WHERE id = s.published_version_id) AS published_number,
               (SELECT MAX(number) FROM site_versions WHERE site_id = s.id) AS latest_number,
               (SELECT hostname FROM domains WHERE site_id = s.id AND kind = 'custom' AND status = 'active' ORDER BY created_at LIMIT 1) AS custom_hostname

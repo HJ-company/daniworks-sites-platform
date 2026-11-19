@@ -152,6 +152,9 @@ const created = await api("POST", "/sites", { config: config("STG v1"), createdB
 timings.createMs = Date.now() - t;
 check("사이트 생성 201", created.status === 201 && created.data.hostname === host, { hostname: created.data.hostname, ms: timings.createMs });
 const siteId = created.data.siteId;
+// M4: nothing is published before a payment.
+check("입금 전 게시는 409", (await api("POST", `/sites/${siteId}/publish`)).status === 409);
+await api("POST", `/sites/${siteId}/payments`, { payerName: "스테이징 검증" });
 const v1 = created.data.versionId;
 
 // 3. preview before publish

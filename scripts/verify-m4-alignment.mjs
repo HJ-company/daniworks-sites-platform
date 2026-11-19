@@ -1,7 +1,7 @@
 // M4 step 4-A: code aligned with the PRD. Suspended sites show only the business name (503,
 // Retry-After, no contact details), and the console fixes from the first product-owner test
 // (business names, unpublished state, domain guide, plain-language cancel and suspend dialogs).
-import { api, chromium, evidence, localD1, localKv, routerRequest, uploadShared } from "./lib/verify.mjs";
+import { api, chromium, evidence, localD1, localKv, routerRequest, uploadShared, paySite } from "./lib/verify.mjs";
 
 const CONSOLE = process.env.CONSOLE_URL ?? "http://127.0.0.1:8789";
 
@@ -19,6 +19,7 @@ config.business.name = "상쾌공간 & 청소 <본점>";
 const host = `${config.slug}.localhost`;
 const created = await api("POST", "/sites", { config, createdBy: "operator" });
 const siteId = created.data.siteId;
+await paySite(siteId);
 await api("POST", `/sites/${siteId}/publish`);
 check("게시 후 호스트 레코드에 업체명", JSON.parse(localKv("get", `host:${host}`)).name === config.business.name);
 

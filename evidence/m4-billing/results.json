@@ -1,0 +1,240 @@
+{
+  "results": [
+    {
+      "name": "고객 검증: 업체명 필수, 사업자번호 형식",
+      "pass": true
+    },
+    {
+      "name": "고객 생성: 사업자번호 하이픈 정리",
+      "pass": true
+    },
+    {
+      "name": "새 사이트: 구독 시안, 월 30,000원, 게시 불가 표시",
+      "pass": true,
+      "siteId": "0f35a138-1215-4caf-a07f-58bad956f4e6",
+      "cycle": "monthly",
+      "amount": 30000,
+      "status": "trial",
+      "statusLabel": "시안",
+      "billedAt": null,
+      "paidThrough": null,
+      "latestEnd": null,
+      "nextDueOn": null,
+      "graceEndsOn": null,
+      "graceDaysLeft": null,
+      "daysOverdue": null,
+      "canPublish": false,
+      "nextPeriod": {
+        "start": "2026-11-20",
+        "end": "2026-12-19"
+      }
+    },
+    {
+      "name": "고객에 사이트 연결",
+      "pass": true
+    },
+    {
+      "name": "연 단위로 바꾸면 기본 360,000원, 기간 1년",
+      "pass": true,
+      "start": "2026-11-20",
+      "end": "2027-11-19"
+    },
+    {
+      "name": "금액 직접 지정(쉼표 허용)",
+      "pass": true
+    },
+    {
+      "name": "잘못된 주기·금액 422",
+      "pass": true
+    },
+    {
+      "name": "시안 상태 게시는 409(입금 안내)",
+      "pass": true
+    },
+    {
+      "name": "청구 → 입금 대기, 작업 목록에 표시",
+      "pass": true
+    },
+    {
+      "name": "입금 확인 → 활성, 기본 기간 오늘부터 한 달",
+      "pass": true,
+      "id": "defab943-d915-4845-a36d-69b1735de46a",
+      "site_id": "0f35a138-1215-4caf-a07f-58bad956f4e6",
+      "site_slug": "bill-mwnruarr",
+      "business_name": "상쾌공간",
+      "amount": 33000,
+      "method": "manual",
+      "payer_name": "김철수",
+      "paid_on": "2026-11-20",
+      "period_start": "2026-11-20",
+      "period_end": "2026-12-19",
+      "confirmed_by": "operator",
+      "pg_tx_id": null,
+      "invoice_issued_on": null,
+      "memo": null,
+      "voided_at": null,
+      "void_reason": null,
+      "created_at": "2026-11-19T16:35:30.596Z",
+      "updated_at": "2026-11-19T16:35:30.596Z"
+    },
+    {
+      "name": "입금 날짜·기간 형식 검증",
+      "pass": true
+    },
+    {
+      "name": "활성 사이트 공개",
+      "pass": true
+    },
+    {
+      "name": "기간 순서가 뒤집히는 수정은 422",
+      "pass": true
+    },
+    {
+      "name": "일부 필드만 수정하면 나머지는 유지",
+      "pass": true
+    },
+    {
+      "name": "결제 기간 연장 → 다음 결제일 반영, 계산서 발행일 기록",
+      "pass": true
+    },
+    {
+      "name": "기간이 끝난 지 3일: 연체, 유예 11일 남음, 공개 유지",
+      "pass": true,
+      "site_id": "0f35a138-1215-4caf-a07f-58bad956f4e6",
+      "slug": "bill-mwnruarr",
+      "customer_id": "83976ea3-2455-4d56-8181-ef14176c83aa",
+      "suspend_reason": null,
+      "customer_name": "상쾌공간 mwnruarr",
+      "business_name": "상쾌공간",
+      "siteId": "0f35a138-1215-4caf-a07f-58bad956f4e6",
+      "cycle": "monthly",
+      "amount": 33000,
+      "status": "overdue",
+      "statusLabel": "연체",
+      "billedAt": "2026-11-19T16:35:30.585Z",
+      "paidThrough": "2026-11-17",
+      "latestEnd": "2026-11-17",
+      "nextDueOn": "2026-11-18",
+      "graceEndsOn": "2026-12-01",
+      "graceDaysLeft": 11,
+      "daysOverdue": 3,
+      "canPublish": true,
+      "nextPeriod": {
+        "start": "2026-11-18",
+        "end": "2026-12-17"
+      }
+    },
+    {
+      "name": "유예 14일 지남: 중단, 준비 중 페이지(503), 사유 결제",
+      "pass": true
+    },
+    {
+      "name": "미납 중단 사이트는 공개 재개·게시 거부",
+      "pass": true
+    },
+    {
+      "name": "중단 사이트도 작업 목록에",
+      "pass": true
+    },
+    {
+      "name": "중단 뒤 입금: 오늘부터 새 기간, 바로 재공개",
+      "pass": true
+    },
+    {
+      "name": "결제 취소는 사유 필수",
+      "pass": true
+    },
+    {
+      "name": "결제 취소 → 다시 중단(준비 중)",
+      "pass": true
+    },
+    {
+      "name": "취소된 결제는 수정 불가",
+      "pass": true
+    },
+    {
+      "name": "유일한 결제를 취소하면 공개 중단(입금 대기)",
+      "pass": true
+    },
+    {
+      "name": "시작일이 미래인 결제는 아직 공개하지 않음",
+      "pass": true
+    },
+    {
+      "name": "기간 시작일을 오늘로 고치면 바로 재공개",
+      "pass": true
+    },
+    {
+      "name": "동시에 두 번 입금 확인: 기간이 겹치지 않고 이어짐",
+      "pass": true
+    },
+    {
+      "name": "시작일만 주면 그 날부터 한 주기",
+      "pass": true
+    },
+    {
+      "name": "운영자 정지는 입금으로 풀리지 않음",
+      "pass": true
+    },
+    {
+      "name": "운영자 재개",
+      "pass": true
+    },
+    {
+      "name": "시간별 cron: 기한 지난 구독을 중단하고 공개를 멈춤",
+      "pass": true
+    },
+    {
+      "name": "고객 상세: 사이트별 구독 상태·결제 이력",
+      "pass": true
+    },
+    {
+      "name": "상쾌공간 mwnruarr",
+      "pass": true,
+      "id": "83976ea3-2455-4d56-8181-ef14176c83aa",
+      "contact_name": "김철수",
+      "phone": "010-0000-0001",
+      "email": null,
+      "billing_cycle": null,
+      "status": "active",
+      "created_at": "2026-11-19T16:35:30.533Z",
+      "updated_at": "2026-11-19T16:35:30.533Z",
+      "external_ref": "https://notion.so/lead-1",
+      "business_number": "123-45-67890",
+      "invoice_email": "tax@example.test",
+      "memo": null,
+      "site_count": 1,
+      "monthly_total": 33000,
+      "site_names": "상쾌공간",
+      "attention": 1
+    },
+    {
+      "name": "결제 내역: 입금일 필터, 취소 건 포함 표시",
+      "pass": true
+    },
+    {
+      "name": "결제 내역 필터 형식 검증",
+      "pass": true
+    },
+    {
+      "name": "사이트 목록에 구독 상태·고객명",
+      "pass": true
+    },
+    {
+      "name": "해지 → 구독 해지",
+      "pass": true
+    },
+    {
+      "name": "해지된 사이트는 입금 기록 불가",
+      "pass": true
+    },
+    {
+      "name": "완전 삭제 뒤에도 결제 기록은 남음(slug·상호 보존)",
+      "pass": true
+    },
+    {
+      "name": "인증 없는 결제·고객 API는 401",
+      "pass": true
+    }
+  ]
+}

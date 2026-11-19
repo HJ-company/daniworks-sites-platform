@@ -1,6 +1,8 @@
 import { parseSiteConfig, starterConfig, type SiteConfig, type StarterInput } from "@sites/renderer";
 import type { Env } from "./env.js";
 import { HttpError } from "./http.js";
+import { newSubscription } from "./billing.js";
+import { getCustomerRow } from "./customers.js";
 import { syncHostRecordsNow } from "./routes.js";
 import { addVersion, createSite, getSite, type CreatedBy, type SiteRow } from "./store.js";
 
@@ -17,11 +19,21 @@ export function creator(value: unknown): CreatedBy {
   return CREATORS.includes(value as CreatedBy) ? (value as CreatedBy) : "operator";
 }
 
-/** New site with version 1 and its `<slug>.<BASE_DOMAIN>` hostname. */
-export async function createSiteFromInput(env: Env, input: unknown, createdBy: CreatedBy) {
+/**
+ * New site with version 1, its `<slug>.<BASE_DOMAIN>` hostname and a subscription in the 시안
+ * (trial) state; optionally linked to a customer. Nothing is public until paid and published.
+ */
+export async function createSiteFromInput(env: Env, input: unknown, createdBy: CreatedBy, customerId?: unknown) {
   const config = validated(input);
+  if (customerId !== undefined && customerId !== null) {
+    if (typeof customerId !== "string") throw new HttpError(422, "customerId는 문자열이어야 합니다");
+    await getCustomerRow(env.DB, customerId);
+  }
   const hostname = `${config.slug}.${env.BASE_DOMAIN}`;
-  const { siteId, versionId } = await createSite(env.DB, config, createdBy, hostname);
+  const { siteId, versionId } = await createSite(env.DB, config, createdBy, hostname, (id) => [
+    newSubscription(env.DB, id),
+    ...(customerId ? [env.DB.prepare("UPDATE sites SET customer_id = ? WHERE id = ?").bind(customerId, id)] : []),
+  ]);
   await syncHostRecordsNow(env, siteId);
   return { siteId, versionId, hostname };
 }

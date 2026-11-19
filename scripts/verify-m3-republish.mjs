@@ -2,7 +2,7 @@
 // rendering changed (held for review). Commit is refused when the live version moved on.
 import { execFileSync } from "node:child_process";
 import { readdirSync, readFileSync } from "node:fs";
-import { API, api, evidence, localD1, localKv, routerRequest, uploadShared } from "./lib/verify.mjs";
+import { API, api, evidence, localD1, localKv, routerRequest, uploadShared, paySite } from "./lib/verify.mjs";
 
 const { fieldFixture, lessonFixture } = await import("../packages/renderer/src/templates/service-local/fixtures.ts");
 const ev = evidence("m3-republish");
@@ -18,6 +18,7 @@ const ids = {};
 for (const config of [same, changed]) {
   const created = await api("POST", "/sites", { config, createdBy: "operator" });
   ids[config.slug] = created.data.siteId;
+  await paySite(created.data.siteId);
   await api("POST", `/sites/${created.data.siteId}/publish`);
 }
 // Live pages get blog cards injected by the router; staged HTML never does.
@@ -60,6 +61,7 @@ check("화면이 바뀐 사이트는 보류(review)와 diff 이미지", changedE
 // A renderer change that breaks only the privacy page is caught too.
 const privacyOnly = { ...structuredClone(fieldFixture), slug: `rp-privacy-${run}` };
 const p = await api("POST", "/sites", { config: privacyOnly, createdBy: "operator" });
+await paySite(p.data.siteId);
 await api("POST", `/sites/${p.data.siteId}/publish`);
 localD1(`UPDATE site_versions SET asset_version = 'old-assets', config = replace(config, '"representative":"김철수"', '"representative":"바뀐 대표"') WHERE site_id = '${p.data.siteId}'`);
 let out2 = "";
@@ -73,6 +75,7 @@ const privacyEntry = JSON.parse(readFileSync(`evidence/republish/${runs2.at(-1)}
 // A layout change (page height) is held and still leaves a diff image.
 const tall = { ...structuredClone(fieldFixture), slug: `rp-tall-${run}` };
 const t = await api("POST", "/sites", { config: tall, createdBy: "operator" });
+await paySite(t.data.siteId);
 await api("POST", `/sites/${t.data.siteId}/publish`);
 localD1(`UPDATE site_versions SET asset_version = 'old-assets', config = replace(config, '"faqs":[', '"faqs":[{"question":"새 질문","answer":"렌더러가 더한 문답"},') WHERE site_id = '${t.data.siteId}'`);
 try {

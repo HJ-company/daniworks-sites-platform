@@ -1,7 +1,7 @@
 // Seeds demo data for product-owner smoke tests (screens only, no code). Idempotent per slug:
 // existing sites are reused. Docker: docker compose run --rm verify node scripts/seed-smoke.mjs
 // Prints the URLs the tester gets. Grows with each M4 stage.
-import { api, uploadShared } from "./lib/verify.mjs";
+import { api, paySite, uploadShared } from "./lib/verify.mjs";
 
 const { fieldFixture, lessonFixture } = await import("../packages/renderer/src/templates/service-local/fixtures.ts");
 
@@ -21,10 +21,15 @@ async function ensureSite(slug, base, mutate = () => {}) {
 }
 
 // An open site, a suspended (overdue) site and a draft that was never published.
+const paidSite = async (id) => {
+  if ((await api("GET", `/sites/${id}/subscription`)).data.subscription?.status === "trial") await paySite(id);
+};
 const open = await ensureSite("smoke-academy", lessonFixture, (c) => (c.business.name = "도봉 풋볼 아카데미"));
+await paidSite(open);
 await api("POST", `/sites/${open}/publish`);
 
 const overdue = await ensureSite("smoke-clean", fieldFixture, (c) => (c.business.name = "상쾌공간 입주청소"));
+await paidSite(overdue);
 await api("POST", `/sites/${overdue}/publish`);
 await api("POST", `/sites/${overdue}/suspend`);
 

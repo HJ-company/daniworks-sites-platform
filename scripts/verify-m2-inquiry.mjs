@@ -1,6 +1,6 @@
 // M2 step 2-5: visitor inquiry end to end. Browser form (Turnstile frame, timing) → router →
 // api RPC → D1 → mail (Mailpit) → operator list/CSV; spam and abuse paths; metrics.
-import { API, ROUTER_PORT, TOKEN, api, chromium, evidence, inspectPage, localD1, routerRequest, uploadShared, viewports } from "./lib/verify.mjs";
+import { API, ROUTER_PORT, TOKEN, api, chromium, evidence, inspectPage, localD1, routerRequest, uploadShared, viewports, paySite } from "./lib/verify.mjs";
 
 const { lessonFixture } = await import("../packages/renderer/src/templates/service-local/fixtures.ts");
 const MAILPIT = process.env.MAILPIT_URL ?? "http://127.0.0.1:8025";
@@ -16,6 +16,7 @@ const config = { ...structuredClone(lessonFixture), slug: `inq-${run}` };
 const host = `${config.slug}.localhost`;
 const created = await api("POST", "/sites", { config, createdBy: "operator" });
 const siteId = created.data.siteId;
+await paySite(siteId);
 const patched = await api("PATCH", `/sites/${siteId}`, { notifyEmail: notify });
 check("알림 이메일 설정", patched.status === 200 && patched.data.site.notify_email === notify);
 check("잘못된 알림 이메일은 422", (await api("PATCH", `/sites/${siteId}`, { notifyEmail: "nope" })).status === 422);
