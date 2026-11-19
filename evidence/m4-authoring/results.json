@@ -36,13 +36,9 @@
       "slugs": [
         "schema-site-config",
         "design",
-        "industry-cafe-mwnweiil",
-        "industry-cafe-mwnwgvkn",
-        "industry-cafe-mwnwk59x",
-        "industry-cafe-mwnwpbk9",
-        "industry-cafe-mwnwredg",
-        "industry-cafe-mwnx061r",
-        "industry-cafe-mwnx1lmb",
+        "industry-cafe-mwnxdx11",
+        "industry-cafe-mwnxh80h",
+        "industry-cafe-mwnxns3n",
         "industry-service-local",
         "product-policy",
         "writing-rules"
@@ -67,7 +63,7 @@
     {
       "name": "섹션 단위 수정 → 새 버전, 다른 섹션은 그대로",
       "pass": true,
-      "version": 9
+      "version": 5
     },
     {
       "name": "읽은 뒤 다른 수정이 있었으면 거부(baseVersion)",
@@ -93,18 +89,14 @@
       "name": "AI가 만든 버전에 참고한 지침 버전 기록",
       "pass": true,
       "stamp": {
-        "industry-service-local": 9,
+        "industry-service-local": 5,
         "writing-rules": 1,
         "product-policy": 1,
         "design": 1,
-        "industry-cafe-mwnweiil": 1,
-        "industry-cafe-mwnwgvkn": 1,
-        "industry-cafe-mwnwk59x": 1,
-        "industry-cafe-mwnwpbk9": 1,
-        "industry-cafe-mwnwredg": 1,
-        "industry-cafe-mwnx061r": 1,
-        "industry-cafe-mwnx1lmb": 1,
-        "industry-cafe-mwnx4mml": 1
+        "industry-cafe-mwnxdx11": 1,
+        "industry-cafe-mwnxh80h": 1,
+        "industry-cafe-mwnxns3n": 1,
+        "industry-cafe-mwnxqgyf": 1
       }
     },
     {
@@ -160,6 +152,14 @@
       "pass": true
     },
     {
+      "name": "같은 사진을 올리는 중이면 다시 시도 안내, 목록에서 숨김, 멈춘 업로드는 이어받아 끝냄",
+      "pass": true
+    },
+    {
+      "name": "올리는 중인 사진은 지우기 거부, 끝나면 지울 수 있음",
+      "pass": true
+    },
+    {
       "name": "콘솔 API로도 같은 규칙(DELETE)",
       "pass": true
     },
@@ -167,7 +167,7 @@
       "name": "image_generate(배경): 가로 1536px 사진으로 저장, 출처·용도·프롬프트·비용 기록",
       "pass": true,
       "row": {
-        "key": "m:5ad89063-6327-4224-a151-d2f427f3465a/08f8f2d5a739f67901d0.jpg",
+        "key": "m:9f9d3506-533b-4f98-8542-2e9df28a7e38/08f8f2d5a739f67901d0.jpg",
         "width": 1536,
         "height": 1024,
         "bytes": 43636,
@@ -177,8 +177,8 @@
         "purpose": "background",
         "customer_request": null,
         "cost_usd": 0.04,
-        "created_at": "2026-11-19T19:03:33.582Z",
-        "url": "/_media/5ad89063-6327-4224-a151-d2f427f3465a/08f8f2d5a739f67901d0.jpg",
+        "created_at": "2026-11-19T19:20:36.145Z",
+        "url": "/_media/9f9d3506-533b-4f98-8542-2e9df28a7e38/08f8f2d5a739f67901d0.jpg",
         "in_use": false
       }
     },

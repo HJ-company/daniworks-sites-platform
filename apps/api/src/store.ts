@@ -76,8 +76,11 @@ export async function listVersions(db: D1Database, siteId: string) {
   return results;
 }
 
-/** SQL condition: none of the photos a config (bound as the parameter) uses is being deleted. */
-const NO_PHOTO_BEING_DELETED = `NOT EXISTS (SELECT 1 FROM assets WHERE deleting_at IS NOT NULL AND instr(?, '"' || key || '"') > 0)`;
+/**
+ * SQL condition: every photo a config (bound as the parameter) uses is finished, none being
+ * deleted, deleted, or still being uploaded (its files may not all exist yet).
+ */
+const NO_PHOTO_BEING_DELETED = `NOT EXISTS (SELECT 1 FROM assets WHERE (deleting_at IS NOT NULL OR uploading_at IS NOT NULL) AND instr(?, '"' || key || '"') > 0)`;
 
 /** `extra` statements (the subscription, the customer link) commit together with the site. */
 export async function createSite(
@@ -113,7 +116,7 @@ export async function createSite(
   try {
     await created;
   } catch (error) {
-    if (/FOREIGN KEY/i.test(String(error))) throw new HttpError(409, "지우는 중인 사진을 쓰고 있습니다. 다른 사진으로 바꾸세요");
+    if (/FOREIGN KEY/i.test(String(error))) throw new HttpError(409, "지웠거나 아직 올리는 중인 사진을 쓰고 있습니다. 사진을 확인하세요");
     throw error;
   }
   return { siteId, versionId };
@@ -143,7 +146,7 @@ export async function addVersion(
   ]);
   if (inserted?.meta.changes !== 1) {
     const purging = await db.prepare("SELECT 1 AS x FROM sites WHERE id = ? AND purging_at IS NOT NULL").bind(site.id).first();
-    throw new HttpError(409, purging ? "삭제 중인 사이트입니다" : "지우는 중인 사진을 쓰고 있습니다. 다른 사진으로 바꾸세요");
+    throw new HttpError(409, purging ? "삭제 중인 사이트입니다" : "지웠거나 아직 올리는 중인 사진을 쓰고 있습니다. 사진을 확인하세요");
   }
   return { versionId, number: latest.number + 1 };
 }

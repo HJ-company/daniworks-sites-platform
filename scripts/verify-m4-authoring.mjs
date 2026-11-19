@@ -103,12 +103,27 @@ const withDoomed = structuredClone(config);
 withDoomed.content.hero.image = { key: doomed.data.key, alt: "x", width: doomed.data.width, height: doomed.data.height };
 const draftRefused = await call("site_update_draft", { site: config.slug, config: withDoomed });
 const siteRefused = await api("POST", "/sites", { config: { ...withDoomed, slug: `author-d-${run}` }, createdBy: "operator" });
-check("지우는 중인 사진은 새 초안·새 사이트에 못 씀(사이트도 안 생김)", draftRefused.isError && JSON.stringify(draftRefused.data).includes("지우는 중") &&
+check("지우는 중인 사진은 새 초안·새 사이트에 못 씀(사이트도 안 생김)", draftRefused.isError && JSON.stringify(draftRefused.data).includes("지웠거나 아직 올리는 중") &&
   siteRefused.status === 409 && (await api("GET", "/sites")).data.sites.every((x) => x.slug !== `author-d-${run}`));
 check("다른 삭제가 진행 중이면 두 번째 삭제는 거부", (await call("asset_delete", { site: config.slug, key: doomed.data.key })).isError);
 localD1(`UPDATE assets SET deleting_at = '${new Date(Date.now() - 10 * 60_000).toISOString()}' WHERE key = '${doomed.data.key}'`);
 const takenOver = await call("asset_delete", { site: config.slug, key: doomed.data.key });
 check("10분 넘게 멈춘 삭제는 이어받아 끝냄", !takenOver.isError && (await fetch(`${API}${doomed.data.url}`)).status === 404);
+// An upload that is still writing files holds the photo: a deletion waits.
+const writing = await call("asset_upload", { site: config.slug, base64: (await sharp({ create: { width: 530, height: 400, channels: 3, background: "#4aa" } }).jpeg().toBuffer()).toString("base64"), contentType: "image/jpeg" });
+localD1(`UPDATE assets SET uploading_at = '${new Date().toISOString()}' WHERE key = '${writing.data.key}'`);
+const whileWriting = await call("asset_delete", { site: config.slug, key: writing.data.key });
+localD1(`UPDATE assets SET uploading_at = NULL WHERE key = '${writing.data.key}'`);
+const sameBytes = (await sharp({ create: { width: 530, height: 400, channels: 3, background: "#4aa" } }).jpeg().toBuffer()).toString("base64");
+localD1(`UPDATE assets SET uploading_at = '${new Date().toISOString()}' WHERE key = '${writing.data.key}'`);
+const concurrent = await call("asset_upload", { site: config.slug, base64: sameBytes, contentType: "image/jpeg" });
+const hiddenWhileWriting = !(await call("asset_list", { site: config.slug })).data.assets.some((a) => a.key === writing.data.key);
+localD1(`UPDATE assets SET uploading_at = '${new Date(Date.now() - 10 * 60_000).toISOString()}' WHERE key = '${writing.data.key}'`);
+const uploadTakenOver = await call("asset_upload", { site: config.slug, base64: sameBytes, contentType: "image/jpeg" });
+check("같은 사진을 올리는 중이면 다시 시도 안내, 목록에서 숨김, 멈춘 업로드는 이어받아 끝냄", concurrent.isError && JSON.stringify(concurrent.data).includes("올리는 중") &&
+  hiddenWhileWriting && !uploadTakenOver.isError && (await call("asset_list", { site: config.slug })).data.assets.some((a) => a.key === writing.data.key));
+check("올리는 중인 사진은 지우기 거부, 끝나면 지울 수 있음", whileWriting.isError && JSON.stringify(whileWriting.data).includes("올리는 중") &&
+  !(await call("asset_delete", { site: config.slug, key: writing.data.key })).isError);
 check("콘솔 API로도 같은 규칙(DELETE)", (await api("DELETE", `/sites/${site.data.siteId}/assets/${used.data.key.split("/")[1]}`)).status === 409);
 
 // 5. AI images: background freely, real work only on the customer's request (recorded)
