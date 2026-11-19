@@ -62,7 +62,7 @@ export function LifecycleCard({ siteId, site }: { siteId: string; site: SiteRow 
           <DialogContentText sx={{ mb: 2 }}>
             {dialog === "purge"
               ? "파일·문의·통계·버전이 모두 지워지고 되돌릴 수 없습니다. 먼저 내보내기를 받아 두세요."
-              : "공개를 멈추고(410) 커스텀 도메인을 해제합니다. 데이터는 보관 기간 동안 남습니다."}
+              : "공개를 멈추고(410) 커스텀 도메인을 해제합니다. 데이터는 해지일부터 1년 동안 보관하고, 그동안 내려받을 수 있습니다."}
             {" "}확인을 위해 <b>{site.slug}</b>를 입력하세요.
           </DialogContentText>
           <TextField fullWidth size="small" value={typed} onChange={(e) => setTyped(e.target.value)} slotProps={{ htmlInput: { name: "confirmSlug" } }} />

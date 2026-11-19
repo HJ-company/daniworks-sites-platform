@@ -112,7 +112,7 @@ check("해지된 사이트에 사진 업로드·재게시 스테이지 거부(40
 check("해지된 사이트에 도메인 연결 거부, Cloudflare 호스트네임 안 남음", (await api("POST", `/sites/${siteId}/domains`, { hostname: `x.life-${run}.co.kr` })).status === 409 &&
   (await api("GET", "/domains/quota")).data.used === quotaBefore);
 const due = (await api("GET", "/cancellations")).data.cancellations.find((c) => c.id === siteId);
-check("해지 목록: 보관 기한(90일)과 아직 삭제 불가", due && !due.purgeable && Date.parse(due.purgeAfter) - Date.parse(due.cancelled_at) === 90 * 86_400_000);
+check("해지 목록: 보관 기한(1년)과 아직 삭제 불가", due && !due.purgeable && Date.parse(due.purgeAfter) - Date.parse(due.cancelled_at) === 365 * 86_400_000);
 check("보관 기간 전 완전 삭제는 409", (await api("POST", `/sites/${siteId}/purge`, { confirmSlug: config.slug })).status === 409);
 check("데이터는 보관됨(문의·내보내기)", (await api("GET", `/sites/${siteId}/inquiries`)).data.inquiries.length === 1 &&
   (await fetch(`${API}/sites/${siteId}/export.zip`, { headers: { authorization: `Bearer ${TOKEN}` } })).ok);

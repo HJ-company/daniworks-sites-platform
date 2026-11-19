@@ -10,7 +10,7 @@ import { acquireRoutesLease, getSite, releaseRoutesLease, type SiteRow } from ".
 export { ensureNotPurged } from "./purge-guard.js";
 
 const now = () => new Date().toISOString();
-export const retentionDays = (env: Env) => Number(env.RETENTION_DAYS ?? 90);
+export const retentionDays = (env: Env) => Number(env.RETENTION_DAYS ?? 365);
 
 /**
  * Cancellation: public serving stops (410), custom hostnames are deleted at Cloudflare so
