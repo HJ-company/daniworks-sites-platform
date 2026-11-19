@@ -46,7 +46,9 @@ if (manual.fresh) {
   await api("POST", `/sites/${manual.id}/suspend`);
 }
 
-await ensureSite("smoke-draft", fieldFixture, (c) => (c.business.name = "반짝 이사청소"));
+const draft = await ensureSite("smoke-draft", fieldFixture, (c) => (c.business.name = "반짝 이사청소"));
+// 4-C: a draft already sent to the owner.
+const draftLink = (await api("GET", `/sites/${draft.id}`)).data.site.draft_link ?? (await api("POST", `/sites/${draft.id}/draft-link`)).data.draftLink;
 
 // Billing: billed and waiting, overdue in grace (ended 5 days ago), suspended (ended 20 days ago).
 const awaiting = await ensureSite("smoke-awaiting", fieldFixture, (c) => (c.business.name = "상쾌공간 2호점"), kim);
@@ -75,7 +77,7 @@ console.log(
       sites: {
         "도봉 풋볼 아카데미 (공개, 납부)": "http://smoke-academy.localhost:8787",
         "상쾌공간 입주청소 (운영자가 정지)": "http://smoke-clean.localhost:8787",
-        "반짝 이사청소 (게시 안 함)": "smoke-draft",
+        "반짝 이사청소 (게시 안 함, 시안 링크 보냄)": draftLink.url,
         "상쾌공간 2호점 (청구, 입금 대기)": "smoke-awaiting",
         "노원 피아노 교습소 (5일 연체, 공개 유지)": "http://smoke-overdue.localhost:8787",
         "깔끔 사무실 청소 (20일 연체, 공개 중단)": "http://smoke-unpaid.localhost:8787",
