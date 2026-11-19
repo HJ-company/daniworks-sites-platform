@@ -8,8 +8,8 @@
     {
       "name": "발급: 기본 도메인의 /preview/<40자>, 30일",
       "pass": true,
-      "url": "http://localhost:8787/preview/eb19fdfa09ce451fa38e85d80aea78e3fe6e7b21",
-      "expiresAt": "2026-12-19T18:21:55.836Z",
+      "url": "http://localhost:8787/preview/44c30b69ed7248ba99be2ab37ef5bb4cb4d4c362",
+      "expiresAt": "2026-12-19T19:03:22.187Z",
       "expired": false
     },
     {
@@ -107,13 +107,13 @@
       "name": "MCP site_preview_link: 없으면 만들고, 다시 부르면 같은 링크, reissue면 새 링크",
       "pass": true,
       "first": {
-        "url": "http://localhost:8787/preview/b18b1451aef149179438756cef07819b597cb97d",
-        "expiresAt": "2026-12-19T18:22:00.381Z",
+        "url": "http://localhost:8787/preview/61e2fc855af5431ca0ee546d747f323c933ff7b8",
+        "expiresAt": "2026-12-19T19:03:26.642Z",
         "reissued": true
       },
       "again": {
-        "url": "http://localhost:8787/preview/b18b1451aef149179438756cef07819b597cb97d",
-        "expiresAt": "2026-12-19T18:22:00.381Z",
+        "url": "http://localhost:8787/preview/61e2fc855af5431ca0ee546d747f323c933ff7b8",
+        "expiresAt": "2026-12-19T19:03:26.642Z",
         "reissued": false
       }
     },
@@ -132,7 +132,7 @@
     {
       "name": "콘솔: 사장님께 보낼 안내문에 상호·링크·만료일",
       "pass": true,
-      "message": "[홈페이지 시안 안내]\n사장님, 시안화면 mwnvn5fh 홈페이지 시안을 준비했습니다. 아래 링크에서 휴대폰으로 확인해 주세요.\n\nhttp://localhost:8787/preview/e3930fe9018f48b69d6c9addb45dd38eee23fed2\n\n링크는 2026-12-20까지 열립니다. 고칠 부분은 편하게 말씀해 주세요. 시안을 고쳐도 링크는 그대로입니다."
+      "message": "[홈페이지 시안 안내]\n사장님, 시안화면 mwnx4fxh 홈페이지 시안을 준비했습니다. 아래 링크에서 휴대폰으로 확인해 주세요.\n\nhttp://localhost:8787/preview/cd61caa51594472c9c5f2e1978e75e8ca484b493\n\n링크는 2026-12-20까지 열립니다. 고칠 부분은 편하게 말씀해 주세요. 시안을 고쳐도 링크는 그대로입니다."
     },
     {
       "name": "콘솔: 새 링크로 바꾸기(확인 창) → 주소 바뀜, 예전 링크 막힘",

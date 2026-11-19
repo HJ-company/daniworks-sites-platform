@@ -1,7 +1,7 @@
 // M4 step 4-E: MCP authoring tools. Guides an agent reads before writing (stored, versioned,
 // editable by section; the config schema generated from code), customers, assets and AI images.
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
-import { API, TOKEN, api, evidence, localD1, uploadShared } from "./lib/verify.mjs";
+import { API, CONSOLE, TOKEN, api, chromium, consoleLogin, evidence, localD1, uploadShared } from "./lib/verify.mjs";
 
 const { fieldFixture } = await import("../packages/renderer/src/templates/service-local/fixtures.ts");
 const ev = evidence("m4-authoring");
@@ -133,4 +133,28 @@ check("OpenAI가 거부하면 이유와 함께 도구 오류", refused.isError &
 check("이미지 생성은 작업 기록에(누가·어느 사이트)", (await api("GET", `/sites/${site.data.siteId}/audit`)).data.entries.some((e) => e.action === "MCP image_generate" && e.status === 200));
 
 await client.close();
+
+// 6. console: photos show where they came from; guides are readable with their history
+const browser = await chromium().launch();
+const page = await (await browser.newContext({ viewport: { width: 1280, height: 900 } })).newPage();
+const errors = [];
+page.on("pageerror", (e) => errors.push(String(e)));
+await consoleLogin(page);
+await page.goto(`${CONSOLE}/sites/${site.data.siteId}/photos`, { waitUntil: "networkidle" });
+const cards = page.getByTestId("photo-card");
+check("사진 탭: AI 표시·용도, 고객 요청, 사용 중 표시, AI 합계", (await page.getByTestId("ai-chip").count()) >= 2 &&
+  (await page.getByTestId("customer-request").first().textContent()).includes("카톡") &&
+  (await page.getByText("사용 중").count()) >= 1 && (await page.getByTestId("ai-summary").textContent()).includes("AI 이미지"));
+const usedCard = cards.filter({ hasText: "사용 중" }).first();
+check("사용 중인 사진의 지우기는 비활성", await usedCard.getByRole("button", { name: "지우기" }).isDisabled());
+await page.screenshot({ path: `${ev.dir}/photos.png`, fullPage: true });
+await page.goto(`${CONSOLE}/guides`, { waitUntil: "networkidle" });
+await page.getByTestId("guide-industry-service-local").click();
+await page.getByTestId("guide-version").waitFor({ timeout: 10000 });
+check("지침 화면: 업종 지침 본문과 버전·작성자", (await page.getByTestId("guide-version").textContent()).includes("스크립트") && (await page.content()).includes(marker));
+await page.getByTestId("guide-schema-site-config").click();
+check("지침 화면: 스키마는 코드 생성(읽기 전용)", await page.getByText("코드에서 자동으로 만든 문서(읽기 전용)").waitFor({ timeout: 10000 }).then(() => true).catch(() => false));
+await page.screenshot({ path: `${ev.dir}/guides.png`, fullPage: true });
+check("콘솔 페이지 오류 없음", !errors.length, { errors });
+await browser.close();
 ev.finish();

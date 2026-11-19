@@ -40,6 +40,9 @@
         "industry-cafe-mwnwgvkn",
         "industry-cafe-mwnwk59x",
         "industry-cafe-mwnwpbk9",
+        "industry-cafe-mwnwredg",
+        "industry-cafe-mwnx061r",
+        "industry-cafe-mwnx1lmb",
         "industry-service-local",
         "product-policy",
         "writing-rules"
@@ -64,7 +67,7 @@
     {
       "name": "섹션 단위 수정 → 새 버전, 다른 섹션은 그대로",
       "pass": true,
-      "version": 6
+      "version": 9
     },
     {
       "name": "읽은 뒤 다른 수정이 있었으면 거부(baseVersion)",
@@ -90,7 +93,7 @@
       "name": "AI가 만든 버전에 참고한 지침 버전 기록",
       "pass": true,
       "stamp": {
-        "industry-service-local": 6,
+        "industry-service-local": 9,
         "writing-rules": 1,
         "product-policy": 1,
         "design": 1,
@@ -98,7 +101,10 @@
         "industry-cafe-mwnwgvkn": 1,
         "industry-cafe-mwnwk59x": 1,
         "industry-cafe-mwnwpbk9": 1,
-        "industry-cafe-mwnwredg": 1
+        "industry-cafe-mwnwredg": 1,
+        "industry-cafe-mwnx061r": 1,
+        "industry-cafe-mwnx1lmb": 1,
+        "industry-cafe-mwnx4mml": 1
       }
     },
     {
@@ -161,7 +167,7 @@
       "name": "image_generate(배경): 가로 1536px 사진으로 저장, 출처·용도·프롬프트·비용 기록",
       "pass": true,
       "row": {
-        "key": "m:9d74a679-12ba-4610-97a0-27c295b5350e/08f8f2d5a739f67901d0.jpg",
+        "key": "m:5ad89063-6327-4224-a151-d2f427f3465a/08f8f2d5a739f67901d0.jpg",
         "width": 1536,
         "height": 1024,
         "bytes": 43636,
@@ -171,8 +177,8 @@
         "purpose": "background",
         "customer_request": null,
         "cost_usd": 0.04,
-        "created_at": "2026-11-19T18:53:16.189Z",
-        "url": "/_media/9d74a679-12ba-4610-97a0-27c295b5350e/08f8f2d5a739f67901d0.jpg",
+        "created_at": "2026-11-19T19:03:33.582Z",
+        "url": "/_media/5ad89063-6327-4224-a151-d2f427f3465a/08f8f2d5a739f67901d0.jpg",
         "in_use": false
       }
     },
@@ -191,6 +197,27 @@
     {
       "name": "이미지 생성은 작업 기록에(누가·어느 사이트)",
       "pass": true
+    },
+    {
+      "name": "사진 탭: AI 표시·용도, 고객 요청, 사용 중 표시, AI 합계",
+      "pass": true
+    },
+    {
+      "name": "사용 중인 사진의 지우기는 비활성",
+      "pass": true
+    },
+    {
+      "name": "지침 화면: 업종 지침 본문과 버전·작성자",
+      "pass": true
+    },
+    {
+      "name": "지침 화면: 스키마는 코드 생성(읽기 전용)",
+      "pass": true
+    },
+    {
+      "name": "콘솔 페이지 오류 없음",
+      "pass": true,
+      "errors": []
     }
   ]
 }
