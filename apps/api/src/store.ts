@@ -76,6 +76,9 @@ export async function listVersions(db: D1Database, siteId: string) {
   return results;
 }
 
+/** SQL condition: none of the photos a config (bound as the parameter) uses is being deleted. */
+const NO_PHOTO_BEING_DELETED = `NOT EXISTS (SELECT 1 FROM assets WHERE deleting_at IS NOT NULL AND instr(?, '"' || key || '"') > 0)`;
+
 /** `extra` statements (the subscription, the customer link) commit together with the site. */
 export async function createSite(
   db: D1Database,
@@ -90,20 +93,29 @@ export async function createSite(
   const siteId = crypto.randomUUID();
   const versionId = crypto.randomUUID();
   const at = now();
-  await db.batch([
+  const json = JSON.stringify(config);
+  // A photo being deleted skips the site row; the version insert then fails its foreign key and
+  // the whole batch rolls back.
+  const created = db.batch([
     db
-      .prepare("INSERT INTO sites (id, slug, template_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?)")
-      .bind(siteId, config.slug, config.templateId, at, at),
+      .prepare(`INSERT INTO sites (id, slug, template_id, created_at, updated_at) SELECT ?, ?, ?, ?, ? WHERE ${NO_PHOTO_BEING_DELETED}`)
+      .bind(siteId, config.slug, config.templateId, at, at, json),
     db
       .prepare(
         "INSERT INTO site_versions (id, site_id, number, config, created_by, author, note, preview_token, created_at) VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?)",
       )
-      .bind(versionId, siteId, JSON.stringify(config), createdBy, author, "최초 생성", token(), at),
+      .bind(versionId, siteId, json, createdBy, author, "최초 생성", token(), at),
     db
       .prepare("INSERT INTO domains (hostname, site_id, kind, created_at) VALUES (?, ?, 'subdomain', ?)")
       .bind(hostname, siteId, at),
     ...extra(siteId),
   ]);
+  try {
+    await created;
+  } catch (error) {
+    if (/FOREIGN KEY/i.test(String(error))) throw new HttpError(409, "지우는 중인 사진을 쓰고 있습니다. 다른 사진으로 바꾸세요");
+    throw error;
+  }
   return { siteId, versionId };
 }
 
@@ -122,14 +134,17 @@ export async function addVersion(
   const [inserted] = await db.batch([
     db
       .prepare(
-        // Never into a site being purged (its rows are being deleted).
+        // Never into a site being purged (its rows are being deleted), nor with a photo being deleted.
         `INSERT INTO site_versions (id, site_id, number, config, created_by, author, note, preview_token, created_at)
-         SELECT ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM sites WHERE id = ? AND purging_at IS NULL)`,
+         SELECT ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM sites WHERE id = ? AND purging_at IS NULL) AND ${NO_PHOTO_BEING_DELETED}`,
       )
-      .bind(versionId, site.id, latest.number + 1, JSON.stringify(config), createdBy, author, note, token(), at, site.id),
+      .bind(versionId, site.id, latest.number + 1, JSON.stringify(config), createdBy, author, note, token(), at, site.id, JSON.stringify(config)),
     db.prepare("UPDATE sites SET updated_at = ? WHERE id = ?").bind(at, site.id),
   ]);
-  if (inserted?.meta.changes !== 1) throw new HttpError(409, "삭제 중인 사이트입니다");
+  if (inserted?.meta.changes !== 1) {
+    const purging = await db.prepare("SELECT 1 AS x FROM sites WHERE id = ? AND purging_at IS NOT NULL").bind(site.id).first();
+    throw new HttpError(409, purging ? "삭제 중인 사이트입니다" : "지우는 중인 사진을 쓰고 있습니다. 다른 사진으로 바꾸세요");
+  }
   return { versionId, number: latest.number + 1 };
 }
 

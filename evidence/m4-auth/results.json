@@ -87,7 +87,7 @@
           "action": "POST /sites/:id/publish",
           "target": null,
           "status": 200,
-          "created_at": "2026-11-19T18:22:08.174Z"
+          "created_at": "2026-11-19T18:49:21.950Z"
         },
         {
           "actor_type": "user",
@@ -96,34 +96,34 @@
           "action": "POST /sites/:id/payments",
           "target": null,
           "status": 201,
-          "created_at": "2026-11-19T18:22:08.042Z"
+          "created_at": "2026-11-19T18:49:21.829Z"
         },
         {
           "actor_type": "user",
           "actor_name": "김운영",
           "via": "mcp",
           "action": "MCP site_rollback",
-          "target": "auth-mwnvnc4y",
+          "target": "auth-mwnwmcss",
           "status": 422,
-          "created_at": "2026-11-19T18:22:04.333Z"
+          "created_at": "2026-11-19T18:49:18.164Z"
         },
         {
           "actor_type": "user",
           "actor_name": "김운영",
           "via": "mcp",
           "action": "MCP site_publish",
-          "target": "auth-mwnvnc4y",
+          "target": "auth-mwnwmcss",
           "status": 422,
-          "created_at": "2026-11-19T18:22:04.325Z"
+          "created_at": "2026-11-19T18:49:18.158Z"
         },
         {
           "actor_type": "user",
           "actor_name": "김운영",
           "via": "mcp",
           "action": "MCP site_preview_link",
-          "target": "auth-mwnvnc4y",
+          "target": "auth-mwnwmcss",
           "status": 200,
-          "created_at": "2026-11-19T18:22:04.319Z"
+          "created_at": "2026-11-19T18:49:18.151Z"
         },
         {
           "actor_type": "script",
@@ -132,7 +132,7 @@
           "action": "POST /sites",
           "target": null,
           "status": 201,
-          "created_at": "2026-11-19T18:22:04.278Z"
+          "created_at": "2026-11-19T18:49:18.106Z"
         }
       ]
     },
@@ -155,7 +155,7 @@
     {
       "name": "작업 기록 탭: 누가 무엇을(재발급 구분)",
       "pass": true,
-      "activity": "작업 기록때(KST)누가무엇을2026-11-20 03:22김운영시안 링크 새로 바꿈(예전 링크 막힘)2026-11-20 03:22스크립트공개 재개2026-11-20 03:22스크립트롤백 (거부됨)2026-11-20 03:22스크립트공개 정지2026-11-20 03:22스크립트결제 기록 수정2026-11-20 03:22김운영게시2026-11-20 03:22김운영입금 확인2026-11-20 03:22김운영 (AI 도구)AI 도구: 롤백 (거부됨)2026-11-20 03:22김운영 (AI 도구)AI 도구: 게시 (거부됨)2026-11-20 03:22김운영 (AI 도구)AI 도구: 시안 링크2026-11-20 03:22스크립트사이트 생성"
+      "activity": "작업 기록때(KST)누가무엇을2026-11-20 03:49김운영시안 링크 새로 바꿈(예전 링크 막힘)2026-11-20 03:49스크립트공개 재개2026-11-20 03:49스크립트롤백 (거부됨)2026-11-20 03:49스크립트공개 정지2026-11-20 03:49스크립트결제 기록 수정2026-11-20 03:49김운영게시2026-11-20 03:49김운영입금 확인2026-11-20 03:49김운영 (AI 도구)AI 도구: 롤백 (거부됨)2026-11-20 03:49김운영 (AI 도구)AI 도구: 게시 (거부됨)2026-11-20 03:49김운영 (AI 도구)AI 도구: 시안 링크2026-11-20 03:49스크립트사이트 생성"
     },
     {
       "name": "결제 수정 창: 누가 언제 입금을 확인했는지",

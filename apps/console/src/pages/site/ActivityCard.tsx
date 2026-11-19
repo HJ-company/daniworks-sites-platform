@@ -28,6 +28,7 @@ const ACTIONS: [RegExp, string][] = [
   [/^POST \/sites\/:id\/domains$/, "도메인 연결"],
   [/^DELETE \/sites\/:id\/domains/, "도메인 삭제"],
   [/^POST \/sites\/:id\/assets$/, "사진 올림"],
+  [/^DELETE \/sites\/:id\/assets\//, "사진 지움"],
   [/^PATCH \/sites\/:id$/, "사이트 설정 변경"],
   [/^POST \/sites$/, "사이트 생성"],
   [/^PATCH \/payments\/:id$/, "결제 기록 수정"],
@@ -41,6 +42,8 @@ const TOOLS: Record<string, string> = {
   site_rollback: "롤백",
   site_preview_link: "시안 링크",
   asset_upload: "사진 올림",
+  asset_delete: "사진 지움",
+  image_generate: "AI 이미지 만듦",
 };
 
 /** Audit action (`POST /sites/:id/publish`, `MCP site_publish`) in words. */

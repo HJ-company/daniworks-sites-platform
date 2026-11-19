@@ -148,3 +148,26 @@ export async function linkSite(db: D1Database, siteId: string, customerId: unkno
   if (customerId) await getCustomerRow(db, customerId);
   await db.prepare("UPDATE sites SET customer_id = ?, updated_at = ? WHERE id = ?").bind(customerId, now(), siteId).run();
 }
+
+const digitsOf = (value: unknown) => (typeof value === "string" ? value.replace(/[^\d]/g, "") : "");
+
+/** Customers matching a name, owner, phone or business number (agents look before creating). */
+export async function findCustomers(db: D1Database, search: string) {
+  const q = search.trim().toLowerCase();
+  const digits = digitsOf(search);
+  const all = await listCustomers(db);
+  return all.filter(
+    (c) =>
+      (q && [c.name, c.contact_name, c.email].some((v) => v?.toLowerCase().includes(q))) ||
+      (digits.length >= 4 && [c.phone, c.business_number].some((v) => digitsOf(v).includes(digits))),
+  );
+}
+
+/** Existing customers with the same phone or business number: the same owner twice. */
+export async function duplicatesOf(db: D1Database, body: Record<string, unknown>) {
+  const phone = digitsOf(body.phone);
+  const number = digitsOf(body.businessNumber);
+  if (phone.length < 9 && number.length !== 10) return [];
+  const all = await listCustomers(db);
+  return all.filter((c) => (phone.length >= 9 && digitsOf(c.phone) === phone) || (number.length === 10 && digitsOf(c.business_number) === number));
+}

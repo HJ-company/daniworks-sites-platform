@@ -1,0 +1,156 @@
+{
+  "results": [
+    {
+      "name": "지침 도구 4종",
+      "pass": true,
+      "tools": [
+        "customer_get",
+        "customer_create",
+        "asset_list",
+        "asset_delete",
+        "guide_list",
+        "guide_get",
+        "guide_create",
+        "guide_update",
+        "template_list",
+        "template_get",
+        "site_validate",
+        "site_create",
+        "site_get",
+        "site_update_draft",
+        "site_preview_url",
+        "site_preview_link",
+        "site_publish",
+        "site_rollback",
+        "asset_upload"
+      ]
+    },
+    {
+      "name": "서버 안내: 제작 전에 지침부터",
+      "pass": true
+    },
+    {
+      "name": "지침 목록: 생성 스키마(읽기 전용) + 기본 지침 4종",
+      "pass": true,
+      "slugs": [
+        "schema-site-config",
+        "design",
+        "industry-cafe-mwnweiil",
+        "industry-cafe-mwnwgvkn",
+        "industry-service-local",
+        "product-policy",
+        "writing-rules"
+      ]
+    },
+    {
+      "name": "스키마 지침은 코드에서 만든 JSON Schema와 뼈대",
+      "pass": true
+    },
+    {
+      "name": "query로 해당 섹션만",
+      "pass": true,
+      "matched": [
+        "구조화 데이터",
+        "이미지 용도"
+      ]
+    },
+    {
+      "name": "스키마 지침은 고칠 수 없음",
+      "pass": true
+    },
+    {
+      "name": "섹션 단위 수정 → 새 버전, 다른 섹션은 그대로",
+      "pass": true,
+      "version": 4
+    },
+    {
+      "name": "읽은 뒤 다른 수정이 있었으면 거부(baseVersion)",
+      "pass": true
+    },
+    {
+      "name": "template_get도 고친 업종 지침을 준다",
+      "pass": true
+    },
+    {
+      "name": "예전 버전도 읽을 수 있음",
+      "pass": true
+    },
+    {
+      "name": "새 지침 만들기(v1), 같은 slug는 거부",
+      "pass": true
+    },
+    {
+      "name": "콘솔용 API: 지침 목록·버전 이력",
+      "pass": true
+    },
+    {
+      "name": "AI가 만든 버전에 참고한 지침 버전 기록",
+      "pass": true,
+      "stamp": {
+        "industry-service-local": 4,
+        "writing-rules": 1,
+        "product-policy": 1,
+        "design": 1,
+        "industry-cafe-mwnweiil": 1,
+        "industry-cafe-mwnwgvkn": 1,
+        "industry-cafe-mwnwk59x": 1
+      }
+    },
+    {
+      "name": "customer_create: 같은 전화번호면 만들지 않고 기존 고객 안내",
+      "pass": true
+    },
+    {
+      "name": "customer_get: 사장님 이름으로 찾기",
+      "pass": true
+    },
+    {
+      "name": "site_create(customerId) → 고객 상세에 사이트",
+      "pass": true
+    },
+    {
+      "name": "사진을 쓰는 초안 저장",
+      "pass": true
+    },
+    {
+      "name": "asset_list: 출처와 사용 여부",
+      "pass": true
+    },
+    {
+      "name": "asset_delete: 쓰는 사진은 거부",
+      "pass": true
+    },
+    {
+      "name": "asset_delete: 안 쓰는 사진은 파일까지 삭제",
+      "pass": true
+    },
+    {
+      "name": "지운 사진을 담은 예전 화면에서 저장해도 거부",
+      "pass": true
+    },
+    {
+      "name": "같은 사진을 다시 올리면 되살아남",
+      "pass": true
+    },
+    {
+      "name": "다른 사이트가 쓰는 사진도 지울 수 없음",
+      "pass": true
+    },
+    {
+      "name": "지우는 중인 사진은 새 초안·새 사이트에 못 씀(사이트도 안 생김)",
+      "pass": true
+    },
+    {
+      "name": "다른 삭제가 진행 중이면 두 번째 삭제는 거부",
+      "pass": true
+    },
+    {
+      "name": "10분 넘게 멈춘 삭제는 이어받아 끝냄",
+      "pass": true
+    },
+    {
+      "name": "콘솔 API로도 같은 규칙(DELETE)",
+      "pass": true
+    }
+  ]
+}
