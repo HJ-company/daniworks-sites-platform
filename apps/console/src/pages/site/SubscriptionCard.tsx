@@ -1,4 +1,3 @@
-import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import {
   Alert,
   Box,
@@ -28,6 +27,7 @@ import { api, CYCLE_LABEL, useMe, won, type Cycle, type CustomerSummary, type Pa
 import { ErrorAlert, useToast } from "../../ui.js";
 import { BillingChip, billingSummary, paymentRequest } from "../billing/billing-ui.js";
 import { PaymentDialog } from "../billing/payment-dialog.js";
+import { CopyableMessage } from "../../copy-message.js";
 import { CustomerDialog } from "../customer-dialog.js";
 
 export function useSubscription(siteId: string) {
@@ -285,32 +285,13 @@ function MissingCustomer({ site, onLink, busy }: { site: SiteRow; onLink: (custo
 
 /** Billed, overdue or taken down: the payment request to send the owner, readable before copying. */
 function PaymentRequest({ name, sub, manualStop }: { name: string; sub: Subscription; manualStop: boolean }) {
-  const toast = useToast();
   const me = useMe();
-  const [open, setOpen] = useState(false);
   const account = me.data?.billingAccount ?? null;
   const text = paymentRequest(name, sub, account, manualStop);
   if (!text) return null;
   return (
-    <Box sx={{ mt: 1 }} data-testid="payment-request">
-      <Stack direction="row" spacing={1}>
-        <Button
-          size="small"
-          variant="outlined"
-          startIcon={<ContentCopyIcon />}
-          onClick={() => void navigator.clipboard.writeText(text).then(() => toast("입금 요청 안내문을 복사했습니다"))}
-        >
-          입금 요청 안내문 복사
-        </Button>
-        <Button size="small" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
-          {open ? "접기" : "안내문 보기"}
-        </Button>
-      </Stack>
-      {open ? (
-        <Box component="pre" sx={{ mt: 1, mb: 0, p: 1.5, bgcolor: "grey.100", borderRadius: 1, whiteSpace: "pre-wrap", fontFamily: "inherit", fontSize: 14 }}>
-          {text}
-        </Box>
-      ) : null}
+    <Box data-testid="payment-request">
+      <CopyableMessage text={text} copyLabel="입금 요청 안내문 복사" copied="입금 요청 안내문을 복사했습니다" />
       {me.data && !account ? (
         <Alert severity="warning" sx={{ mt: 1 }}>
           입금 계좌가 설정되지 않아 안내문에 계좌가 빠집니다(콘솔 설정 BILLING_ACCOUNT).

@@ -3,7 +3,7 @@ import type { Env } from "./env.js";
 import { HttpError } from "./http.js";
 import { r2MediaKey } from "./keys.js";
 import { sha256Hex } from "./hash.js";
-import { MAX_INPUT_BYTES, processPhotoExclusive } from "./media.js";
+import { processPhotoExclusive } from "./media.js";
 import { normalizeNaverImage } from "./remote-image.js";
 import { ensureNotPurged } from "./purge-guard.js";
 import { readLimited } from "./stream.js";

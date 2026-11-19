@@ -9,8 +9,6 @@ export interface RenderOptions {
   assetBase: string;
   /** Public origin (`https://jefes.dsites.kr`) for canonical, OG and structured data URLs. */
   origin?: string;
-  /** Skip the client bundle to measure server-only output. */
-  hydrate?: boolean;
   /** Preview renders: noindex, no canonical, inquiry form disabled. */
   preview?: boolean;
   /** Prefix for root-relative site links (previews: `/preview/<token>`). */
@@ -35,9 +33,9 @@ export interface RenderResult {
   /** Home page HTML. */
   html: string;
   pages: RenderedPage[];
-  ms: number;
 }
 
+/** Must match the id client.tsx reads the page data from. */
 const DATA_ID = "__SITE_DATA__";
 
 function escapeJson(value: unknown) {
@@ -53,12 +51,12 @@ function escapeHtml(value: string) {
  * src, srcset and sizes always match what the image will pick (no double download).
  */
 export function lcpPreload(body: string): string {
-  const img = body.match(/<img\b[^>]*fetchPriority="high"[^>]*>|<img\b[^>]*fetchpriority="high"[^>]*>/i)?.[0];
+  const img = body.match(/<img\b[^>]*fetchpriority="high"[^>]*>/i)?.[0];
   if (!img) return "";
   const attr = (name: string) => img.match(new RegExp(`\\s${name}="([^"]*)"`, "i"))?.[1];
   const src = attr("src");
   if (!src) return "";
-  const srcset = attr("srcSet") ?? attr("srcset");
+  const srcset = attr("srcset");
   const sizes = attr("sizes");
   return `<link rel="preload" as="image" href="${src}"${srcset ? ` imagesrcset="${srcset}"` : ""}${sizes ? ` imagesizes="${sizes}"` : ""} fetchpriority="high">`;
 }
@@ -111,12 +109,11 @@ async function renderPage(config: SiteConfig, sitePage: SitePage, options: Rende
   const stream = await renderToReadableStream(<SiteView data={page.data} />);
   await stream.allReady;
   const body = await new Response(stream).text();
-  const hydrate = options.hydrate ?? true;
   const { title, description } = config.meta;
   const lang = ("lang" in config.meta && config.meta.lang) || "ko";
   const home = page.route === "/";
   const pageTitle = home ? title : `${page.title} | ${isServiceConfig(config) ? config.business.name : title}`;
-  const url = options.origin ? `${options.origin}${page.route === "/" ? "/" : `${page.route}`}` : undefined;
+  const url = options.origin ? `${options.origin}${page.route}` : undefined;
   const hero = page.data.page.blocks[0];
   const heroImage = absolute(
     options.origin,
@@ -151,8 +148,8 @@ ${options.inlineCss ? `<style>${options.inlineCss.replace(/<\/style/gi, "<\\/sty
 </head>
 <body${page.data.site ? ' class="has-contact-bar"' : ""}>
 <div id="root">${body}</div>
-${hydrate ? `<script id="${DATA_ID}" type="application/json">${escapeJson(page.data)}</script>
-<script type="module" fetchpriority="low" src="${options.assetBase}/_assets/client.js"></script>` : ""}
+<script id="${DATA_ID}" type="application/json">${escapeJson(page.data)}</script>
+<script type="module" fetchpriority="low" src="${options.assetBase}/_assets/client.js"></script>
 </body>
 </html>`;
   return { route: page.route, path: page.route === "/" ? "index.html" : `${page.route.slice(1)}/index.html`, html };
@@ -160,11 +157,8 @@ ${hydrate ? `<script id="${DATA_ID}" type="application/json">${escapeJson(page.d
 
 /** Config → one HTML document per page. Runs in workerd and Node. */
 export async function renderSite(input: SiteConfigInput, options: RenderOptions): Promise<RenderResult> {
-  const started = Date.now();
   const config = requireValidConfig(input);
   const pages: RenderedPage[] = [];
   for (const page of sitePagesFor(config, options.assetBase)) pages.push(await renderPage(config, page, options));
-  return { html: pages[0]!.html, pages, ms: Date.now() - started };
+  return { html: pages[0]!.html, pages };
 }
-
-export { DATA_ID };

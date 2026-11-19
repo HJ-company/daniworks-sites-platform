@@ -20,7 +20,7 @@ import { DataGrid, type GridColDef } from "@mui/x-data-grid";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link as RouterLink, useSearchParams } from "react-router";
-import { api, CYCLE_LABEL, won, type Payment, type QueueRow } from "../../api.js";
+import { api, CYCLE_LABEL, kstToday, won, type Payment, type QueueRow } from "../../api.js";
 import { ErrorAlert, useToast } from "../../ui.js";
 import { BillingChip, billingSummary } from "./billing-ui.js";
 import { EditPaymentDialog, PaymentDialog } from "./payment-dialog.js";
@@ -28,7 +28,6 @@ import { EditPaymentDialog, PaymentDialog } from "./payment-dialog.js";
 /** Auto-height rows: keep every cell's content vertically centred. */
 const CENTERED = { "& .MuiDataGrid-cell": { display: "flex", alignItems: "center", py: 0.5 } };
 
-const today = () => new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 10);
 const monthsAgo = (n: number) => {
   const d = new Date(Date.now() + 9 * 3600_000);
   d.setUTCMonth(d.getUTCMonth() - n);
@@ -227,7 +226,7 @@ function History() {
         <Button size="small" variant="outlined" onClick={() => setRange(monthRange(-1))}>
           지난달
         </Button>
-        <Button size="small" variant="outlined" onClick={() => setRange([monthsAgo(3), today()])}>
+        <Button size="small" variant="outlined" onClick={() => setRange([monthsAgo(3), kstToday()])}>
           최근 3개월
         </Button>
       </Stack>

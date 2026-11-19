@@ -35,7 +35,7 @@ export interface Env {
   RETENTION_DAYS?: string;
   /** Pepper for hashing visitor IPs (rate limiting without storing addresses). */
   HASH_PEPPER?: string;
-  /** Image generation. Optional until image_generate ships. */
+  /** Image generation (image_generate). Without a key the tool explains it is not configured. */
   OPENAI_API_KEY?: string;
   OPENAI_IMAGE_MODEL?: string;
   /** Images API base (`https://api.openai.com/v1`); Docker points it at cf-mock. */

@@ -4,7 +4,7 @@ import { HttpError } from "./http.js";
 import { r2PageKey } from "./keys.js";
 import { renderKeyOf, renderToR2, siteOrigin } from "./publish.js";
 import { syncHostRecordsNow } from "./routes.js";
-import { getSite, getVersion, primaryHostname } from "./store.js";
+import { getSite, getVersion } from "./store.js";
 
 /**
  * Full republish after a renderer or template update, in three explicit steps so a visual
@@ -18,7 +18,6 @@ export async function republishPlan(env: Env) {
   ).all<{ id: string; slug: string; version_id: string; number: number; asset_version: string | null }>();
   const sites = [];
   for (const row of results) {
-    const site = await getSite(env.DB, row.id);
     sites.push({
       siteId: row.id,
       slug: row.slug,
@@ -26,7 +25,7 @@ export async function republishPlan(env: Env) {
       number: row.number,
       assetVersion: row.asset_version,
       outdated: row.asset_version !== RENDER_VERSION,
-      liveUrl: `${env.PUBLIC_SCHEME ?? "https"}://${await primaryHostname(env.DB, site, env.BASE_DOMAIN)}/`,
+      liveUrl: `${await siteOrigin(env, row)}/`,
     });
   }
   return { renderVersion: RENDER_VERSION, total: sites.length, outdated: sites.filter((s) => s.outdated).length, sites };

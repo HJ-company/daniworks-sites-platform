@@ -43,11 +43,6 @@ export function requireValidConfig(input: SiteConfigInput): SiteConfig {
   return parsed.config;
 }
 
-/** Validates a config and projects every page into the props the view renders. */
-export function toSitePages(input: SiteConfigInput, assetBase: string): SitePage[] {
-  return sitePagesFor(requireValidConfig(input), assetBase);
-}
-
 /** Projects an already validated config into page props. */
 export function sitePagesFor(config: SiteConfig, assetBase: string): SitePage[] {
   const manifest = businessBasicTemplate;
@@ -91,7 +86,3 @@ export function sitePagesFor(config: SiteConfig, assetBase: string): SitePage[] 
   });
 }
 
-/** Home page only (M1 callers). */
-export function toPageData(config: SiteConfigInput, assetBase: string): PageData {
-  return toSitePages(config, assetBase)[0]!.data;
-}

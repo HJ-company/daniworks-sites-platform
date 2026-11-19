@@ -8,10 +8,12 @@ import { bumpRevision, refreshBilling } from "./billing.js";
 import { removeDomain } from "./domains.js";
 import { routesOf, syncHostRecordsNow } from "./routes.js";
 import { acquireRoutesLease, getSite, releaseRoutesLease, type SiteRow } from "./store.js";
-export { ensureNotPurged } from "./purge-guard.js";
 
 const now = () => new Date().toISOString();
 export const retentionDays = (env: Env) => Number(env.RETENTION_DAYS ?? 365);
+
+/** When a site cancelled at `cancelledAt` may be purged (ISO). */
+export const purgeAfter = (env: Env, cancelledAt: string) => new Date(Date.parse(cancelledAt) + retentionDays(env) * 86_400_000).toISOString();
 
 /**
  * Cancellation: public serving stops (410), custom hostnames are deleted at Cloudflare so
@@ -48,8 +50,7 @@ export async function cancelSite(env: Env, site: SiteRow) {
     }
   }
   await env.ROUTES.delete(kvBlogKey(site.id));
-  const purgeAfter = new Date(Date.parse(at) + retentionDays(env) * 86_400_000).toISOString();
-  return { siteId: site.id, cancelledAt: at, purgeAfter, domains };
+  return { siteId: site.id, cancelledAt: at, purgeAfter: purgeAfter(env, at), domains };
 }
 
 /** Undo a cancellation within the retention period. Custom domains must be connected again. */
@@ -91,9 +92,9 @@ export async function listCancellations(env: Env) {
 export async function purgeSite(env: Env, site: SiteRow, confirmSlug: unknown) {
   if (confirmSlug !== site.slug) throw new HttpError(422, "확인용 slug가 일치하지 않습니다");
   if (!site.cancelled_at) throw new HttpError(409, "해지된 사이트만 삭제할 수 있습니다");
-  const purgeAfter = Date.parse(site.cancelled_at) + retentionDays(env) * 86_400_000;
-  if (Date.now() < purgeAfter) {
-    throw new HttpError(409, `보관 기간이 끝나지 않았습니다 (${new Date(purgeAfter).toISOString().slice(0, 10)} 이후 삭제 가능)`);
+  const after = purgeAfter(env, site.cancelled_at);
+  if (new Date().toISOString() < after) {
+    throw new HttpError(409, `보관 기간이 끝나지 않았습니다 (${after.slice(0, 10)} 이후 삭제 가능)`);
   }
   const { results: domains } = await env.DB.prepare("SELECT hostname, kind, status FROM domains WHERE site_id = ?")
     .bind(site.id)

@@ -1,8 +1,8 @@
 import { renderSite, type SiteConfig } from "@sites/renderer";
 import type { Env } from "./env.js";
-import { HttpError } from "./http.js";
+import { escapeHtml, HttpError } from "./http.js";
 import { assetBase, sharedCss, siteOrigin } from "./publish.js";
-import { getSite, latestVersion, type SiteRow } from "./store.js";
+import { getSite, latestVersion, type SiteRow, type VersionRow } from "./store.js";
 
 /**
  * Draft links (M4 4-C): what the customer gets in KakaoTalk before the site is public.
@@ -41,9 +41,6 @@ export async function revokeDraftLink(env: Env, site: SiteRow) {
   await env.DB.prepare("UPDATE sites SET preview_token = NULL, preview_expires_at = NULL, updated_at = ? WHERE id = ?").bind(now(), site.id).run();
 }
 
-const escapeHtml = (value: string) =>
-  value.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
-
 /** Plain notice for links that do not (or no longer) work. */
 function notice(status: number, title: string, body: string) {
   return {
@@ -81,6 +78,24 @@ export interface DraftPage {
   html: string;
 }
 
+/**
+ * One page of a version rendered for review, with its banner: the owner's draft link
+ * (`draft`) or an operator's version preview on the api host (`internal`). Never indexed, no
+ * inquiries, site links kept under `linkPrefix`. Null for a route the site does not have.
+ */
+export async function renderReviewPage(env: Env, site: SiteRow, version: VersionRow, linkPrefix: string, route: string, kind: "draft" | "internal") {
+  const { pages } = await renderSite(JSON.parse(version.config) as SiteConfig, {
+    assetBase: assetBase(),
+    origin: await siteOrigin(env, site),
+    preview: true,
+    turnstileFrame: null,
+    linkPrefix,
+    inlineCss: await sharedCss(env),
+  });
+  const page = pages.find((entry) => entry.route === route);
+  return page ? withDraftBanner(page.html, kind) : null;
+}
+
 /** The router's request for `/preview/<token>[/<page>]`. */
 export async function renderDraft(env: Env, token: string, route: string): Promise<DraftPage> {
   if (!/^[a-f0-9]{40}$/.test(token)) return notice(404, "시안 링크를 찾을 수 없습니다", "주소를 다시 확인하거나 담당자에게 링크를 요청해 주세요.");
@@ -91,16 +106,7 @@ export async function renderDraft(env: Env, token: string, route: string): Promi
   if (!site.preview_expires_at || site.preview_expires_at <= now()) {
     return notice(410, "시안 링크가 만료되었습니다", "링크는 30일 동안 열립니다. 담당자에게 새 링크를 요청해 주세요.");
   }
-  const version = await latestVersion(env.DB, site.id);
-  const { pages } = await renderSite(JSON.parse(version.config) as SiteConfig, {
-    assetBase: assetBase(),
-    origin: await siteOrigin(env, site),
-    preview: true,
-    turnstileFrame: null,
-    linkPrefix: `/preview/${token}`,
-    inlineCss: await sharedCss(env),
-  });
-  const page = pages.find((entry) => entry.route === route);
-  if (!page) return notice(404, "없는 페이지입니다", "시안의 첫 화면으로 돌아가 주세요.");
-  return { status: 200, html: withDraftBanner(page.html) };
+  const html = await renderReviewPage(env, site, await latestVersion(env.DB, site.id), `/preview/${token}`, route, "draft");
+  if (!html) return notice(404, "없는 페이지입니다", "시안의 첫 화면으로 돌아가 주세요.");
+  return { status: 200, html };
 }

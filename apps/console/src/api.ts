@@ -1,7 +1,7 @@
 /**
- * Console → platform API. Every path is under `/api`, which the console Worker (or the Vite
- * dev proxy) forwards to the api Worker with the admin token added server-side: the browser
- * never holds a credential.
+ * Console → platform API. Every path is under `/api`, which the console Worker forwards to the
+ * api Worker with the operator's access token from the session cookie (the Vite dev proxy adds
+ * the admin token instead): the browser never holds a credential.
  */
 import { useQuery } from "@tanstack/react-query";
 export class ApiError extends Error {
@@ -155,12 +155,9 @@ export interface GuideSummary {
 }
 
 export type MetricEvent = "pageview" | "tel" | "kakao" | "map" | "booking" | "inquiry_cta" | "inquiry";
-export interface MetricsReport {
-  from: string;
-  to: string;
-  totals: Record<MetricEvent, number>;
-  daily: { date: string; event: MetricEvent; count: number }[];
-}
+
+/** Today in Korea (YYYY-MM-DD): payment days and periods are KST dates. */
+export const kstToday = () => new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 10);
 
 export const kst = (iso: string | null) =>
   iso ? new Date(new Date(iso).getTime() + 9 * 3600_000).toISOString().replace("T", " ").slice(0, 16) : "-";

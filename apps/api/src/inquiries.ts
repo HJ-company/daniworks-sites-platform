@@ -1,6 +1,6 @@
 import { formatIssues, inquirySubmissionSchema } from "@sites/schema";
 import type { Env } from "./env.js";
-import { HttpError } from "./http.js";
+import { escapeHtml, HttpError } from "./http.js";
 import { sendMail } from "./mail.js";
 import { sha256Hex } from "./hash.js";
 import { bumpMetric } from "./metrics.js";
@@ -26,9 +26,6 @@ export interface InquiryResponse {
   status: number;
   body: { ok: boolean; id?: string; error?: string; details?: string[] };
 }
-
-const escape = (value: string) =>
-  value.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
 
 const kst = (iso: string) =>
   new Date(new Date(iso).getTime() + 9 * 3600_000).toISOString().replace("T", " ").slice(0, 16);
@@ -147,7 +144,7 @@ async function notifyOwner(
       to,
       subject: `[${name}] 홈페이지 문의 - ${inquiry.name}`,
       text: lines.join("\n"),
-      html: `<p>${escape(lines[0]!)}</p><table cellpadding="4"><tr><th align="left">이름</th><td>${escape(inquiry.name)}</td></tr><tr><th align="left">연락처</th><td><a href="tel:${inquiry.phone}">${escape(phone)}</a></td></tr><tr><th align="left">접수</th><td>${escape(kst(inquiry.createdAt))} (한국 시간)</td></tr></table><p style="white-space:pre-line">${escape(inquiry.message)}</p><p style="color:#666">보낸 곳: ${escape(`https://${inquiry.hostname}${inquiry.page ?? "/"}`)}</p>`,
+      html: `<p>${escapeHtml(lines[0]!)}</p><table cellpadding="4"><tr><th align="left">이름</th><td>${escapeHtml(inquiry.name)}</td></tr><tr><th align="left">연락처</th><td><a href="tel:${inquiry.phone}">${escapeHtml(phone)}</a></td></tr><tr><th align="left">접수</th><td>${escapeHtml(kst(inquiry.createdAt))} (한국 시간)</td></tr></table><p style="white-space:pre-line">${escapeHtml(inquiry.message)}</p><p style="color:#666">보낸 곳: ${escapeHtml(`https://${inquiry.hostname}${inquiry.page ?? "/"}`)}</p>`,
     });
     await env.DB.prepare("UPDATE inquiries SET notify_status = ? WHERE id = ?")
       .bind(result.skipped ? "skipped" : "sent", inquiry.id)

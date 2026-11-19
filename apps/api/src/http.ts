@@ -22,3 +22,7 @@ export async function readJson<T>(request: Request): Promise<T> {
     throw new HttpError(400, "요청 본문이 JSON이 아닙니다");
   }
 }
+
+/** Text for HTML bodies and attributes (notices, notification mail). */
+export const escapeHtml = (value: string) =>
+  value.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
