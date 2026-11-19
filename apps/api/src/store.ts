@@ -184,7 +184,7 @@ export async function markPublished(db: D1Database, siteId: string, versionId: s
 }
 
 /** Active custom domain if any, else the default subdomain. */
-export async function primaryHostname(db: D1Database, site: SiteRow, baseDomain: string): Promise<string> {
+export async function primaryHostname(db: D1Database, site: Pick<SiteRow, "id" | "slug">, baseDomain: string): Promise<string> {
   const custom = await db
     .prepare("SELECT hostname FROM domains WHERE site_id = ? AND kind = 'custom' AND status = 'active' ORDER BY created_at LIMIT 1")
     .bind(site.id)

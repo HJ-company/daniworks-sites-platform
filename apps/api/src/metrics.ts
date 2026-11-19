@@ -47,7 +47,7 @@ export async function metricsReport(db: D1Database, siteId: string, from: string
     .prepare("SELECT date, event, count FROM metrics_daily WHERE site_id = ? AND date >= ? AND date <= ? ORDER BY date, event")
     .bind(siteId, from, to)
     .all<{ date: string; event: MetricEvent; count: number }>();
-  const totals = Object.fromEntries(METRIC_EVENTS.map((event) => [event, 0])) as Record<MetricEvent, number>;
+  const totals = emptyTotals();
   for (const row of results) totals[row.event] += row.count;
   return { from, to, totals, daily: results };
 }

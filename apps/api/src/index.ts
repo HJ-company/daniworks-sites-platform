@@ -1,4 +1,4 @@
-import { parseSiteConfig, renderSite, SiteConfigError, type SiteConfig } from "@sites/renderer";
+import { parseSiteConfig, SiteConfigError } from "@sites/renderer";
 import { deleteAsset, listAssets, uploadAsset } from "./assets.js";
 import { refreshBlog, refreshDueBlogs } from "./blog.js";
 import {
@@ -17,10 +17,10 @@ import {
   updateSubscription,
   voidPayment,
 } from "./billing.js";
-import { draftLink, issueDraftLink, revokeDraftLink, withDraftBanner } from "./draft-links.js";
+import { draftLink, issueDraftLink, renderReviewPage, revokeDraftLink } from "./draft-links.js";
 import { getGuide, guideVersions, listGuides } from "./guides.js";
 import { createCustomer, customerDetail, duplicatesOf, linkSite, listCustomers, updateCustomer } from "./customers.js";
-import { placeholderPaths, todayList } from "./today.js";
+import { lastSuspensionOf, placeholderPaths, todayList } from "./today.js";
 import { allInquiries, inquiriesCsv, listInquiries, requireEmail } from "./inquiries.js";
 import { currentQuarter, kstDay, metricsReport, quarterlyCsv, quarterlyOverview, quarterlyReport } from "./metrics.js";
 import { turnstileFrame } from "./turnstile.js";
@@ -31,12 +31,12 @@ import { MEDIA_PATH, r2MediaKey, r2SharedKey } from "./keys.js";
 import { addDomain, auditOrigins, domainQuota, listDomains, maintainDomains, refreshDomain, removeDomain, type DomainRow } from "./domains.js";
 import { templateSeedExport } from "./handoff.js";
 import { handleMcp } from "./mcp.js";
-import { assetBase, publish, rollback, siteOrigin } from "./publish.js";
+import { publish, rollback } from "./publish.js";
 import { auditHostRecords, reconcileHostRecords, syncHostRecordsNow } from "./routes.js";
-import { cancelSite, exportSite, listCancellations, purgeSite, reactivateSite, retentionDays } from "./lifecycle.js";
+import { cancelSite, exportSite, listCancellations, purgeSite, purgeAfter, reactivateSite } from "./lifecycle.js";
 import { commitRepublish, republishPlan, stagedPage, stageRepublish } from "./republish.js";
 import { addDraft, configFromBody, createSiteFromInput, creator, previewUrl } from "./sites.js";
-import { businessName, getSite, listSites, listVersions, setSiteStatus, versionByPreviewToken, type CreatedBy } from "./store.js";
+import { businessName, getSite, latestVersion, listSites, listVersions, setSiteStatus, versionByPreviewToken, type CreatedBy } from "./store.js";
 
 /** Must match wrangler.toml [triggers]: the hourly audit; the 5-minute cron only reconciles. */
 const AUDIT_CRON = "17 * * * *";
@@ -77,18 +77,9 @@ async function handle(request: Request, env: Env): Promise<Response> {
   if (method === "GET" && parts[0] === "preview" && (parts.length === 2 || parts.length === 3)) {
     const version = await versionByPreviewToken(env.DB, parts[1]!);
     const site = await getSite(env.DB, version.site_id);
-    const { pages } = await renderSite(JSON.parse(version.config) as SiteConfig, {
-      assetBase: assetBase(),
-      origin: await siteOrigin(env, site),
-      preview: true,
-      turnstileFrame: null,
-      // Site links are root-relative (`/#inquiry`, `/privacy`); keep them inside this preview.
-      linkPrefix: `/preview/${parts[1]}`,
-    });
-    const route = parts[2] ? `/${parts[2]}` : "/";
-    const page = pages.find((entry) => entry.route === route);
-    if (!page) throw new HttpError(404, "없는 페이지입니다");
-    return new Response(withDraftBanner(page.html, "internal"), {
+    const html = await renderReviewPage(env, site, version, `/preview/${parts[1]}`, parts[2] ? `/${parts[2]}` : "/", "internal");
+    if (!html) throw new HttpError(404, "없는 페이지입니다");
+    return new Response(html, {
       headers: {
         "content-type": "text/html; charset=utf-8",
         "x-robots-tag": "noindex, nofollow",
@@ -251,24 +242,17 @@ async function operatorRoutes(request: Request, env: Env, url: URL, parts: strin
 
   if (method === "GET" && parts.length === 2) {
     const versions = (await listVersions(env.DB, site.id)) as { preview_token: string }[];
-    const purgeAfter = site.cancelled_at ? new Date(Date.parse(site.cancelled_at) + retentionDays(env) * 86_400_000).toISOString() : null;
+    const purgeDate = site.cancelled_at ? purgeAfter(env, site.cancelled_at) : null;
     const { preview_token: _token, preview_expires_at: _expires, ...rest } = site;
     // Starter copy still to write in the latest draft, and where: the console warns before it goes to the owner.
-    const latest = await env.DB.prepare("SELECT config FROM site_versions WHERE site_id = ? ORDER BY number DESC LIMIT 1").bind(site.id).first<{ config: string }>();
-    const latestConfig = latest ? (JSON.parse(latest.config) as { business?: { phone?: string; businessNumber?: string } }) : null;
-    const todoFields = latestConfig ? placeholderPaths(latestConfig) : [];
+    // Every site gets version 1 when it is created.
+    const latestConfig = JSON.parse((await latestVersion(env.DB, site.id)).config) as { business?: { phone?: string; businessNumber?: string } };
+    const todoFields = placeholderPaths(latestConfig);
     // Who suspended the site, when and why (an operator's suspension is not billing's).
-    const lastSuspension =
-      site.status === "suspended" && site.suspend_reason === "manual"
-        ? await env.DB.prepare(
-            "SELECT actor_name, actor_type, target AS reason, created_at FROM audit_log WHERE site_id = ? AND action = 'POST /sites/:id/suspend' AND status = 200 ORDER BY created_at DESC LIMIT 1",
-          )
-            .bind(site.id)
-            .first()
-        : null;
+    const lastSuspension = site.status === "suspended" && site.suspend_reason === "manual" ? await lastSuspensionOf(env.DB, site.id) : null;
     // No customer yet: offer the ones with the same phone or business number as the site.
     const customerSuggestions =
-      !site.customer_id && latestConfig?.business
+      !site.customer_id && latestConfig.business
         ? (await duplicatesOf(env.DB, { phone: latestConfig.business.phone, businessNumber: latestConfig.business.businessNumber })).map((c) => ({
             id: c.id,
             name: c.name,
@@ -280,7 +264,7 @@ async function operatorRoutes(request: Request, env: Env, url: URL, parts: strin
       site: {
         ...rest,
         business_name: await businessName(env.DB, site),
-        purge_after: purgeAfter,
+        purge_after: purgeDate,
         draft_link: draftLink(env, site),
         draft_todos: todoFields.length,
         draft_todo_fields: todoFields,

@@ -55,10 +55,13 @@ export const today = () => kstDay(new Date());
  * right after the paid period (grace days were served, so they are not free); after a
  * suspension, or for the first payment, it starts on the payment day. The operator may edit it.
  */
+/** Last day of one billing cycle starting on `start`. */
+const cycleEnd = (start: string, cycle: Cycle) => addDays(addMonths(start, cycle === "yearly" ? 12 : 1), -1);
+
 export function defaultPeriod(cycle: Cycle, paidThrough: string | null, paidOn: string) {
   const continues = paidThrough !== null && daysBetween(paidThrough, paidOn) <= GRACE_DAYS;
   const start = continues ? addDays(paidThrough, 1) : paidOn;
-  return { start, end: addDays(addMonths(start, cycle === "yearly" ? 12 : 1), -1) };
+  return { start, end: cycleEnd(start, cycle) };
 }
 
 export interface Period {
@@ -349,7 +352,7 @@ export async function recordPayment(
         ? dayOf(body.periodEnd, "종료일")
         : body.periodStart === undefined
           ? current.nextPeriod.end
-          : addDays(addMonths(periodStart, current.cycle === "yearly" ? 12 : 1), -1);
+          : cycleEnd(periodStart, current.cycle);
     if (periodEnd < periodStart) throw new HttpError(422, "종료일이 시작일보다 빠릅니다");
     const amount = body.amount === undefined ? current.amount : amountOf(body.amount);
     const [inserted] = await env.DB.batch([

@@ -60,8 +60,7 @@ export function instructions(env: Env, hostname: string, cf: CustomHostname) {
   const zone = registrableDomain(hostname);
   return {
     cname: { type: "CNAME", name: hostname, value: target },
-    /** Registrar host field: `www`, `www.shop`, `@` for the apex; null when the zone is unknown. */
-    host: apex ? "@" : zone ? hostname.slice(0, -(zone.length + 1)) : null,
+    host: registrarHost(hostname, apex, zone),
     zone,
     /** Only for a domain already live elsewhere: validate before switching DNS (no downtime). */
     optionalTxt: cf.ownership_verification
@@ -103,13 +102,16 @@ export async function listDomains(env: Env, siteId: string) {
   return results.map((row) => ({ ...row, verification_records: withRegistrarHost(row.hostname, row.verification_records) }));
 }
 
+/** Registrar host field: `www`, `www.shop`, `@` for the apex; null when the zone is unknown. */
+const registrarHost = (hostname: string, apex: boolean, zone: string | null) => (apex ? "@" : zone ? hostname.slice(0, -(zone.length + 1)) : null);
+
 /** Stored instructions, completed with the registrar host field for rows saved before M4. */
 function withRegistrarHost(hostname: string, stored: string | null) {
   if (!stored) return null;
   const records = JSON.parse(stored) as { apex: boolean; host?: string | null; zone?: string | null };
   if (records.host !== undefined) return records;
   const zone = registrableDomain(hostname);
-  return { ...records, zone, host: records.apex ? "@" : zone ? hostname.slice(0, -(zone.length + 1)) : null };
+  return { ...records, zone, host: registrarHost(hostname, records.apex, zone) };
 }
 
 export async function addDomain(env: Env, site: SiteRow, input: unknown) {

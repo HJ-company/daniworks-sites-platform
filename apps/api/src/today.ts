@@ -19,9 +19,20 @@ interface SiteBrief {
   business_name: string | null;
 }
 
-/** The newest successful operator suspension of site `s`, one column of it. */
-const lastSuspension = (column: "target" | "created_at") =>
-  `(SELECT ${column} FROM audit_log a WHERE a.site_id = s.id AND a.action = 'POST /sites/:id/suspend' AND a.status = 200 ORDER BY a.created_at DESC LIMIT 1)`;
+/** Audit rows of successful operator suspensions, newest first (the reason is in `target`). */
+const SUSPENSIONS = "FROM audit_log a WHERE a.action = 'POST /sites/:id/suspend' AND a.status = 200";
+const NEWEST = "ORDER BY a.created_at DESC LIMIT 1";
+
+/** One column of the newest suspension of site `s` (a correlated subquery). */
+const lastSuspension = (column: "target" | "created_at") => `(SELECT a.${column} ${SUSPENSIONS} AND a.site_id = s.id ${NEWEST})`;
+
+/** Who took a site down, when and why: shown while an operator (not billing) has it down. */
+export function lastSuspensionOf(db: D1Database, siteId: string) {
+  return db
+    .prepare(`SELECT a.actor_name, a.actor_type, a.target AS reason, a.created_at ${SUSPENSIONS} AND a.site_id = ? ${NEWEST}`)
+    .bind(siteId)
+    .first();
+}
 
 /**
  * The operator's to-do list for the day, in one call: payments to chase, sites an operator took

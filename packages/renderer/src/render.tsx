@@ -51,12 +51,12 @@ function escapeHtml(value: string) {
  * src, srcset and sizes always match what the image will pick (no double download).
  */
 export function lcpPreload(body: string): string {
-  const img = body.match(/<img\b[^>]*fetchPriority="high"[^>]*>|<img\b[^>]*fetchpriority="high"[^>]*>/i)?.[0];
+  const img = body.match(/<img\b[^>]*fetchpriority="high"[^>]*>/i)?.[0];
   if (!img) return "";
   const attr = (name: string) => img.match(new RegExp(`\\s${name}="([^"]*)"`, "i"))?.[1];
   const src = attr("src");
   if (!src) return "";
-  const srcset = attr("srcSet") ?? attr("srcset");
+  const srcset = attr("srcset");
   const sizes = attr("sizes");
   return `<link rel="preload" as="image" href="${src}"${srcset ? ` imagesrcset="${srcset}"` : ""}${sizes ? ` imagesizes="${sizes}"` : ""} fetchpriority="high">`;
 }
@@ -113,7 +113,7 @@ async function renderPage(config: SiteConfig, sitePage: SitePage, options: Rende
   const lang = ("lang" in config.meta && config.meta.lang) || "ko";
   const home = page.route === "/";
   const pageTitle = home ? title : `${page.title} | ${isServiceConfig(config) ? config.business.name : title}`;
-  const url = options.origin ? `${options.origin}${page.route === "/" ? "/" : `${page.route}`}` : undefined;
+  const url = options.origin ? `${options.origin}${page.route}` : undefined;
   const hero = page.data.page.blocks[0];
   const heroImage = absolute(
     options.origin,

@@ -147,9 +147,8 @@ export async function customerDetail(db: D1Database, id: string) {
  * offered on the customer's page so their sites and payments add up.
  */
 async function unlinkedMatches(db: D1Database, customer: CustomerRow) {
-  const phone = digitsOf(customer.phone);
-  const number = digitsOf(customer.business_number);
-  if (phone.length < 9 && number.length !== 10) return [];
+  const isOwner = sameOwner(customer.phone, customer.business_number);
+  if (!isOwner) return [];
   const { results } = await db
     .prepare(
       `SELECT s.id, s.slug, ${BUSINESS_NAME_SQL("s.id", "s.published_version_id")} AS business_name,
@@ -160,7 +159,7 @@ async function unlinkedMatches(db: D1Database, customer: CustomerRow) {
   return results
     .filter(({ config }) => {
       const business = config ? (JSON.parse(config) as { business?: { phone?: string; businessNumber?: string } }).business : undefined;
-      return (phone.length >= 9 && digitsOf(business?.phone) === phone) || (number.length === 10 && digitsOf(business?.businessNumber) === number);
+      return isOwner(business?.phone, business?.businessNumber);
     })
     .map(({ config: _config, ...site }) => site);
 }
@@ -173,6 +172,17 @@ export async function linkSite(db: D1Database, siteId: string, customerId: unkno
 }
 
 const digitsOf = (value: unknown) => (typeof value === "string" ? value.replace(/[^\d]/g, "") : "");
+
+/**
+ * "Same owner" test for one phone and business number: a full phone (9+ digits) or a full
+ * business number (10 digits) that matches, hyphens ignored. Null when neither is complete.
+ */
+function sameOwner(phone: unknown, businessNumber: unknown) {
+  const p = digitsOf(phone);
+  const n = digitsOf(businessNumber);
+  if (p.length < 9 && n.length !== 10) return null;
+  return (otherPhone: unknown, otherNumber: unknown) => (p.length >= 9 && digitsOf(otherPhone) === p) || (n.length === 10 && digitsOf(otherNumber) === n);
+}
 
 /** Customers matching a name, owner, phone or business number (agents look before creating). */
 export async function findCustomers(db: D1Database, search: string) {
@@ -188,9 +198,7 @@ export async function findCustomers(db: D1Database, search: string) {
 
 /** Existing customers with the same phone or business number: the same owner twice. */
 export async function duplicatesOf(db: D1Database, body: Record<string, unknown>) {
-  const phone = digitsOf(body.phone);
-  const number = digitsOf(body.businessNumber);
-  if (phone.length < 9 && number.length !== 10) return [];
-  const all = await listCustomers(db);
-  return all.filter((c) => (phone.length >= 9 && digitsOf(c.phone) === phone) || (number.length === 10 && digitsOf(c.business_number) === number));
+  const isOwner = sameOwner(body.phone, body.businessNumber);
+  if (!isOwner) return [];
+  return (await listCustomers(db)).filter((c) => isOwner(c.phone, c.business_number));
 }
