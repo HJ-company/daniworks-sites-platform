@@ -1,4 +1,5 @@
 import { Box, Button, Stack } from "@mui/material";
+import { gridLocale } from "../../grid-locale.js";
 import { DataGrid, type GridColDef } from "@mui/x-data-grid";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { api, kst, type Inquiry } from "../../api.js";
@@ -34,6 +35,7 @@ export function InquiriesTab({ siteId }: { siteId: string }) {
       <ErrorAlert error={pages.error} />
       <Box sx={{ bgcolor: "background.paper" }}>
         <DataGrid
+          localeText={gridLocale}
           rows={rows}
           columns={columns}
           loading={pages.isLoading}

@@ -12,4 +12,4 @@ export { lessonFixture, fieldFixture } from "./templates/service-local/fixtures.
 export { serviceLocalGuide } from "./templates/service-local/guide.js";
 export { VARIANT_WIDTHS, variantUrl, srcSetFor } from "./images.js";
 export { serviceLocalSkeleton } from "./templates/service-local/skeleton.js";
-export { starterConfig, type StarterInput } from "./templates/service-local/starter.js";
+export { starterConfig, TODO as STARTER_TODO, type StarterInput } from "./templates/service-local/starter.js";

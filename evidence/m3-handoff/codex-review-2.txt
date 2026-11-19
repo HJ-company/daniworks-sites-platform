@@ -1,0 +1,1405 @@
+OpenAI Codex v0.167.0
+--------
+workdir: /Users/steve/Projects/daniworks-sites-platform
+model: gpt-6.1-sol
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: low
+reasoning summaries: none
+session id: 01a1f0b1-265f-7db1-a413-02ae65ed36c9
+--------
+user
+current changes
+exec
+/bin/zsh -lc 'git status --short; find .. -name AGENTS.md -o -name AGENTS.override.md' in /Users/steve/Projects/daniworks-sites-platform
+exec
+/bin/zsh -lc 'ls -la AGENTS*; git diff; cat apps/api/src/handoff.ts' in /Users/steve/Projects/daniworks-sites-platform
+ succeeded in 0ms:
+zsh:1: no matches found: AGENTS*
+diff --git a/apps/api/src/index.ts b/apps/api/src/index.ts
+index 36577f4..e2526d7 100644
+--- a/apps/api/src/index.ts
++++ b/apps/api/src/index.ts
+@@ -8,6 +8,7 @@ import type { Env } from "./env.js";
+ import { HttpError, json, readJson, requireAdmin } from "./http.js";
+ import { MEDIA_PATH, r2MediaKey, r2SharedKey } from "./keys.js";
+ import { addDomain, auditOrigins, domainQuota, listDomains, maintainDomains, refreshDomain, removeDomain, type DomainRow } from "./domains.js";
++import { templateSeedExport } from "./handoff.js";
+ import { handleMcp } from "./mcp.js";
+ import { assetBase, publish, rollback, siteOrigin } from "./publish.js";
+ import { auditHostRecords, reconcileHostRecords, syncHostRecordsNow } from "./routes.js";
+@@ -163,6 +164,11 @@ async function handle(request: Request, env: Env): Promise<Response> {
+     if (method === "DELETE" && parts.length === 4) return json(await removeDomain(env, site.id, hostname));
+   }
+ 
++  // GET /sites/:id/template-seed[?versionId=]: content for the AI homepage importer
++  if (method === "GET" && parts.length === 3 && parts[2] === "template-seed") {
++    return json(await templateSeedExport(env, site.id, url.searchParams.get("versionId") ?? undefined));
++  }
++
+   // Lifecycle: POST /cancel, /reactivate, /purge {confirmSlug}; GET /export.zip
+   if (method === "POST" && parts.length === 3 && parts[2] === "cancel") return json(await cancelSite(env, site));
+   if (method === "POST" && parts.length === 3 && parts[2] === "reactivate") return json(await reactivateSite(env, site));
+diff --git a/packages/renderer/src/index.ts b/packages/renderer/src/index.ts
+index 03216b9..d020892 100644
+--- a/packages/renderer/src/index.ts
++++ b/packages/renderer/src/index.ts
+@@ -3,7 +3,7 @@ export { toPageData, toSitePages, requireValidConfig, SiteConfigError, BUILDER_V
+ export type { SiteConfig, SiteConfigInput, LegacySiteConfig } from "./site-config.js";
+ export { isServiceConfig } from "./site-config.js";
+ export type { PageData, SiteChrome } from "./view.js";
+-export { parseSiteConfig, validateSiteConfig } from "./validate.js";
++export { HOST_COMPOSITION, parseSiteConfig, validateSiteConfig } from "./validate.js";
+ export { allowedPickerIcons } from "./icons/allowlist.js";
+ export { ASSET_VERSION, RENDER_VERSION } from "./generated/asset-version.js";
+ export { compileServiceSeed, SAMPLE_PHOTOS, mediaPath } from "./templates/service-local/compile.js";
+diff --git a/scripts/verify-all.mjs b/scripts/verify-all.mjs
+index 37ad05e..5bfec1d 100644
+--- a/scripts/verify-all.mjs
++++ b/scripts/verify-all.mjs
+@@ -17,6 +17,7 @@ const steps = [
+   ["m3-reports", "verify-m3-reports.mjs"],
+   ["m3-republish", "verify-m3-republish.mjs"],
+   ["m3-lifecycle", "verify-m3-lifecycle.mjs"],
++  ["m3-handoff", "verify-m3-handoff.mjs"],
+ ];
+ const only = process.argv.slice(2);
+ const summary = [];
+import { compileServiceSeed, HOST_COMPOSITION, isServiceConfig, parseSiteConfig } from "@sites/renderer";
+import type { Env } from "./env.js";
+import { HttpError } from "./http.js";
+import { siteOrigin } from "./publish.js";
+import { getSite } from "./store.js";
+
+/**
+ * Hand-off to the AI homepage product (Strapi via create-daniworks-app's importer): the site's
+ * content as a Builder TemplateSeed plus the selection it renders with. Uploaded photos get
+ * absolute URLs so the importer can download them. The importer side lives in builder-v2.
+ */
+export async function templateSeedExport(env: Env, siteId: string, versionId?: string) {
+  const site = await getSite(env.DB, siteId);
+  const id = versionId ?? site.published_version_id;
+  if (!id) throw new HttpError(409, "게시된 버전이 없습니다. versionId를 지정하세요");
+  const row = await env.DB.prepare("SELECT number, config FROM site_versions WHERE id = ? AND site_id = ?").bind(id, siteId).first<{ number: number; config: string }>();
+  if (!row) throw new HttpError(404, "버전이 없습니다");
+  const parsed = parseSiteConfig(JSON.parse(row.config));
+  if (!parsed.ok || !isServiceConfig(parsed.config)) throw new HttpError(422, "업종 템플릿(v2) 설정만 내보낼 수 있습니다");
+  const config = parsed.config;
+  const seed = compileServiceSeed(config);
+  const origin = await siteOrigin(env, site);
+  const assets = seed.assets.map((asset) =>
+    asset.src.startsWith("/_media/") ? { ...asset, src: `${origin}${asset.src}`, sourceUrl: `${origin}${asset.src}`, sourceImageUrl: `${origin}${asset.src}` } : asset,
+  );
+  return {
+    format: "dani-builder.template-seed",
+    selection: { templateId: "business-basic", compositionId: HOST_COMPOSITION, paletteId: config.paletteId, themeId: "open-atelier" },
+    source: { siteId, slug: site.slug, version: row.number, templateId: config.templateId, preset: config.preset },
+    business: config.business,
+    seed: { ...seed, assets },
+  };
+}
+
+exec
+/bin/zsh -lc 'cat /Users/steve/.codex/skills/workers-best-practices/SKILL.md; cat scripts/handoff-to-strapi.mjs scripts/verify-m3-handoff.mjs' in /Users/steve/Projects/daniworks-sites-platform
+ succeeded in 0ms:
+---
+name: workers-best-practices
+description: Cloudflare Workers best practices for production applications. Use when writing, reviewing, or configuring Workers.
+---
+
+Your knowledge of Cloudflare Workers APIs, types, and configuration may be outdated. **Prefer retrieval over pre-training** when writing or reviewing Workers code.
+
+Use the project's installed versions, generated types, and Wrangler compatibility settings as the baseline for existing code. Retrieve relevant Cloudflare documentation to verify API, configuration, runtime behavior, and limit claims.
+
+## References
+
+Read the sections relevant to the task:
+
+| Reference | When to use it |
+|-----------|----------------|
+| [Configuration and observability](references/configuration.md) | Compatibility dates, bindings, generated types, secrets, logs, and traces |
+| [Runtime patterns](references/runtime-patterns.md) | Streaming, promise lifetime, request state, service calls, security, and runtime tests |
+| [Platform API checks](references/platform-apis.md) | Handler signatures, platform classes, binding access, and serialization |
+
+For missing evidence, consult [Workers best practices](https://developers.cloudflare.com/workers/best-practices/workers-best-practices/index.md) or find the affected product in the [Cloudflare docs directory](https://developers.cloudflare.com/directory/index.md). Use the installed Wrangler schema for config fields. A newer type package does not supersede the project's configured target.
+
+## Keep Compatibility Dates Current
+
+Use today's date for new Workers. Encourage periodic updates for existing Workers, reviewing compatibility changes and running relevant tests. Assess existing behavior against its configured date and flags; see [compatibility guidance](references/configuration.md#keep-compatibility_date-current).
+
+## Enable Observability
+
+Enable [Workers Logs](https://developers.cloudflare.com/workers/observability/logs/workers-logs/index.md) and [Traces](https://developers.cloudflare.com/workers/observability/traces/index.md) when creating or preparing a Worker for production. Set `observability.enabled` and `observability.traces.enabled` to `true`; the top-level setting alone does not enable traces. Use structured JSON logging and configure sampling for the workload. During reviews, flag missing logs or traces. See the [configuration example](references/configuration.md#enable-workers-logs-and-traces).
+
+## Anti-Patterns to Flag
+
+| Anti-pattern | Consequence and preferred pattern |
+|-------------|-----------------------------------|
+| `await response.text()` or similar buffering on unbounded data | Can exhaust Worker memory; [stream large or unbounded bodies](references/runtime-patterns.md#stream-request-and-response-bodies). |
+| Hardcoded secrets in source or config | Leaks credentials through version control; use Wrangler secrets. |
+| `Math.random()` for security-sensitive tokens or IDs | Predictable values; use `crypto.randomUUID()` or `crypto.getRandomValues()`. |
+| Async work started without awaiting, returning, or attaching it to `ctx.waitUntil()` | Work can be dropped and errors missed; tie it to the request or background-work lifetime. |
+| Module-level mutable request state | Leaks data across requests and can cause I/O ownership errors; pass request state explicitly. |
+| Cloudflare REST API calls for operations available through Worker bindings | Adds network and authentication overhead; use the available binding. |
+| `ctx.passThroughOnException()` used as general error handling | Can conceal Worker failures by forwarding to the origin; use explicit error handling and structured error responses. |
+| Hand-written `Env` that duplicates Wrangler bindings | Can drift from configuration; generate binding types with `wrangler types`. |
+| Direct string comparison of secret values | Can expose timing differences; use the [Web Crypto comparison pattern](references/runtime-patterns.md#use-web-crypto-for-secure-token-generation). |
+| Destructuring `ctx` methods, such as `const { waitUntil } = ctx` | Loses the receiver; call `ctx.waitUntil(...)`. |
+| `any` on `Env` or handler parameters | Hides binding and handler contract errors; use the project's generated and platform types. |
+| `as unknown as T` to force a platform type match | Hides incompatibilities; fix the underlying contract. |
+| `implements` used in place of extending a platform base class | Does not inherit runtime behavior, `this.ctx`, or `this.env`; use the appropriate base class. |
+| Unbound `env.X` in a platform class method | Bindings are available through `this.env.X`; see [binding access patterns](references/platform-apis.md#binding-access--the-most-common-error). |
+| Applying one serialization rule across Queues, Workflow steps, storage, and WebSockets | Can reject valid payloads or accept unsupported ones; check the [specific API and encoding](references/platform-apis.md#serialization-boundaries). |
+
+## Validation
+
+Use the project's existing checks for affected Workers behavior: type-check binding or handler contract changes, and run relevant runtime tests for behavior changes. Preserve required repository checks; a narrow edit does not require a full Workers audit.
+
+## Scope
+
+This skill covers Workers-specific best practices and code review. For related topics:
+
+- **Durable Objects**: load the `durable-objects` skill
+- **Workflows**: see [Rules of Workflows](https://developers.cloudflare.com/workflows/build/rules-of-workflows/index.md)
+- **Wrangler CLI commands**: load the `wrangler` skill
+// Moves a starter site into an AI homepage project scaffolded by create-daniworks-app
+// (template business-basic), before its first `pnpm --filter cms template:import`:
+//
+//   API_URL=https://api.dsites.kr ADMIN_TOKEN=... node scripts/handoff-to-strapi.mjs --site=<id|slug> --into=<project dir>
+//
+// It replaces template-data/seed.json ({ seed, colors }) and template-data/assets/ with the
+// site's content; the importer then loads it into Strapi. Fresh CMS only (the importer
+// refuses to overwrite). No change to builder-v2 is needed.
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { basename, join } from "node:path";
+
+const API = process.env.API_URL ?? "http://127.0.0.1:8788";
+const TOKEN = process.env.ADMIN_TOKEN ?? "dev-admin-token";
+const args = Object.fromEntries(process.argv.slice(2).map((a) => a.replace(/^--/, "").split("=")));
+if (!args.site || !args.into) {
+  console.error("usage: node scripts/handoff-to-strapi.mjs --site=<id|slug> --into=<project dir> [--version=<versionId>]");
+  process.exit(2);
+}
+// The package exports no package.json; use the renderer's installed copy (same pinned version).
+const templatesRoot = fileURLToPath(new URL("../packages/renderer/node_modules/@dani-builder/site-templates/", import.meta.url));
+const { businessBasicTemplate, collectSeedValidationErrors } = await import(join(templatesRoot, "dist/index.js"));
+
+const get = async (path) => {
+  const res = await fetch(`${API}${path}`, { headers: { authorization: `Bearer ${TOKEN}` } });
+  if (!res.ok) throw new Error(`${path}: ${res.status} ${await res.text()}`);
+  return res.json();
+};
+
+const selectionFile = join(args.into, "template-selection.json");
+if (!existsSync(selectionFile)) throw new Error(`${selectionFile} 없음: create-daniworks-app으로 만든 프로젝트 루트를 지정하세요`);
+const selection = JSON.parse(readFileSync(selectionFile, "utf8"));
+if (selection.template !== "business-basic") throw new Error(`business-basic 템플릿 프로젝트가 아닙니다 (${selection.template})`);
+
+const sites = (await get("/sites")).sites;
+const site = sites.find((s) => s.id === args.site || s.slug === args.site);
+if (!site) throw new Error(`사이트를 찾지 못했습니다: ${args.site}`);
+const out = await get(`/sites/${site.id}/template-seed${args.version ? `?versionId=${args.version}` : ""}`);
+const errors = collectSeedValidationErrors(businessBasicTemplate, out.selection.compositionId, out.seed);
+if (errors.length) throw new Error(`seed 계약 검증 실패:\n${errors.join("\n")}`);
+
+const data = join(args.into, "template-data");
+const assets = join(data, "assets");
+rmSync(assets, { recursive: true, force: true });
+mkdirSync(assets, { recursive: true });
+for (const asset of out.seed.assets) {
+  const target = join(assets, basename(asset.src));
+  if (/^https?:\/\//.test(asset.src)) {
+    // Local Docker: the site origin is not resolvable here; fetch through the API instead.
+    const res = await fetch(asset.src.replace(/^https?:\/\/[^/]+/, process.env.MEDIA_BASE ?? new URL(asset.src).origin));
+    if (!res.ok) throw new Error(`${asset.src}: ${res.status}`);
+    writeFileSync(target, Buffer.from(await res.arrayBuffer()));
+  } else {
+    copyFileSync(join(templatesRoot, asset.src), target);
+  }
+}
+const colors = businessBasicTemplate.palettes[out.selection.paletteId].brandColors;
+writeFileSync(join(data, "seed.json"), `${JSON.stringify({ seed: out.seed, colors }, null, 2)}\n`);
+console.log(`${site.slug} v${out.source.version} → ${data}: ${out.seed.pages.length} pages, ${readdirSync(assets).length} assets, palette ${out.selection.paletteId}`);
+console.log("다음: 새 CMS에서 pnpm --filter cms template:import");
+// M3 step 3-6: AI homepage hand-off. The exported TemplateSeed passes the Builder seed contract
+// (the same check builder-v2's importer runs) and its uploaded photos download by URL.
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import { tmpdir } from "node:os";
+import { basename, join } from "node:path";
+import { API, TOKEN, api, evidence, uploadShared } from "./lib/verify.mjs";
+
+const sharp = createRequire(new URL("../packages/renderer/package.json", import.meta.url))("sharp");
+const { fieldFixture } = await import("../packages/renderer/src/templates/service-local/fixtures.ts");
+const { businessBasicTemplate, collectSeedValidationErrors } = await import(
+  "../packages/renderer/node_modules/@dani-builder/site-templates/dist/index.js"
+);
+const ev = evidence("m3-handoff");
+const { check } = ev;
+const run = Date.now().toString(36);
+
+uploadShared();
+const config = { ...structuredClone(fieldFixture), slug: `handoff-${run}` };
+const created = await api("POST", "/sites", { config, createdBy: "operator" });
+const siteId = created.data.siteId;
+check("게시 전에는 versionId 없이 409", (await api("GET", `/sites/${siteId}/template-seed`)).status === 409);
+const photo = await sharp({ create: { width: 1000, height: 700, channels: 3, background: "#369" } }).jpeg().toBuffer();
+const up = await fetch(`${API}/sites/${siteId}/assets`, { method: "POST", headers: { authorization: `Bearer ${TOKEN}`, "content-type": "image/jpeg" }, body: photo }).then((r) => r.json());
+const v2 = structuredClone(config);
+v2.content.hero.image = { key: up.key, alt: "현장", width: up.width, height: up.height };
+const draft = await api("POST", `/sites/${siteId}/versions`, { config: v2 });
+await api("POST", `/sites/${siteId}/publish`, { versionId: draft.data.versionId });
+
+const out = (await api("GET", `/sites/${siteId}/template-seed`)).data;
+check("형식·선택 정보·출처", out.format === "dani-builder.template-seed" && out.selection.templateId === "business-basic" && out.source.version === 2 && out.source.preset === "field");
+const errors = collectSeedValidationErrors(businessBasicTemplate, out.selection.compositionId, out.seed);
+check("빌더 seed 계약 검증 통과(importer와 같은 검사)", errors.length === 0, { errors: errors.slice(0, 5) });
+check("페이지: 홈과 개인정보처리방침, 상호", out.seed.pages.map((p) => p.route).join() === "/,/privacy" && out.seed.global.sitename === config.business.name);
+const uploaded = out.seed.assets.find((a) => a.key === up.key);
+const download = uploaded ? await fetch(uploaded.src.replace(/^https?:\/\/[^/]+/, API)) : null;
+check("업로드 사진은 절대 URL이고 내려받아짐", uploaded?.src.startsWith("http") && download?.ok && download.headers.get("content-type") === "image/jpeg");
+const older = (await api("GET", `/sites/${siteId}/template-seed?versionId=${created.data.versionId}`)).data;
+check("versionId로 예전 버전도 내보냄", older.source.version === 1 && !older.seed.assets.some((a) => a.key === up.key));
+
+// Into a create-daniworks-app project layout (selection + template-data) for template:import.
+const project = mkdtempSync(join(tmpdir(), "aihome-"));
+writeFileSync(join(project, "template-selection.json"), JSON.stringify({ template: "business-basic", version: "0.2.4", composition: "logistics", palette: "clay", i18n: { enabled: false, locales: ["ko"] } }));
+mkdirSync(join(project, "template-data/assets"), { recursive: true });
+writeFileSync(join(project, "template-data/assets/stale.jpg"), "old");
+const log = execFileSync("node", ["scripts/handoff-to-strapi.mjs", `--site=${config.slug}`, `--into=${project}`], {
+  encoding: "utf8",
+  env: { ...process.env, MEDIA_BASE: API },
+});
+const written = JSON.parse(readFileSync(join(project, "template-data/seed.json"), "utf8"));
+const files = readdirSync(join(project, "template-data/assets"));
+check("프로젝트에 seed.json(seed+colors)과 자산 파일명 일치, 이전 자산 정리", written.seed.global.sitename === config.business.name && written.colors &&
+  written.seed.assets.every((a) => files.includes(basename(a.src))) && !files.includes("stale.jpg"), { log: log.trim(), files });
+const errorsAfter = collectSeedValidationErrors(businessBasicTemplate, out.selection.compositionId, written.seed);
+check("프로젝트에 쓴 seed도 계약 검증 통과", errorsAfter.length === 0);
+
+ev.finish({ siteId });
+
+exec
+/bin/zsh -lc 'find . -name AGENTS.md -o -name AGENTS.override.md; cat packages/renderer/src/templates/service-local/compile.ts; cat apps/api/src/publish.ts | head -100; cat packages/renderer/src/validate.ts | head -80; cat package.json' in /Users/steve/Projects/daniworks-sites-platform
+ succeeded in 1106ms:
+./node_modules/.pnpm/@dani-builder+strapi-client@2.5.0/node_modules/@dani-builder/strapi-client/AGENTS.md
+./node_modules/.pnpm/next@16.4.6_react-dom@19.3.1_react@19.3.1__react@19.3.1/node_modules/next/AGENTS.md
+./node_modules/.pnpm/next@16.4.6_@opentelemetry+api@1.10.0_@types+node@26.6.6_react-dom@19.3.1_react@19.3.1__react@19.3.1/node_modules/next/AGENTS.md
+import { businessBasicTemplate, type TemplateAsset, type TemplateSeed } from "@dani-builder/site-templates";
+import type { Photo, ServiceSiteConfig } from "@sites/schema";
+import { presets } from "./presets.js";
+
+/** Packaged sample photos by file name (`t:<name>`), shared by every composition. */
+const samples = new Map<string, TemplateAsset>(
+  Object.values(businessBasicTemplate.compositions)
+    .flatMap((composition) => composition.seed.assets)
+    .map((asset) => [asset.src.replace(/^.*\//, "").replace(/\.(jpg|png)$/, ""), asset]),
+);
+
+export const SAMPLE_PHOTOS: readonly string[] = [...samples.keys()];
+
+/** Media URL path for an uploaded photo key `m:<siteId>/<file>`; served by both router and API. */
+export const mediaPath = (key: string) => `/_media/${key.slice(2)}`;
+
+type Block = Record<string, unknown>;
+type Paragraph = { type: "paragraph"; children: { type: "text"; text: string }[] };
+type Heading = { type: "heading"; level: number; children: { type: "text"; text: string }[] };
+
+const paragraphs = (value: string): Paragraph[] =>
+  value
+    .split(/\n{2,}/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((part) => ({ type: "paragraph", children: [{ type: "text", text: part }] }));
+
+const heading = (text: string): Heading => ({ type: "heading", level: 2, children: [{ type: "text", text }] });
+
+export const telHref = (phone: string) => `tel:${phone.replace(/-/g, "")}`;
+
+function section(
+  value: { kicker?: string; heading: string; subheading?: string },
+  extra: Record<string, unknown> = {},
+) {
+  return {
+    kickerText: value.kicker ?? null,
+    heading: value.heading,
+    subheading: value.subheading ?? null,
+    theme: "default",
+    ...extra,
+  };
+}
+
+/** TemplateSeed rejects `undefined`; JSON round-trip drops optional keys that were never set. */
+const plain = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
+
+/**
+ * Compiles a `service-local` config into a Builder TemplateSeed: one landing page plus the
+ * privacy page. Block choice, order and variants belong to the template, never to the author.
+ */
+export function compileServiceSeed(config: ServiceSiteConfig): TemplateSeed {
+  const { business, content } = config;
+  const preset = presets[config.preset];
+  const assets = new Map<string, TemplateAsset>();
+
+  function image(photo: Photo) {
+    if (!assets.has(photo.key)) {
+      if (photo.key.startsWith("t:")) {
+        const sample = samples.get(photo.key.slice(2));
+        if (!sample) throw new Error(`없는 샘플 사진입니다: ${photo.key}`);
+        assets.set(photo.key, { ...sample, key: photo.key, alt: photo.alt });
+      } else {
+        assets.set(photo.key, {
+          key: photo.key,
+          src: mediaPath(photo.key),
+          alt: photo.alt,
+          role: "image",
+          width: photo.width ?? 1600,
+          height: photo.height ?? 1200,
+          mime: photo.key.endsWith(".png") ? "image/png" : "image/jpeg",
+          sourceUrl: "customer-upload",
+          sourceImageUrl: "customer-upload",
+          author: business.name,
+          authorUrl: null,
+          licenseUrl: "customer-provided",
+          sampleNotice: "",
+        });
+      }
+    }
+    return { media: { assetKey: photo.key }, alt: photo.alt, fit: "cover" };
+  }
+
+  const tel = { label: "전화 상담", href: telHref(business.phone), newWindow: false, icon: null };
+  const inquiryLink = { label: preset.inquiryCta, href: "/#inquiry", newWindow: false, icon: null };
+  const kakao = business.kakaoUrl
+    ? { label: "카카오톡 상담", href: business.kakaoUrl, newWindow: true, icon: null }
+    : null;
+
+  const blocks: Block[] = [];
+  blocks.push({
+    __component: "blocks.hero",
+    section: section(content.hero),
+    variant: preset.heroVariant,
+    ctaText: null,
+    ctaLink: inquiryLink,
+    secondaryLink: tel,
+    headerMode: "none",
+    image: image(content.hero.image),
+  });
+  blocks.push({
+    __component: "blocks.features",
+    section: section(content.services, { anchorId: "services" }),
+    variant: preset.servicesVariant,
+    image: null,
+    items: content.services.items.map((item) => ({
+      label: item.label,
+      description: item.description,
+      icon: item.icon ?? null,
+      link: null,
+    })),
+  });
+  if (content.process) {
+    blocks.push({
+      __component: "blocks.features",
+      section: section(content.process, { anchorId: "process", theme: "light" }),
+      variant: "simple-grid",
+      image: null,
+      items: content.process.items.map((item) => ({ label: item.label, description: item.description, link: null })),
+    });
+  }
+  if (content.gallery) {
+    blocks.push({
+      __component: "blocks.highlights",
+      section: section(content.gallery, { anchorId: "gallery" }),
+      variant: preset.galleryVariant,
+      image: null,
+      items: content.gallery.items.map((item) => ({
+        label: item.label,
+        description: item.description ?? null,
+        image: image(item.image),
+        link: null,
+      })),
+    });
+  }
+  if (content.testimonials) {
+    blocks.push({
+      __component: "blocks.testimonials",
+      section: section(content.testimonials, { anchorId: "reviews", theme: "light" }),
+      variant: "card-grid",
+      image: null,
+      items: content.testimonials.items.map((item) => ({
+        quote: item.quote,
+        authorName: item.authorName ?? null,
+        authorRole: item.authorRole ?? null,
+        avatar: null,
+        logo: null,
+        rating: item.rating ?? null,
+      })),
+    });
+  }
+  if (content.team) {
+    blocks.push({
+      __component: "blocks.team",
+      section: section(content.team, { anchorId: "team" }),
+      variant: "grid",
+      items: content.team.items.map((item) => ({
+        memberName: item.memberName,
+        role: item.role ?? null,
+        bio: item.bio ?? null,
+        photo: item.photo ? image(item.photo).media : null,
+        socialLinks: [],
+      })),
+    });
+  }
+  if (content.pricing) {
+    const count = content.pricing.items.length;
+    blocks.push({
+      __component: "blocks.pricing",
+      section: section(content.pricing, { anchorId: "pricing" }),
+      variant: count === 1 ? "single" : count === 2 ? "two-column" : "three-column",
+      items: content.pricing.items.map((item) => ({
+        planName: item.planName,
+        price: item.price,
+        billingPeriod: item.billingPeriod ?? null,
+        description: item.description ?? null,
+        featureList: item.features.map((feature) => `- ${feature}`).join("\n") || null,
+        ctaLink: inquiryLink,
+        highlighted: item.highlighted,
+      })),
+    });
+  }
+
+  const info: Block[] = [];
+  if (business.hours.length) {
+    info.push({
+      label: "운영 시간",
+      description: business.hours.map((h) => `${h.label} ${h.value}`).join("\n\n"),
+      link: null,
+    });
+  }
+  if (business.serviceAreas.length) {
+    info.push({ label: preset.areasLabel, description: business.serviceAreas.join(", "), link: null });
+  }
+  info.push({
+    label: "상담",
+    description: [`전화 ${business.phone}`, business.address].filter(Boolean).join("\n\n"),
+    link: business.mapUrl ? { label: "지도 보기", href: business.mapUrl, newWindow: true, icon: null } : tel,
+  });
+  blocks.push({
+    __component: "blocks.features",
+    section: { kickerText: null, heading: preset.infoHeading, subheading: null, theme: "muted", anchorId: "info" },
+    variant: "dual-column",
+    image: null,
+    items: info,
+  });
+
+  const faqs = content.faqs.map((faq, index) => ({
+    key: `faq:${index + 1}`,
+    locale: "ko",
+    question: faq.question,
+    sortOrder: index + 1,
+    answer: paragraphs(faq.answer),
+  }));
+  if (faqs.length) {
+    blocks.push({
+      __component: "blocks.faq",
+      section: { kickerText: "FAQ", heading: "자주 묻는 질문", subheading: null, theme: "default", anchorId: "faq" },
+      items: faqs.map((faq) => ({ relationKey: faq.key })),
+    });
+  }
+  blocks.push({
+    __component: "blocks.inquiry-form",
+    section: section(content.inquiry, { anchorId: "inquiry" }),
+    successMessage: "문의가 접수되었습니다.\n남겨주신 연락처로 곧 연락드릴게요.",
+    errorMessage: "전송하지 못했습니다. 잠시 뒤 다시 시도하시거나 전화로 문의해 주세요.",
+  });
+  blocks.push({
+    __component: "blocks.cta",
+    section: section(content.cta, { theme: "accent" }),
+    // card-* renders light buttons on a light card under an accent theme (Builder issue draft:
+    // docs/builder-issues.md); inline-centered keeps both links readable.
+    variant: "inline-centered",
+    ctaText: null,
+    ctaLink: tel,
+    secondaryLink: kakao ?? inquiryLink,
+    image: null,
+  });
+
+  const privacy = {
+    key: "page:privacy",
+    locale: "ko",
+    title: "개인정보처리방침",
+    slug: "privacy",
+    directAccess: true,
+    route: "/privacy",
+    headerMode: "offset",
+    blocks: [
+      {
+        __component: "blocks.content",
+        section: { kickerText: null, heading: "개인정보처리방침", subheading: null, theme: "default" },
+        variant: "prose",
+        body: privacyBody(config),
+      },
+    ],
+  };
+
+  const navGroups = [
+    { label: preset.nav.services, href: "/#services", links: [] },
+    ...(content.gallery ? [{ label: preset.nav.gallery, href: "/#gallery", links: [] }] : []),
+    ...(content.testimonials ? [{ label: preset.nav.reviews, href: "/#reviews", links: [] }] : []),
+    { label: preset.nav.info, href: "/#info", links: [] },
+  ];
+  const businessInfo = [
+    [`대표 ${business.representative}`, business.businessNumber && `사업자등록번호 ${business.businessNumber}`]
+      .filter(Boolean)
+      .join(" · "),
+    business.address,
+    `전화 ${business.phone}`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  return plain({
+    assets: [...assets.values()],
+    pages: [
+      {
+        key: "page:home",
+        locale: "ko",
+        title: business.name,
+        slug: "home",
+        directAccess: false,
+        route: "/",
+        headerMode: "offset",
+        blocks,
+      },
+      privacy,
+    ],
+    faqs,
+    navigation: {
+      key: "navigation:main",
+      locale: "ko",
+      align: "right",
+      mainLogo: null,
+      darkLogo: null,
+      groups: navGroups,
+      primaryLink: inquiryLink,
+      secondaryLink: null,
+    },
+    global: {
+      key: "global:site",
+      locale: "ko",
+      sitename: business.name,
+      home: { relationKey: "page:home" },
+      footer: {
+        organization: business.name,
+        businessInfo,
+        logo: null,
+        sitemap: [
+          {
+            label: "안내",
+            links: [
+              { label: "개인정보처리방침", href: "/privacy", newWindow: false, icon: null },
+              ...(business.blogUrl ? [{ label: "블로그", href: business.blogUrl, newWindow: true, icon: null }] : []),
+            ],
+          },
+        ],
+        otherLinks: [],
+        socialLinks: [],
+      },
+    },
+  }) as unknown as TemplateSeed;
+}
+
+/** Inquiry-form privacy policy. Operators confirm it with the customer before opening. */
+function privacyBody(config: ServiceSiteConfig): (Paragraph | Heading)[] {
+  const { business } = config;
+  const contact = business.privacyEmail ? `${business.phone}, ${business.privacyEmail}` : business.phone;
+  return [
+    ...paragraphs(
+      `${business.name}(이하 '회사')는 홈페이지 문의를 처리하기 위해 아래와 같이 개인정보를 수집·이용합니다.`,
+    ),
+    heading("수집 항목과 목적"),
+    ...paragraphs("이름, 연락처, 문의 내용을 상담과 답변을 위해서만 수집합니다."),
+    heading("보유 기간"),
+    ...paragraphs("문의일로부터 1년간 보관한 뒤 지체 없이 파기합니다. 요청하시면 그 전에라도 삭제합니다."),
+    heading("처리 위탁"),
+    ...paragraphs("홈페이지 운영과 문의 저장은 다니웍스에 위탁합니다. 수탁자는 위탁 목적 밖으로 개인정보를 이용하지 않습니다."),
+    heading("개인정보 보호책임자"),
+    ...paragraphs(`${business.representative} (${contact})`),
+    heading("이용자의 권리"),
+    ...paragraphs("언제든 개인정보 열람, 정정, 삭제, 처리 정지를 요청할 수 있으며 위 연락처로 요청하시면 됩니다."),
+  ];
+}
+import { ASSET_VERSION, RENDER_VERSION, renderSite, type SiteConfig } from "@sites/renderer";
+import type { Env } from "./env.js";
+import { HttpError } from "./http.js";
+import { kvSiteKey, r2PageKey, r2SharedKey, type PublishedPointer } from "./keys.js";
+import { syncBlogFeed } from "./blog.js";
+import { ensureNotPurged } from "./purge-guard.js";
+import { routesOf, syncHostRecordsNow } from "./routes.js";
+import {
+  getSite,
+  getVersion,
+  latestVersion,
+  markPublished,
+  markRendered,
+  primaryHostname,
+  type SiteRow,
+  type VersionRow,
+} from "./store.js";
+
+export const assetBase = () => `/_shared/${ASSET_VERSION}`;
+
+/** Turnstile frame URL baked into published pages; null when Turnstile is not configured. */
+export const turnstileFrameUrl = (env: Env) =>
+  env.TURNSTILE_SITE_KEY && env.API_ORIGIN ? `${env.API_ORIGIN}/turnstile-frame` : null;
+
+/** Public origin a site is served from: its active custom domain, else `<slug>.<BASE_DOMAIN>`. */
+export async function siteOrigin(env: Env, site: SiteRow) {
+  const host = await primaryHostname(env.DB, site, env.BASE_DOMAIN);
+  return `${env.PUBLIC_SCHEME ?? "https"}://${host}`;
+}
+
+async function requireSharedAssets(env: Env) {
+  const head = await env.SITES.head(r2SharedKey(`${ASSET_VERSION}/_assets/site.css`));
+  if (!head) {
+    throw new HttpError(409, `공용 에셋 ${ASSET_VERSION}이 R2에 없습니다. scripts/upload-shared.mjs를 먼저 실행하세요`);
+  }
+}
+
+/** Everything outside the config that changes the HTML (stored in rendered_origin). */
+export const renderKeyOf = (env: Env, origin: string) => JSON.stringify({ origin, turnstileFrame: turnstileFrameUrl(env) });
+
+/**
+ * Renders every page of a version with the current renderer and shared assets under a fresh,
+ * immutable render_id. Nothing points at it yet: concurrent renders never mix pages.
+ */
+export async function renderToR2(env: Env, version: VersionRow, origin: string) {
+  const config = JSON.parse(version.config) as SiteConfig;
+  // HTML comes from the current renderer, so it must point at the current client bundle.
+  await requireSharedAssets(env);
+  const { pages } = await renderSite(config, { assetBase: assetBase(), origin, turnstileFrame: turnstileFrameUrl(env) });
+  const renderId = crypto.randomUUID().replace(/-/g, "").slice(0, 16);
+  const written: string[] = [];
+  for (const page of pages) {
+    const key = r2PageKey(version.site_id, version.id, page.path, renderId);
+    written.push(key);
+    await env.SITES.put(key, page.html, { httpMetadata: { contentType: "text/html; charset=utf-8" } });
+  }
+  // Any render (publish, rollback, domain maintenance, republish) cleans up if a purge started.
+  await ensureNotPurged(env, version.site_id, written);
+  return { renderId, renderKey: renderKeyOf(env, origin), routes: pages.map((page) => page.route) };
+}
+
+/**
+ * Renders a version unless it is already rendered against the current shared assets and
+ * origin, then records the render (the pointer follows it on the next sync).
+ */
+async function ensureRendered(env: Env, version: VersionRow, origin: string, { keepAssets = false } = {}) {
+  const config = JSON.parse(version.config) as SiteConfig;
+  // Rollback keeps the version's own render; publish moves it to the current renderer and assets.
+  // (site_versions.asset_version holds RENDER_VERSION: assets plus server renderer.)
+  const assetsOk = keepAssets || version.asset_version === RENDER_VERSION;
+  if (version.rendered_at && assetsOk && version.rendered_origin === renderKeyOf(env, origin)) {
+    return routesOf(config);
+  }
+  const render = await renderToR2(env, version, origin);
+  await markRendered(env.DB, version.id, RENDER_VERSION, render.renderKey, render.renderId);
+  return render.routes;
+}
+
+async function pointTo(env: Env, site: SiteRow, version: VersionRow, pages: string[]) {
+  const publishedAt = await markPublished(env.DB, site.id, version.id, RENDER_VERSION);
+  const renderId = (await getVersion(env.DB, site.id, version.id)).render_id;
+  const pointer: PublishedPointer = { versionId: version.id, number: version.number, publishedAt, pages, renderId };
+  await env.ROUTES.put(kvSiteKey(site.id), JSON.stringify(pointer));
+  await syncHostRecordsNow(env, site.id);
+  await syncBlogFeed(env, site.id, JSON.parse(version.config) as { business?: { blogUrl?: string } });
+  return pointer;
+}
+
+/** Publish = render (if needed) → R2 → move the KV pointer. Visible worldwide within about a minute. */
+export async function publish(env: Env, site: SiteRow, versionId?: string) {
+  if (site.cancelled_at) throw new HttpError(409, "해지된 사이트입니다. 먼저 해지를 취소하세요");
+  await requireSharedAssets(env);
+  const version = versionId ? await getVersion(env.DB, site.id, versionId) : await latestVersion(env.DB, site.id);
+  const pages = await ensureRendered(env, version, await siteOrigin(env, site));
+  return pointTo(env, site, version, pages);
+}
+
+/**
+ * Rollback = move the pointer back to a version that was published before. No re-render, unless
+ * the site's origin changed since that version was rendered (custom domain added or removed):
+import { businessBasicTemplate, collectSeedValidationErrors, type TemplateSeed } from "@dani-builder/site-templates";
+import { formatIssues, SLUG_PATTERN, serviceSiteConfigSchema } from "@sites/schema";
+import { allowedPickerIcons, isPickerIconName } from "./icons/allowlist.js";
+import type { LegacySiteConfig, SiteConfig, SiteConfigInput } from "./site-config.js";
+import { compileServiceSeed } from "./templates/service-local/compile.js";
+
+/** Composition the Builder preview hosts a compiled seed in; only its seed is replaced. */
+export const HOST_COMPOSITION = "forest-stay";
+
+function collectIcons(value: unknown, path: string, out: { path: string; name: string }[]) {
+  if (Array.isArray(value)) {
+    value.forEach((item, i) => collectIcons(item, `${path}[${i}]`, out));
+  } else if (value && typeof value === "object") {
+    for (const [key, child] of Object.entries(value)) {
+      const childPath = path ? `${path}.${key}` : key;
+      if (key === "icon" && typeof child === "string") out.push({ path: childPath, name: child });
+      else collectIcons(child, childPath, out);
+    }
+  }
+}
+
+function iconErrors(value: unknown, root: string): string[] {
+  const icons: { path: string; name: string }[] = [];
+  collectIcons(value, root, icons);
+  return icons
+    .filter(({ name }) => isPickerIconName(name) && !allowedPickerIcons.has(name))
+    .map(({ path, name }) => `${path}: 허용 목록에 없는 아이콘 (${name})`);
+}
+
+function paletteErrors(paletteId: string): string[] {
+  const palettes = Object.keys(businessBasicTemplate.palettes);
+  return palettes.includes(paletteId) ? [] : [`paletteId: ${palettes.join("|")} 중 하나`];
+}
+
+function seedErrors(compositionId: string, seed: TemplateSeed): string[] {
+  return collectSeedValidationErrors(businessBasicTemplate, compositionId as never, seed).map((e) => `seed: ${String(e)}`);
+}
+
+function validateLegacy(config: LegacySiteConfig): string[] {
+  const errors: string[] = [];
+  if (!SLUG_PATTERN.test(config.slug ?? "")) errors.push(`slug: 소문자·숫자·하이픈 1~40자 (${config.slug})`);
+  if (config.templateId !== "business-basic") errors.push(`templateId: service-local(version 2) 또는 business-basic (${config.templateId})`);
+  const compositions = Object.keys(businessBasicTemplate.compositions);
+  if (!compositions.includes(config.compositionId)) errors.push(`compositionId: ${compositions.join("|")} 중 하나`);
+  errors.push(...paletteErrors(config.paletteId));
+  if (!config.meta?.title?.trim()) errors.push("meta.title: 필수");
+  if (!config.meta?.description?.trim()) errors.push("meta.description: 필수");
+  if (config.seed && compositions.includes(config.compositionId)) errors.push(...seedErrors(config.compositionId, config.seed));
+  errors.push(...iconErrors(config.seed, "seed"));
+  return errors;
+}
+
+export type Validation = { ok: true; config: SiteConfig; errors: [] } | { ok: false; errors: string[] };
+
+/**
+ * Every check a config must pass before it is stored. v2 configs are parsed (defaults filled),
+ * compiled into a Builder seed and checked against the Builder contract, so an invalid
+ * template output can never be saved.
+ */
+export function parseSiteConfig(input: SiteConfigInput | unknown): Validation {
+  const raw = (input ?? {}) as { version?: unknown };
+  if (raw.version === 2) {
+    const parsed = serviceSiteConfigSchema.safeParse(input);
+    if (!parsed.success) return { ok: false, errors: formatIssues(parsed.error) };
+    const config = parsed.data;
+    const errors = [...paletteErrors(config.paletteId), ...iconErrors(config.content, "content")];
+    try {
+      errors.push(...seedErrors(HOST_COMPOSITION, compileServiceSeed(config)));
+    } catch (error) {
+      errors.push(error instanceof Error ? error.message : String(error));
+    }
+    return errors.length ? { ok: false, errors } : { ok: true, config, errors: [] };
+  }
+  if (raw.version !== undefined && raw.version !== 1) return { ok: false, errors: ["version: 1 또는 2"] };
+  const errors = validateLegacy(input as LegacySiteConfig);
+  return errors.length ? { ok: false, errors } : { ok: true, config: input as LegacySiteConfig, errors: [] };
+}
+
+/** Errors only; kept for callers that already hold a parsed config. */
+export function validateSiteConfig(config: SiteConfigInput): string[] {
+{
+  "name": "daniworks-sites-platform",
+  "private": true,
+  "packageManager": "pnpm@10.28.0",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "build": "pnpm --filter @sites/renderer build",
+    "test": "pnpm -r test",
+    "check-types": "pnpm -r check-types",
+    "dev:api": "pnpm --filter api dev",
+    "dev:router": "pnpm --filter router dev",
+    "upload:shared": "node scripts/upload-shared.mjs",
+    "verify:m1": "node scripts/verify-m1.mjs",
+    "deploy:staging": "pnpm build && pnpm --filter api migrate:staging && pnpm --filter api deploy:staging && pnpm --filter router deploy:staging",
+    "verify:staging": "node scripts/verify-staging.mjs"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/client": "2.4.0",
+    "chrome-launcher": "1.2.3",
+    "lighthouse": "13.6.0",
+    "playwright": "1.65.1"
+  }
+}
+
+exec
+/bin/zsh -lc 'for p in /Users/AGENTS.md /Users/steve/AGENTS.md /Users/steve/Projects/AGENTS.md; do test ! -f "$p" || cat "$p"; done; cat apps/api/src/index.ts | head -115; ls ../' in /Users/steve/Projects/daniworks-sites-platform
+ succeeded in 0ms:
+import { parseSiteConfig, renderSite, SiteConfigError, type SiteConfig } from "@sites/renderer";
+import { listAssets, uploadAsset } from "./assets.js";
+import { refreshBlog, refreshDueBlogs } from "./blog.js";
+import { allInquiries, inquiriesCsv, listInquiries, requireEmail } from "./inquiries.js";
+import { currentQuarter, kstDay, metricsReport, quarterlyCsv, quarterlyOverview, quarterlyReport } from "./metrics.js";
+import { turnstileFrame } from "./turnstile.js";
+import type { Env } from "./env.js";
+import { HttpError, json, readJson, requireAdmin } from "./http.js";
+import { MEDIA_PATH, r2MediaKey, r2SharedKey } from "./keys.js";
+import { addDomain, auditOrigins, domainQuota, listDomains, maintainDomains, refreshDomain, removeDomain, type DomainRow } from "./domains.js";
+import { templateSeedExport } from "./handoff.js";
+import { handleMcp } from "./mcp.js";
+import { assetBase, publish, rollback, siteOrigin } from "./publish.js";
+import { auditHostRecords, reconcileHostRecords, syncHostRecordsNow } from "./routes.js";
+import { cancelSite, exportSite, listCancellations, purgeSite, reactivateSite } from "./lifecycle.js";
+import { commitRepublish, republishPlan, stagedPage, stageRepublish } from "./republish.js";
+import { addDraft, configFromBody, createSiteFromInput, creator, previewUrl } from "./sites.js";
+import { getSite, listSites, listVersions, setSiteStatus, versionByPreviewToken, type CreatedBy } from "./store.js";
+
+/** Must match wrangler.toml [triggers]: the hourly audit; the 5-minute cron only reconciles. */
+const AUDIT_CRON = "17 * * * *";
+
+async function serveImmutable(env: Env, key: string) {
+  const object = await env.SITES.get(key);
+  if (!object) return new Response("not found", { status: 404 });
+  const headers = new Headers();
+  object.writeHttpMetadata(headers);
+  headers.set("cache-control", "public, max-age=31536000, immutable");
+  return new Response(object.body, { headers });
+}
+
+async function handle(request: Request, env: Env): Promise<Response> {
+  const url = new URL(request.url);
+  const parts = url.pathname.split("/").filter(Boolean);
+  const method = request.method;
+
+  if (method === "GET" && url.pathname === "/health") return json({ ok: true });
+
+  // Shared assets are public and immutable; previews load them from here.
+  if (method === "GET" && parts[0] === "_shared") return serveImmutable(env, r2SharedKey(parts.slice(1).join("/")));
+  // Uploaded photos (public, content-addressed) so previews show them before publishing.
+  const media = method === "GET" ? MEDIA_PATH.exec(url.pathname) : null;
+  if (media) return serveImmutable(env, r2MediaKey(media[1]!, media[2]!));
+
+  // Turnstile widget frame embedded by public sites (see turnstile.ts).
+  if (method === "GET" && url.pathname === "/turnstile-frame") {
+    if (!env.TURNSTILE_SITE_KEY) return new Response("turnstile not configured", { status: 404 });
+    const parent = url.searchParams.get("parent") ?? "";
+    if (!/^https?:\/\/[a-z0-9.-]+(:\d+)?$/i.test(parent)) return new Response("bad parent", { status: 400 });
+    return new Response(turnstileFrame(env.TURNSTILE_SITE_KEY, parent), {
+      headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "x-robots-tag": "noindex" },
+    });
+  }
+
+  // Preview: anyone with the token can view a version. Never indexed. /preview/<token>[/privacy]
+  if (method === "GET" && parts[0] === "preview" && (parts.length === 2 || parts.length === 3)) {
+    const version = await versionByPreviewToken(env.DB, parts[1]!);
+    const site = await getSite(env.DB, version.site_id);
+    const { pages } = await renderSite(JSON.parse(version.config) as SiteConfig, {
+      assetBase: assetBase(),
+      origin: await siteOrigin(env, site),
+      preview: true,
+      turnstileFrame: null,
+      // Site links are root-relative (`/#inquiry`, `/privacy`); keep them inside this preview.
+      linkPrefix: `/preview/${parts[1]}`,
+    });
+    const route = parts[2] ? `/${parts[2]}` : "/";
+    const page = pages.find((entry) => entry.route === route);
+    if (!page) throw new HttpError(404, "없는 페이지입니다");
+    return new Response(page.html, {
+      headers: {
+        "content-type": "text/html; charset=utf-8",
+        "x-robots-tag": "noindex, nofollow",
+        "cache-control": "no-store",
+      },
+    });
+  }
+
+  requireAdmin(request, env.ADMIN_TOKEN);
+
+  // MCP tools for AI agents (Streamable HTTP, stateless). Same admin token.
+  if (url.pathname === "/mcp") return handleMcp(request, env);
+
+  // PUT /admin/shared/<version>/<path>: upload one shared asset file.
+  if (method === "PUT" && parts[0] === "admin" && parts[1] === "shared" && parts.length > 3) {
+    const key = r2SharedKey(parts.slice(2).join("/"));
+    await env.SITES.put(key, request.body, {
+      httpMetadata: { contentType: request.headers.get("content-type") ?? "application/octet-stream" },
+    });
+    return json({ key }, 201);
+  }
+
+  // POST /validate {config}: errors without saving (console editor, scripts).
+  if (method === "POST" && url.pathname === "/validate") {
+    const body = await readJson<{ config?: unknown }>(request);
+    const result = parseSiteConfig(body.config);
+    return json(result.ok ? { valid: true, errors: [], config: result.config } : { valid: false, errors: result.errors });
+  }
+
+  // GET /reports/quarterly?quarter=2026-Q4: every site's totals for the quarter.
+  if (method === "GET" && url.pathname === "/reports/quarterly") {
+    const report = await quarterlyOverview(env.DB, url.searchParams.get("quarter") ?? currentQuarter(), env.BASE_DOMAIN);
+    if (!report) throw new HttpError(400, "quarter는 YYYY-Q1~Q4");
+    return json(report);
+  }
+
+  // Full republish: GET /republish/plan; staged HTML at GET /staged/:siteId/:renderId[/privacy]
+  if (method === "GET" && url.pathname === "/republish/plan") return json(await republishPlan(env));
+  if (method === "GET" && parts[0] === "staged" && (parts.length === 3 || parts.length === 4)) {
+    return stagedPage(env, parts[1]!, parts[2]!, parts[3] ?? "");
+  }
+
+  // GET /cancellations: cancelled sites with the date each may be purged.
+  if (method === "GET" && url.pathname === "/cancellations") return json({ cancellations: await listCancellations(env) });
+
+-private-tmp
+-private-var-folders-vm-tn1q05bx5hxffc9f6v6p-1pc0000gn-T-moncher-live-FqRRz4
+_analysis
+_codex-worktrees
+_worktrees
+agent-detox
+anxhome
+anxhome-web
+bareun-gobchang-web
+brute-force-game-v2
+carrot-camping
+carrot-market-clone
+commercial-researcher
+core-rush
+core-rush-fps
+coupang-calc
+daniworks-builder-cms
+daniworks-builder-v2
+daniworks-demos
+daniworks-home
+daniworks-home-mockups
+daniworks-home-mockups-v1.tar.gz
+daniworks-home-mockups-v2.tar.gz
+daniworks-home-mockups-v3.tar.gz
+daniworks-persona-lab
+daniworks-sites-platform
+dexter
+dw-cutover-build.log
+eumhc-web
+evidence-browser
+fleabucket-v2
+geo-prove
+git-tutorial
+github-symphony
+github-symphony-skills
+goverment-support
+hello-crew
+hello-world
+home-ai-visibility
+home-ai-visibility-wt
+homepage-1
+honny-break
+infra
+ioa-homepage
+ioa-tracker
+kiily-home
+laplas-teaser-v2
+linear-hermes-bridge
+maintenance
+mcp-outlet
+moncher-blog
+motiondeck
+my-agent-skills
+my-ott
+my-portfolio
+nodejs-sample
+notion-append-1-response.json
+notion-append-1.json
+notion-append-2-response.json
+notion-append-2.json
+notion-children-verify.json
+notion-page-create-response.json
+notion-page-create.json
+pr-tunner
+prd-sample
+renew-paint-cms
+renew-paint-web
+seller-community
+seller-sales
+seoul-yesbio-1
+soul-smith
+soul-smith-ralph
+spline-test
+spline-test-2
+stock-program
+tactical-game
+tarot-card-app
+tarot-design
+tetris
+vd-studio-automation
+vibecoding-starter
+vibecoding-starter_algocare_backup
+web-test
+wiki-manager
+
+exec
+/bin/zsh -lc "rg -n 'basename|asset.src|template-selection|composition' ../daniworks-builder-v2/packages/create-daniworks-app -g '*import*' -g '*.ts' | head -65; cat apps/router/src/index.ts | grep -n -A25 -B12 _media; nl -ba scripts/handoff-to-strapi.mjs | tail -36; rg -n 'template-data|basename\\(asset.src' ../daniworks-builder-v2 --glob '*import*' | head -35" in /Users/steve/Projects/daniworks-sites-platform
+ succeeded in 0ms:
+../daniworks-builder-v2/packages/create-daniworks-app/template/scripts/template-import/importer.mjs:2:import { basename, join } from "node:path";
+../daniworks-builder-v2/packages/create-daniworks-app/template/scripts/template-import/importer.mjs:220:    const filePath = join(assetDirectory, basename(asset.src));
+../daniworks-builder-v2/packages/create-daniworks-app/template/scripts/template-import/importer.mjs:222:    const marker = `daniworks:${selection.template}:${selection.version}:${selection.composition}:${asset.key}:${hash}`;
+../daniworks-builder-v2/packages/create-daniworks-app/template/scripts/template-import/importer.mjs:242:              name: basename(asset.src),
+../daniworks-builder-v2/packages/create-daniworks-app/template/scripts/template-import/importer.mjs:249:            originalFilename: basename(asset.src),
+../daniworks-builder-v2/packages/create-daniworks-app/template/scripts/template-import/template-import.mjs:20:      readFileSync(resolve(root, "template-selection.json"), "utf8"),
+../daniworks-builder-v2/packages/create-daniworks-app/template/apps/web/lib/i18n.ts:1:// The generator writes this module from template-selection.json.
+    25	  const res = await fetch(`${API}${path}`, { headers: { authorization: `Bearer ${TOKEN}` } });
+    26	  if (!res.ok) throw new Error(`${path}: ${res.status} ${await res.text()}`);
+    27	  return res.json();
+    28	};
+    29	
+    30	const selectionFile = join(args.into, "template-selection.json");
+    31	if (!existsSync(selectionFile)) throw new Error(`${selectionFile} 없음: create-daniworks-app으로 만든 프로젝트 루트를 지정하세요`);
+    32	const selection = JSON.parse(readFileSync(selectionFile, "utf8"));
+    33	if (selection.template !== "business-basic") throw new Error(`business-basic 템플릿 프로젝트가 아닙니다 (${selection.template})`);
+    34	
+    35	const sites = (await get("/sites")).sites;
+    36	const site = sites.find((s) => s.id === args.site || s.slug === args.site);
+    37	if (!site) throw new Error(`사이트를 찾지 못했습니다: ${args.site}`);
+    38	const out = await get(`/sites/${site.id}/template-seed${args.version ? `?versionId=${args.version}` : ""}`);
+    39	const errors = collectSeedValidationErrors(businessBasicTemplate, out.selection.compositionId, out.seed);
+    40	if (errors.length) throw new Error(`seed 계약 검증 실패:\n${errors.join("\n")}`);
+    41	
+    42	const data = join(args.into, "template-data");
+    43	const assets = join(data, "assets");
+    44	rmSync(assets, { recursive: true, force: true });
+    45	mkdirSync(assets, { recursive: true });
+    46	for (const asset of out.seed.assets) {
+    47	  const target = join(assets, basename(asset.src));
+    48	  if (/^https?:\/\//.test(asset.src)) {
+    49	    // Local Docker: the site origin is not resolvable here; fetch through the API instead.
+    50	    const res = await fetch(asset.src.replace(/^https?:\/\/[^/]+/, process.env.MEDIA_BASE ?? new URL(asset.src).origin));
+    51	    if (!res.ok) throw new Error(`${asset.src}: ${res.status}`);
+    52	    writeFileSync(target, Buffer.from(await res.arrayBuffer()));
+    53	  } else {
+    54	    copyFileSync(join(templatesRoot, asset.src), target);
+    55	  }
+    56	}
+    57	const colors = businessBasicTemplate.palettes[out.selection.paletteId].brandColors;
+    58	writeFileSync(join(data, "seed.json"), `${JSON.stringify({ seed: out.seed, colors }, null, 2)}\n`);
+    59	console.log(`${site.slug} v${out.source.version} → ${data}: ${out.seed.pages.length} pages, ${readdirSync(assets).length} assets, palette ${out.selection.paletteId}`);
+    60	console.log("다음: 새 CMS에서 pnpm --filter cms template:import");
+../daniworks-builder-v2/packages/create-daniworks-app/template/scripts/template-import/importer.mjs:220:    const filePath = join(assetDirectory, basename(asset.src));
+../daniworks-builder-v2/packages/create-daniworks-app/template/scripts/template-import/importer.mjs:242:              name: basename(asset.src),
+../daniworks-builder-v2/packages/create-daniworks-app/template/scripts/template-import/importer.mjs:249:            originalFilename: basename(asset.src),
+../daniworks-builder-v2/packages/create-daniworks-app/template/scripts/template-import/template-import.mjs:23:      readFileSync(resolve(root, "template-data/seed.json"), "utf8"),
+../daniworks-builder-v2/packages/create-daniworks-app/template/scripts/template-import/template-import.mjs:32:      resolve(root, "template-data/assets"),
+
+exec
+/bin/zsh -lc "cat ../daniworks-builder-v2/packages/create-daniworks-app/template/scripts/template-import/template-import.mjs; rg -n 'validate|composition|theme|palette' ../daniworks-builder-v2/packages/create-daniworks-app/template/scripts/template-import/importer.mjs; rg -n 'MEDIA_PATH|media|cancelled' apps/router/src -g '*.ts'; rg -n 'listSites' apps/api/src/store.ts" in /Users/steve/Projects/daniworks-sites-platform
+ succeeded in 0ms:
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { createRequire } from "node:module";
+import { importTemplate } from "./importer.mjs";
+import { runTemplateImport } from "./lifecycle.mjs";
+
+// Use Strapi's CommonJS entry: its ESM entry imports lodash/fp as a directory.
+const { compileStrapi, createStrapi } = createRequire(import.meta.url)(
+  "@strapi/strapi",
+);
+
+const root = resolve(process.cwd(), "../..");
+const lock = resolve(process.cwd(), ".tmp/daniworks-template-import.lock");
+let selection;
+let bundle;
+await runTemplateImport({
+  lock,
+  create: async () => {
+    selection = JSON.parse(
+      readFileSync(resolve(root, "template-selection.json"), "utf8"),
+    );
+    bundle = JSON.parse(
+      readFileSync(resolve(root, "template-data/seed.json"), "utf8"),
+    );
+    return createStrapi(await compileStrapi());
+  },
+  run: async (strapi) => {
+    const ledger = await importTemplate(
+      strapi,
+      selection,
+      bundle,
+      resolve(root, "template-data/assets"),
+    );
+    console.log(
+      `Template ${selection.template}@${selection.version} imported: ${Object.keys(ledger.records).length} documents, ${Object.keys(ledger.assets).length} media. Repeating this command verifies and preserves the same IDs.`,
+    );
+  },
+});
+7:  validatePayload,
+144:    records.map((record) => [record.key, `validate-${record.key}`]),
+147:    validatePayload(
+222:    const marker = `daniworks:${selection.template}:${selection.version}:${selection.composition}:${asset.key}:${hash}`;
+275:    if (!record.serverValidated) validatePayload(strapi, record.uid, data);
+apps/router/src/index.ts:5:  MEDIA_PATH,
+apps/router/src/index.ts:151:    const media = MEDIA_PATH.exec(url.pathname);
+apps/router/src/index.ts:152:    if (media) {
+apps/router/src/index.ts:154:        (await serveObject(env, r2MediaKey(media[1]!, media[2]!), "public, max-age=31536000, immutable")) ??
+apps/router/src/index.ts:161:    if (host.status === "cancelled") return page(410, "운영이 종료된 사이트입니다.");
+apps/router/src/keys.ts:11:/** Uploaded photos, content-addressed: `sites/<siteId>/media/<sha>.jpg`. Served at `/_media/<siteId>/<file>`. */
+apps/router/src/keys.ts:12:export const r2MediaKey = (siteId: string, file: string) => `sites/${siteId}/media/${file}`;
+apps/router/src/keys.ts:13:export const MEDIA_PATH = /^\/_media\/([A-Za-z0-9_-]+)\/([A-Za-z0-9_-]+(?:\.w\d{3,4})?\.(?:jpg|png|webp))$/;
+apps/router/src/keys.ts:32:  /** `suspended`: 503 (temporary). `cancelled`: 410. */
+apps/router/src/keys.ts:33:  status: "active" | "suspended" | "cancelled";
+240:export async function listSites(db: D1Database, baseDomain: string) {
+
+exec
+/bin/zsh -lc "sed -n '1,165p' ../daniworks-builder-v2/packages/create-daniworks-app/template/scripts/template-import/importer.mjs; sed -n '240,260p' apps/api/src/store.ts; cat scripts/verify-all.mjs | head -65; rg -n 'theme|composition|selection.palette' ../daniworks-builder-v2/packages/create-daniworks-app/src | head -45" in /Users/steve/Projects/daniworks-sites-platform
+ succeeded in 0ms:
+import { readFileSync, statSync } from "node:fs";
+import { basename, join } from "node:path";
+import {
+  fingerprint,
+  populateFor,
+  resolveReferences,
+  validatePayload,
+} from "./schema.mjs";
+
+const prefix = "plugin::builder.";
+// Default definition for seeded dynamic inquiry blocks and the legacy proxy.
+// The CLI writes INQUIRY_FORM_SLUG/INQUIRY_FORM_VERSION/INQUIRY_CONSENT_VERSION
+// for the legacy version 1 proxy.
+export const INQUIRY_FORM_SLUG = "contact";
+const INQUIRY_CONSENT_LABEL =
+  "문의 답변을 위한 개인정보 수집 및 이용에 동의합니다. (필수)";
+const inquiryFields = [
+  ["name", "string", "이름", true, 120],
+  ["email", "email", "이메일", false, 254],
+  ["phone", "string", "전화번호", false, 40],
+  ["subject", "string", "제목", false, 200],
+  ["message", "text", "문의 내용", false, 5000],
+];
+
+export function inquiryForm(seed) {
+  const block = seed.pages
+    .flatMap((page) => page.blocks ?? [])
+    .find((item) => item.__component === "blocks.inquiry-form");
+  return {
+    slug: INQUIRY_FORM_SLUG,
+    name: "문의",
+    targetUid: prefix + "inquiry",
+    fields: inquiryFields.map(([name, type, label, required, maxLength]) => ({
+      name,
+      type,
+      label,
+      required,
+      visibility: "form",
+      maxLength,
+    })),
+    consent: {
+      label: block?.consentLabel || INQUIRY_CONSENT_LABEL,
+      version: block?.consentVersion || "1",
+    },
+  };
+}
+// Bind only newly created import payloads. Keep the packaged bundle unchanged:
+// its original fingerprint and existing ledger snapshots remain authoritative.
+function bindInquiryForms(blocks) {
+  if (!Array.isArray(blocks)) return blocks;
+  return blocks.map((block) => ({
+    ...block,
+    ...(block.__component === "blocks.inquiry-form" &&
+    (block.form == null ||
+      (typeof block.form === "string" && block.form.trim() === ""))
+      ? { form: INQUIRY_FORM_SLUG }
+      : {}),
+  }));
+}
+
+const conflict = (message) => {
+  throw new Error(
+    `Template import conflict: ${message}. No overwrite is performed. Restore the original content/database or import into a fresh CMS; there is no force mode.`,
+  );
+};
+
+export async function importTemplate(
+  strapi,
+  selection,
+  bundle,
+  assetDirectory,
+  hooks = {},
+) {
+  const store = strapi.store({
+    type: "core",
+    name: "daniworks-template-import",
+    key: "ledger-v1",
+  });
+  let ledger = await store.get();
+  const identity = { ...selection };
+  if (ledger && fingerprint(ledger.selection) !== fingerprint(identity))
+    conflict("selection/version changed");
+  const seedHash = fingerprint(bundle);
+  if (ledger && ledger.seedHash !== seedHash) conflict("packaged seed changed");
+  ledger ??= { selection: identity, seedHash, assets: {}, records: {} };
+  const save = () => store.set({ value: ledger });
+  const seed = bundle.seed;
+  const records = [
+    ...seed.faqs.map(({ key, locale, ...data }) => ({
+      key,
+      locale,
+      uid: prefix + "faq",
+      data,
+    })),
+    ...seed.pages.map(({ key, locale, route, ...data }) => ({
+      key,
+      locale,
+      uid: prefix + "page",
+      data: {
+        ...data,
+        ...("blocks" in data ? { blocks: bindInquiryForms(data.blocks) } : {}),
+      },
+    })),
+    {
+      key: seed.navigation.key,
+      locale: seed.navigation.locale,
+      uid: prefix + "navigation",
+      data: (() => {
+        const { key, locale, groups, ...data } = seed.navigation;
+        return { ...data, globalNavigation: groups };
+      })(),
+    },
+    {
+      key: seed.global.key,
+      locale: seed.global.locale,
+      uid: prefix + "global",
+      data: (() => {
+        const { key, locale, ...data } = seed.global;
+        return {
+          ...data,
+          ...("siteWideBlocks" in data
+            ? { siteWideBlocks: bindInquiryForms(data.siteWideBlocks) }
+            : {}),
+        };
+      })(),
+    },
+    {
+      key: "site-settings",
+      uid: prefix + "site-setting",
+      data: { brandColors: bundle.colors },
+    },
+    // Validated by the Builder form service; its version is server-owned.
+    {
+      key: "inquiry-form",
+      uid: prefix + "form",
+      data: inquiryForm(seed),
+      serverValidated: true,
+    },
+  ];
+  const validationAssets = Object.fromEntries(
+    seed.assets.map((asset, i) => [asset.key, i + 1]),
+  );
+  const validationRelations = Object.fromEntries(
+    records.map((record) => [record.key, `validate-${record.key}`]),
+  );
+  for (const record of records.filter((item) => !item.serverValidated))
+    validatePayload(
+      strapi,
+      record.uid,
+      resolveReferences(record.data, validationAssets, validationRelations),
+    );
+  async function snapshots(record, documentId) {
+    const params = {
+      documentId,
+      ...(record.locale ? { locale: record.locale } : {}),
+      populate: populateFor(strapi, record.uid),
+    };
+    const documents = strapi.documents(record.uid);
+    const draft = await documents.findOne({ ...params, status: "draft" });
+    const published = strapi.contentTypes[record.uid].options.draftAndPublish
+      ? await documents.findOne({ ...params, status: "published" })
+      : null;
+    return { draft: fingerprint(draft), published: fingerprint(published) };
+  }
+  // Verify every owned resource and every destination before doing any writes.
+export async function listSites(db: D1Database, baseDomain: string) {
+  const { results } = await db
+    .prepare(
+      `SELECT s.id, s.slug, s.template_id, s.status, s.cancelled_at, s.published_version_id, s.published_at,
+              s.notify_email, s.created_at, s.updated_at,
+              (SELECT number FROM site_versions WHERE id = s.published_version_id) AS published_number,
+              (SELECT MAX(number) FROM site_versions WHERE site_id = s.id) AS latest_number,
+              (SELECT hostname FROM domains WHERE site_id = s.id AND kind = 'custom' AND status = 'active' ORDER BY created_at LIMIT 1) AS custom_hostname
+       FROM sites s ORDER BY s.updated_at DESC`,
+    )
+    .all<{ slug: string; custom_hostname: string | null }>();
+  return results.map((row) => ({ ...row, hostname: row.custom_hostname ?? `${row.slug}.${baseDomain}` }));
+}
+// Runs every verification script in order and prints one summary. Docker:
+// docker compose run --rm verify node scripts/verify-all.mjs
+import { spawnSync } from "node:child_process";
+import { readFileSync, rmSync, writeFileSync } from "node:fs";
+
+const steps = [
+  ["m1", "verify-m1.mjs"],
+  ["m2-template", "verify-m2-template.mjs"],
+  ["m2-assets", "verify-m2-assets.mjs"],
+  ["m2-router", "verify-m2-router.mjs"],
+  ["m2-inquiry", "verify-m2-inquiry.mjs"],
+  ["m2-track", "verify-m2-track.mjs"],
+  ["m2-mcp", "verify-m2-mcp.mjs"],
+  ["m2-domains", "verify-m2-domains.mjs"],
+  ["m2-console", "verify-m2-console.mjs"],
+  ["m3-blog", "verify-m3-blog.mjs"],
+  ["m3-reports", "verify-m3-reports.mjs"],
+  ["m3-republish", "verify-m3-republish.mjs"],
+  ["m3-lifecycle", "verify-m3-lifecycle.mjs"],
+  ["m3-handoff", "verify-m3-handoff.mjs"],
+];
+const only = process.argv.slice(2);
+const summary = [];
+for (const [step, script] of steps) {
+  if (only.length && !only.includes(step)) continue;
+  const started = Date.now();
+  // A stale results file from an earlier run must never stand in for this one.
+  rmSync(`evidence/${step}/results.json`, { force: true });
+  const run = spawnSync("node", [`scripts/${script}`], { encoding: "utf8", env: process.env });
+  const results = (() => {
+    try {
+      return JSON.parse(readFileSync(`evidence/${step}/results.json`, "utf8")).results;
+    } catch {
+      return [];
+    }
+  })();
+  const failed = results.filter((r) => !r.pass).map((r) => r.name);
+  const ok = run.status === 0;
+  summary.push({ step, ok, passed: results.length - failed.length, total: results.length, seconds: Math.round((Date.now() - started) / 1000), failed });
+  console.log(`${ok ? "PASS" : "FAIL"} ${step} ${results.length - failed.length}/${results.length}${failed.length ? ` — ${failed.join("; ")}` : ""}`);
+  if (!ok) console.log(`--- stdout (tail)\n${run.stdout.slice(-800)}\n--- stderr\n${run.stderr.slice(-3000)}\n--- exit ${run.status} signal ${run.signal}`);
+}
+writeFileSync("evidence/verify-all.json", JSON.stringify({ at: new Date().toISOString(), summary }, null, 2));
+const total = summary.reduce((n, s) => n + s.total, 0);
+const passed = summary.reduce((n, s) => n + s.passed, 0);
+console.log(`\n${passed}/${total} checks, ${summary.filter((s) => s.ok).length}/${summary.length} scripts`);
+process.exit(summary.every((s) => s.ok) ? 0 : 1);
+rg: ../daniworks-builder-v2/packages/create-daniworks-app/src: IO error for operation on ../daniworks-builder-v2/packages/create-daniworks-app/src: No such file or directory (os error 2)
+
+exec
+/bin/zsh -lc 'pnpm check-types' in /Users/steve/Projects/daniworks-sites-platform
+ succeeded in 819ms:
+
+> daniworks-sites-platform@ check-types /Users/steve/Projects/daniworks-sites-platform
+> pnpm -r check-types
+
+Scope: 5 of 6 workspace projects
+apps/console check-types$ tsc -p tsconfig.json
+packages/schema check-types$ tsc -p tsconfig.json
+packages/schema check-types: Done
+apps/console check-types: Done
+packages/renderer check-types$ tsc -p tsconfig.json
+packages/renderer check-types: Done
+apps/api check-types$ tsc -p tsconfig.json
+apps/router check-types$ tsc -p tsconfig.json
+apps/router check-types: Done
+apps/api check-types: Done
+
+codex
+No actionable bugs were identified in the staged, unstaged, or untracked changes. Workspace type checks pass; the new integration verification was not run.
+No actionable bugs were identified in the staged, unstaged, or untracked changes. Workspace type checks pass; the new integration verification was not run.

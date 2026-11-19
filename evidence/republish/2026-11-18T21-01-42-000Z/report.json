@@ -1,0 +1,54 @@
+{
+  "assetVersion": "75701628af5d",
+  "threshold": 0.0001,
+  "apply": true,
+  "tokenLeaks": [],
+  "report": [
+    {
+      "slug": "rp-changed-mwmlwp5f",
+      "siteId": "ee10ceb7-76dc-4122-832f-2429a5a4ec4f",
+      "from": "old-assets",
+      "to": "75701628af5d",
+      "renderId": "a3ba79f06b234196",
+      "diffs": {
+        "home-mobile": {
+          "ratio": 0.00257485585034392
+        },
+        "home-desktop": {
+          "ratio": 0.0020036604020979023
+        },
+        "privacy-mobile": {
+          "ratio": 0
+        },
+        "privacy-desktop": {
+          "ratio": 0
+        }
+      },
+      "same": false,
+      "result": "review"
+    },
+    {
+      "slug": "rp-same-mwmlwp5f",
+      "siteId": "2fb6311e-a6b4-4fa9-a7fb-a1abcf7c2f56",
+      "from": "old-assets",
+      "to": "75701628af5d",
+      "renderId": "5c3d56ab51b84d98",
+      "diffs": {
+        "home-mobile": {
+          "ratio": 0
+        },
+        "home-desktop": {
+          "ratio": 0
+        },
+        "privacy-mobile": {
+          "ratio": 0
+        },
+        "privacy-desktop": {
+          "ratio": 0
+        }
+      },
+      "same": true,
+      "result": "applied"
+    }
+  ]
+}

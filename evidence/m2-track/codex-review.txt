@@ -1,0 +1,1716 @@
+OpenAI Codex v0.167.0
+--------
+workdir: /Users/steve/Projects/daniworks-sites-platform
+model: gpt-6.1-sol
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: low
+reasoning summaries: none
+session id: 01a1f000-b726-7ac1-905e-597141dc8b10
+--------
+user
+current changes
+exec
+/bin/zsh -lc 'pwd; git status --short; find .. -name AGENTS.md -o -name AGENTS.override.md' in /Users/steve/Projects/daniworks-sites-platform
+exec
+/bin/zsh -lc 'for p in /AGENTS.md /Users/AGENTS.md /Users/steve/AGENTS.md /Users/steve/Projects/AGENTS.md; do test ! -f "$p" || cat "$p"; done; find . -name AGENTS.md -o -name AGENTS.override.md; git diff --stat; git diff -- apps/api/src apps/router/src packages/renderer/src; cat /Users/steve/.codex/skills/workers-best-practices/SKILL.md' in /Users/steve/Projects/daniworks-sites-platform
+ succeeded in 492ms:
+./node_modules/.pnpm/@dani-builder+strapi-client@2.5.0/node_modules/@dani-builder/strapi-client/AGENTS.md
+./node_modules/.pnpm/next@16.4.6_react-dom@19.3.1_react@19.3.1__react@19.3.1/node_modules/next/AGENTS.md
+./node_modules/.pnpm/next@16.4.6_@opentelemetry+api@1.10.0_@types+node@26.6.6_react-dom@19.3.1_react@19.3.1__react@19.3.1/node_modules/next/AGENTS.md
+ apps/api/src/index.ts             | 10 ++++++
+ apps/api/src/metrics.ts           | 37 ++++++++++++++++++++++
+ apps/api/src/public.ts            | 10 ++++++
+ apps/router/src/index.ts          | 21 ++++++++++++-
+ evidence/m2-inquiry/results.json  | 10 +++---
+ evidence/m2-router/results.json   | 20 ++++++------
+ evidence/m2-template/results.json | 64 +++++++++++++++++++--------------------
+ packages/renderer/src/client.tsx  |  3 ++
+ 8 files changed, 127 insertions(+), 48 deletions(-)
+diff --git a/apps/api/src/index.ts b/apps/api/src/index.ts
+index 2d3572d..6f32b26 100644
+--- a/apps/api/src/index.ts
++++ b/apps/api/src/index.ts
+@@ -1,6 +1,7 @@
+ import { parseSiteConfig, renderSite, SiteConfigError, type SiteConfig } from "@sites/renderer";
+ import { listAssets, uploadAsset } from "./assets.js";
+ import { allInquiries, inquiriesCsv, listInquiries, requireEmail } from "./inquiries.js";
++import { kstDay, metricsReport } from "./metrics.js";
+ import { turnstileFrame } from "./turnstile.js";
+ import type { Env } from "./env.js";
+ import { HttpError, json, readJson, requireAdmin } from "./http.js";
+@@ -134,6 +135,15 @@ async function handle(request: Request, env: Env): Promise<Response> {
+     return json({ site: await getSite(env.DB, site.id) });
+   }
+ 
++  // GET /sites/:id/metrics?from=YYYY-MM-DD&to=YYYY-MM-DD (Korean dates, inclusive; default last 30 days)
++  if (method === "GET" && parts[2] === "metrics" && parts.length === 3) {
++    const today = kstDay(new Date());
++    const from = url.searchParams.get("from") ?? kstDay(new Date(Date.now() - 29 * 86_400_000));
++    const to = url.searchParams.get("to") ?? today;
++    if (![from, to].every((d) => /^\d{4}-\d{2}-\d{2}$/.test(d))) throw new HttpError(400, "from·to는 YYYY-MM-DD");
++    return json(await metricsReport(env.DB, site.id, from, to));
++  }
++
+   // GET /sites/:id/inquiries[.csv]?from=&to= (ISO dates)
+   if (method === "GET" && (parts[2] === "inquiries" || parts[2] === "inquiries.csv") && parts.length === 3) {
+     const range = { from: url.searchParams.get("from") ?? undefined, to: url.searchParams.get("to") ?? undefined };
+diff --git a/apps/api/src/metrics.ts b/apps/api/src/metrics.ts
+index c412815..edb9833 100644
+--- a/apps/api/src/metrics.ts
++++ b/apps/api/src/metrics.ts
+@@ -12,3 +12,40 @@ export async function bumpMetric(db: D1Database, siteId: string, event: MetricEv
+     .bind(siteId, kstDay(at), event)
+     .run();
+ }
++
++/** Events visitors' browsers may report; `inquiry` is counted by the server on a stored inquiry. */
++const CLIENT_EVENTS = new Set<MetricEvent>(["pageview", "tel", "kakao", "map", "booking", "inquiry_cta"]);
++
++/** Crawlers, link previews, monitors and headless browsers do not count as visits. */
++export const BOT_UA =
++  /bot|crawl|spider|slurp|bingpreview|facebookexternalhit|kakaotalk-scrap|yeti|daumoa|headless|lighthouse|pagespeed|curl|wget|python|node-fetch|axios|go-http|java\//i;
++
++export interface TrackRequest {
++  siteId: string;
++  userAgent: string | null;
++  body: unknown;
++}
++
++/** Records one beacon. Returns what happened, for logs and tests; the router always answers 204. */
++export async function recordTrack(db: D1Database, request: TrackRequest): Promise<"counted" | "ignored"> {
++  const event = (request.body as { event?: unknown } | null)?.event;
++  if (typeof event !== "string" || !CLIENT_EVENTS.has(event as MetricEvent)) return "ignored";
++  if (!request.userAgent || BOT_UA.test(request.userAgent)) return "ignored";
++  const site = await db.prepare("SELECT status, cancelled_at FROM sites WHERE id = ?")
++    .bind(request.siteId)
++    .first<{ status: string; cancelled_at: string | null }>();
++  if (!site || site.status !== "active" || site.cancelled_at) return "ignored";
++  await bumpMetric(db, request.siteId, event as MetricEvent);
++  return "counted";
++}
++
++/** Totals and daily rows for a KST date range (inclusive), for reports and the console. */
++export async function metricsReport(db: D1Database, siteId: string, from: string, to: string) {
++  const { results } = await db
++    .prepare("SELECT date, event, count FROM metrics_daily WHERE site_id = ? AND date >= ? AND date <= ? ORDER BY date, event")
++    .bind(siteId, from, to)
++    .all<{ date: string; event: MetricEvent; count: number }>();
++  const totals = Object.fromEntries(METRIC_EVENTS.map((event) => [event, 0])) as Record<MetricEvent, number>;
++  for (const row of results) totals[row.event] += row.count;
++  return { from, to, totals, daily: results };
++}
+diff --git a/apps/api/src/public.ts b/apps/api/src/public.ts
+index d508a14..c7b9a18 100644
+--- a/apps/api/src/public.ts
++++ b/apps/api/src/public.ts
+@@ -1,6 +1,7 @@
+ import { WorkerEntrypoint } from "cloudflare:workers";
+ import type { Env } from "./env.js";
+ import { submitInquiry, type InquiryRequest, type InquiryResponse } from "./inquiries.js";
++import { recordTrack, type TrackRequest } from "./metrics.js";
+ 
+ /**
+  * Methods the public router calls through its service binding (Workers RPC). Not reachable
+@@ -15,4 +16,13 @@ export class PublicApi extends WorkerEntrypoint<Env> {
+       return { status: 500, body: { ok: false, error: "잠시 뒤 다시 시도해 주세요" } };
+     }
+   }
++
++  async track(request: TrackRequest): Promise<"counted" | "ignored"> {
++    try {
++      return await recordTrack(this.env.DB, request);
++    } catch (error) {
++      console.error("[track] failed", error);
++      return "ignored";
++    }
++  }
+ }
+diff --git a/apps/router/src/index.ts b/apps/router/src/index.ts
+index 41dea73..d326810 100644
+--- a/apps/router/src/index.ts
++++ b/apps/router/src/index.ts
+@@ -11,6 +11,7 @@ import {
+ 
+ /** RPC surface of the api Worker's `PublicApi` entrypoint (apps/api/src/public.ts). */
+ interface PublicApi {
++  track(request: { siteId: string; userAgent: string | null; body: unknown }): Promise<"counted" | "ignored">;
+   submitInquiry(request: { siteId: string; hostname: string; ip: string | null; body: unknown }): Promise<{
+     status: number;
+     body: unknown;
+@@ -87,10 +88,28 @@ async function resolveHost(env: Env, hostname: string): Promise<HostRecord | nul
+ }
+ 
+ export default {
+-  async fetch(request: Request, env: Env): Promise<Response> {
++  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+     const url = new URL(request.url);
+     const hostname = url.hostname.toLowerCase();
+ 
++    // Pageview and click beacons. Always 204: callers learn nothing, pages never wait on it.
++    if (url.pathname === "/api/track") {
++      if (request.method !== "POST") return new Response(null, { status: 405 });
++      const host = await resolveHost(env, hostname);
++      if (host && host.status === "active" && host.pointer) {
++        let body: unknown = null;
++        try {
++          body = await readSmallJson(request, 1024);
++        } catch {
++          body = null;
++        }
++        if (body) {
++          ctx.waitUntil(env.API.track({ siteId: host.siteId, userAgent: request.headers.get("user-agent"), body }));
++        }
++      }
++      return new Response(null, { status: 204, headers: { "cache-control": "no-store" } });
++    }
++
+     // Visitor inquiry: the site is identified by Host here, then handed to the api by RPC.
+     if (url.pathname === "/api/inquiry") {
+       if (request.method !== "POST") return jsonResponse(405, { ok: false, error: "method not allowed" });
+diff --git a/packages/renderer/src/client.tsx b/packages/renderer/src/client.tsx
+index 779934d..0fa4cc2 100644
+--- a/packages/renderer/src/client.tsx
++++ b/packages/renderer/src/client.tsx
+@@ -1,4 +1,5 @@
+ import { hydrateRoot } from "react-dom/client";
++import { startTracking } from "./platform/track.js";
+ import { SiteView, type PageData } from "./view.js";
+ 
+ const DATA_ID = "__SITE_DATA__";
+@@ -11,4 +12,6 @@ if (root && json) {
+       console.error("[sites] hydration error", error);
+     },
+   });
++  // Industry-template sites only, and never from previews.
++  if (data.site && !data.preview) startTracking();
+ }
+---
+name: workers-best-practices
+description: Cloudflare Workers best practices for production applications. Use when writing, reviewing, or configuring Workers.
+---
+
+Your knowledge of Cloudflare Workers APIs, types, and configuration may be outdated. **Prefer retrieval over pre-training** when writing or reviewing Workers code.
+
+Use the project's installed versions, generated types, and Wrangler compatibility settings as the baseline for existing code. Retrieve relevant Cloudflare documentation to verify API, configuration, runtime behavior, and limit claims.
+
+## References
+
+Read the sections relevant to the task:
+
+| Reference | When to use it |
+|-----------|----------------|
+| [Configuration and observability](references/configuration.md) | Compatibility dates, bindings, generated types, secrets, logs, and traces |
+| [Runtime patterns](references/runtime-patterns.md) | Streaming, promise lifetime, request state, service calls, security, and runtime tests |
+| [Platform API checks](references/platform-apis.md) | Handler signatures, platform classes, binding access, and serialization |
+
+For missing evidence, consult [Workers best practices](https://developers.cloudflare.com/workers/best-practices/workers-best-practices/index.md) or find the affected product in the [Cloudflare docs directory](https://developers.cloudflare.com/directory/index.md). Use the installed Wrangler schema for config fields. A newer type package does not supersede the project's configured target.
+
+## Keep Compatibility Dates Current
+
+Use today's date for new Workers. Encourage periodic updates for existing Workers, reviewing compatibility changes and running relevant tests. Assess existing behavior against its configured date and flags; see [compatibility guidance](references/configuration.md#keep-compatibility_date-current).
+
+## Enable Observability
+
+Enable [Workers Logs](https://developers.cloudflare.com/workers/observability/logs/workers-logs/index.md) and [Traces](https://developers.cloudflare.com/workers/observability/traces/index.md) when creating or preparing a Worker for production. Set `observability.enabled` and `observability.traces.enabled` to `true`; the top-level setting alone does not enable traces. Use structured JSON logging and configure sampling for the workload. During reviews, flag missing logs or traces. See the [configuration example](references/configuration.md#enable-workers-logs-and-traces).
+
+## Anti-Patterns to Flag
+
+| Anti-pattern | Consequence and preferred pattern |
+|-------------|-----------------------------------|
+| `await response.text()` or similar buffering on unbounded data | Can exhaust Worker memory; [stream large or unbounded bodies](references/runtime-patterns.md#stream-request-and-response-bodies). |
+| Hardcoded secrets in source or config | Leaks credentials through version control; use Wrangler secrets. |
+| `Math.random()` for security-sensitive tokens or IDs | Predictable values; use `crypto.randomUUID()` or `crypto.getRandomValues()`. |
+| Async work started without awaiting, returning, or attaching it to `ctx.waitUntil()` | Work can be dropped and errors missed; tie it to the request or background-work lifetime. |
+| Module-level mutable request state | Leaks data across requests and can cause I/O ownership errors; pass request state explicitly. |
+| Cloudflare REST API calls for operations available through Worker bindings | Adds network and authentication overhead; use the available binding. |
+| `ctx.passThroughOnException()` used as general error handling | Can conceal Worker failures by forwarding to the origin; use explicit error handling and structured error responses. |
+| Hand-written `Env` that duplicates Wrangler bindings | Can drift from configuration; generate binding types with `wrangler types`. |
+| Direct string comparison of secret values | Can expose timing differences; use the [Web Crypto comparison pattern](references/runtime-patterns.md#use-web-crypto-for-secure-token-generation). |
+| Destructuring `ctx` methods, such as `const { waitUntil } = ctx` | Loses the receiver; call `ctx.waitUntil(...)`. |
+| `any` on `Env` or handler parameters | Hides binding and handler contract errors; use the project's generated and platform types. |
+| `as unknown as T` to force a platform type match | Hides incompatibilities; fix the underlying contract. |
+| `implements` used in place of extending a platform base class | Does not inherit runtime behavior, `this.ctx`, or `this.env`; use the appropriate base class. |
+| Unbound `env.X` in a platform class method | Bindings are available through `this.env.X`; see [binding access patterns](references/platform-apis.md#binding-access--the-most-common-error). |
+| Applying one serialization rule across Queues, Workflow steps, storage, and WebSockets | Can reject valid payloads or accept unsupported ones; check the [specific API and encoding](references/platform-apis.md#serialization-boundaries). |
+
+## Validation
+
+Use the project's existing checks for affected Workers behavior: type-check binding or handler contract changes, and run relevant runtime tests for behavior changes. Preserve required repository checks; a narrow edit does not require a full Workers audit.
+
+## Scope
+
+This skill covers Workers-specific best practices and code review. For related topics:
+
+- **Durable Objects**: load the `durable-objects` skill
+- **Workflows**: see [Rules of Workflows](https://developers.cloudflare.com/workflows/build/rules-of-workflows/index.md)
+- **Wrangler CLI commands**: load the `wrangler` skill
+
+exec
+/bin/zsh -lc 'cat packages/renderer/src/platform/track.ts packages/renderer/test/track.test.ts apps/api/test/metrics.test.ts scripts/verify-m2-track.mjs; cat apps/api/src/index.ts; cat packages/renderer/src/platform/*.tsx; cat package.json' in /Users/steve/Projects/daniworks-sites-platform
+ succeeded in 0ms:
+/** Click and pageview events the platform measures (stored in D1 `metrics_daily`). */
+export type TrackEvent = "pageview" | "tel" | "kakao" | "map" | "booking" | "inquiry_cta";
+
+export const TRACK_ENDPOINT = "/api/track";
+
+/** Classifies a clicked link; `data-track` wins, otherwise the destination decides. */
+export function classifyLink(anchor: { getAttribute(name: string): string | null }): TrackEvent | null {
+  const explicit = anchor.getAttribute("data-track");
+  if (explicit) return explicit as TrackEvent;
+  const href = anchor.getAttribute("href") ?? "";
+  if (href.startsWith("tel:")) return "tel";
+  if (/^https:\/\/(pf|open)\.kakao\.com\//.test(href)) return "kakao";
+  if (/^https:\/\/(m\.)?booking\.naver\.com\//.test(href)) return "booking";
+  if (/^https:\/\/((m\.)?map\.naver\.com|naver\.me|map\.kakao\.com|kko\.to|maps\.app\.goo\.gl|(www\.)?google\.[a-z.]+\/maps)/.test(href)) {
+    return "map";
+  }
+  if (/(^|\/)#inquiry$/.test(href)) return "inquiry_cta";
+  return null;
+}
+
+function send(event: TrackEvent) {
+  const body = JSON.stringify({ event, page: location.pathname });
+  // sendBeacon survives navigation (tel:, external links); text/plain avoids a preflight.
+  if (!navigator.sendBeacon?.(TRACK_ENDPOINT, new Blob([body], { type: "text/plain" }))) {
+    void fetch(TRACK_ENDPOINT, { method: "POST", body, keepalive: true }).catch(() => undefined);
+  }
+}
+
+/** Pageview now, then one delegated listener for every tracked link on the page. */
+export function startTracking() {
+  send("pageview");
+  document.addEventListener(
+    "click",
+    (event) => {
+      const anchor = (event.target as Element | null)?.closest?.("a[href]");
+      const kind = anchor ? classifyLink(anchor) : null;
+      if (kind) send(kind);
+    },
+    { capture: true },
+  );
+}
+import { describe, expect, it } from "vitest";
+import { classifyLink } from "../src/platform/track.js";
+
+const a = (href: string, track?: string) => ({
+  getAttribute: (name: string) => (name === "href" ? href : name === "data-track" ? (track ?? null) : null),
+});
+
+describe("classifyLink", () => {
+  it.each([
+    ["tel:01012345678", "tel"],
+    ["https://pf.kakao.com/_abc", "kakao"],
+    ["https://open.kakao.com/o/x", "kakao"],
+    ["https://m.booking.naver.com/booking/1", "booking"],
+    ["https://naver.me/abc", "map"],
+    ["https://map.naver.com/p/entry/place/1", "map"],
+    ["https://map.kakao.com/link/to/1", "map"],
+    ["/#inquiry", "inquiry_cta"],
+    ["/preview/tok/#inquiry", "inquiry_cta"],
+    ["/#services", null],
+    ["https://blog.naver.com/x", null],
+  ])("%s → %s", (href, kind) => {
+    expect(classifyLink(a(href))).toBe(kind);
+  });
+
+  it("prefers data-track", () => {
+    expect(classifyLink(a("/#inquiry", "tel"))).toBe("tel");
+  });
+});
+import { describe, expect, it } from "vitest";
+import { BOT_UA, kstDay } from "../src/metrics.js";
+
+describe("BOT_UA", () => {
+  it.each([
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1",
+    "Mozilla/5.0 (Linux; Android 15; SM-S928N) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/27.0 Chrome/125.0.0.0 Mobile Safari/537.36",
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 KAKAOTALK 25.1.0",
+    "Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Mobile Safari/537.36 NAVER(inapp; search; 2000; 12.10.1)",
+    "Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Mobile Safari/537.36 DaumApps/8.1.0",
+  ])("counts people: %s", (ua) => {
+    expect(BOT_UA.test(ua)).toBe(false);
+  });
+
+  it.each([
+    "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
+    "Mozilla/5.0 (compatible; Yeti/1.1; +https://naver.me/spd)",
+    "Mozilla/5.0 (compatible; Daumoa/4.0)",
+    "facebookexternalhit/1.1",
+    "kakaotalk-scrap/1.0",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/131.0 Safari/537.36",
+    "Mozilla/5.0 (Linux; Android 11; moto g power (2022)) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Mobile Safari/537.36 Chrome-Lighthouse",
+    "curl/8.5.0",
+  ])("ignores bots: %s", (ua) => {
+    expect(BOT_UA.test(ua)).toBe(true);
+  });
+});
+
+describe("kstDay", () => {
+  it("uses the Korean calendar day", () => {
+    expect(kstDay(new Date("2026-11-18T14:59:59Z"))).toBe("2026-11-18");
+    expect(kstDay(new Date("2026-11-18T15:00:00Z"))).toBe("2026-11-19");
+  });
+});
+// M2 step 2-6: pageview and click measurement. Browser beacons → router → api RPC → D1 daily
+// counters → report API. Bots, previews, bad events and suspended sites are not counted.
+import { API, ROUTER_PORT, api, chromium, evidence, routerRequest, uploadShared } from "./lib/verify.mjs";
+
+const { fieldFixture } = await import("../packages/renderer/src/templates/service-local/fixtures.ts");
+const ev = evidence("m2-track");
+const { check } = ev;
+const run = Date.now().toString(36);
+const MOBILE_SAFARI =
+  "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1";
+
+uploadShared();
+const config = structuredClone(fieldFixture);
+config.slug = `track-${run}`;
+config.business.mapUrl = "https://naver.me/example";
+config.business.bookingUrl = "https://m.booking.naver.com/booking/example";
+const host = `${config.slug}.localhost`;
+const created = await api("POST", "/sites", { config, createdBy: "operator" });
+const siteId = created.data.siteId;
+await api("POST", `/sites/${siteId}/publish`);
+const totals = async () => (await api("GET", `/sites/${siteId}/metrics`)).data.totals;
+const settle = () => new Promise((r) => setTimeout(r, 800));
+
+const browser = await chromium().launch();
+async function open(url, userAgent) {
+  const context = await browser.newContext({ userAgent, viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  // Keep external destinations offline and swallow popups.
+  await context.route(/^https:\/\/(?!.*localhost)/, (route) => route.abort());
+  const page = await context.newPage();
+  page.on("popup", (popup) => popup.close().catch(() => undefined));
+  await page.goto(url, { waitUntil: "networkidle" });
+  return { context, page };
+}
+
+// 1. a person on a phone: one pageview, then each tracked link once
+const person = await open(`http://${host}:${ROUTER_PORT}/`, MOBILE_SAFARI);
+const bar = person.page.locator(".sites-contact-bar");
+for (const label of ["카톡", "예약", "견적 문의"]) await bar.getByText(label, { exact: true }).click();
+// tel: would leave the page; the beacon is sent in capture phase before navigation.
+await person.page.evaluate(() => {
+  const link = document.querySelector('.sites-contact-bar a[href^="tel:"]');
+  link?.addEventListener("click", (e) => e.preventDefault(), { once: true });
+  link?.click();
+});
+await person.page.locator("#info a", { hasText: "지도 보기" }).click();
+await settle();
+const counted = await totals();
+check(
+  "사람 방문 1회와 클릭 5종이 각 1씩 집계",
+  counted.pageview === 1 && counted.tel === 1 && counted.kakao === 1 && counted.booking === 1 && counted.map === 1 && counted.inquiry_cta === 1,
+  counted,
+);
+await person.context.close();
+
+// 2. not counted: headless browser, preview, bad payloads, GET
+const bot = await open(`http://${host}:${ROUTER_PORT}/`, undefined);
+await bot.context.close();
+const versions = (await api("GET", `/sites/${siteId}`)).data.versions;
+const preview = await open(`${API}/preview/${versions[0].preview_token}`, MOBILE_SAFARI);
+await preview.page.locator(".sites-contact-bar").getByText("견적 문의", { exact: true }).click();
+await preview.context.close();
+const beacon = (body, ua = MOBILE_SAFARI) =>
+  routerRequest(host, "/api/track", { method: "POST", body, headers: { "content-type": "text/plain", "user-agent": ua } });
+const responses = [
+  await beacon(JSON.stringify({ event: "inquiry" })), // server-only event
+  await beacon(JSON.stringify({ event: "nope" })),
+  await beacon("not json"),
+  await beacon("x".repeat(2000)),
+  await beacon(JSON.stringify({ event: "pageview" }), "Mozilla/5.0 (compatible; Yeti/1.1; +https://naver.me/spd)"),
+];
+check("잘못된 이벤트·봇 비콘도 204로 답함", responses.every((r) => r.status === 204), { statuses: responses.map((r) => r.status) });
+check("GET은 405", (await routerRequest(host, "/api/track")).status === 405);
+await settle();
+const after = await totals();
+check("headless·프리뷰·잘못된 요청은 집계 안 됨", JSON.stringify(after) === JSON.stringify(counted), { after });
+
+// 3. valid beacon counts; suspended site does not
+await beacon(JSON.stringify({ event: "pageview", page: "/" }));
+await settle();
+check("직접 보낸 유효 비콘은 집계", (await totals()).pageview === 2);
+await api("POST", `/sites/${siteId}/suspend`);
+await beacon(JSON.stringify({ event: "pageview" }));
+await settle();
+check("정지된 사이트는 집계 안 됨", (await totals()).pageview === 2);
+await api("POST", `/sites/${siteId}/resume`);
+
+// 4. report API shape and validation
+const report = (await api("GET", `/sites/${siteId}/metrics`)).data;
+check("리포트: 기간, 합계, 일별 행", /^\d{4}-\d{2}-\d{2}$/.test(report.from) && report.daily.length >= 6 && report.totals.pageview === 2);
+check("날짜 형식 오류는 400", (await api("GET", `/sites/${siteId}/metrics?from=yesterday`)).status === 400);
+
+await browser.close();
+ev.finish({ siteId, totals: await totals() });
+import { parseSiteConfig, renderSite, SiteConfigError, type SiteConfig } from "@sites/renderer";
+import { listAssets, uploadAsset } from "./assets.js";
+import { allInquiries, inquiriesCsv, listInquiries, requireEmail } from "./inquiries.js";
+import { kstDay, metricsReport } from "./metrics.js";
+import { turnstileFrame } from "./turnstile.js";
+import type { Env } from "./env.js";
+import { HttpError, json, readJson, requireAdmin } from "./http.js";
+import { MEDIA_PATH, r2MediaKey, r2SharedKey } from "./keys.js";
+import { auditHostRecords, reconcileHostRecords, syncHostRecordsNow } from "./routes.js";
+
+/** Must match wrangler.toml [triggers]: the hourly audit; the 5-minute cron only reconciles. */
+const AUDIT_CRON = "17 * * * *";
+import { assetBase, publish, rollback, siteOrigin } from "./publish.js";
+import {
+  addVersion,
+  createSite,
+  getSite,
+  listSites,
+  listVersions,
+  setSiteStatus,
+  versionByPreviewToken,
+  type CreatedBy,
+} from "./store.js";
+
+const CREATORS: CreatedBy[] = ["ai", "operator", "customer"];
+
+/** Parsed config with defaults filled; what gets stored. */
+function validated(input: unknown): SiteConfig {
+  const result = parseSiteConfig(input);
+  if (!result.ok) throw new HttpError(422, "설정 검증 실패", result.errors);
+  return result.config;
+}
+
+function creator(value: unknown): CreatedBy {
+  return CREATORS.includes(value as CreatedBy) ? (value as CreatedBy) : "operator";
+}
+
+async function serveImmutable(env: Env, key: string) {
+  const object = await env.SITES.get(key);
+  if (!object) return new Response("not found", { status: 404 });
+  const headers = new Headers();
+  object.writeHttpMetadata(headers);
+  headers.set("cache-control", "public, max-age=31536000, immutable");
+  return new Response(object.body, { headers });
+}
+
+async function handle(request: Request, env: Env): Promise<Response> {
+  const url = new URL(request.url);
+  const parts = url.pathname.split("/").filter(Boolean);
+  const method = request.method;
+
+  if (method === "GET" && url.pathname === "/health") return json({ ok: true });
+
+  // Shared assets are public and immutable; previews load them from here.
+  if (method === "GET" && parts[0] === "_shared") return serveImmutable(env, r2SharedKey(parts.slice(1).join("/")));
+  // Uploaded photos (public, content-addressed) so previews show them before publishing.
+  const media = method === "GET" ? MEDIA_PATH.exec(url.pathname) : null;
+  if (media) return serveImmutable(env, r2MediaKey(media[1]!, media[2]!));
+
+  // Turnstile widget frame embedded by public sites (see turnstile.ts).
+  if (method === "GET" && url.pathname === "/turnstile-frame") {
+    if (!env.TURNSTILE_SITE_KEY) return new Response("turnstile not configured", { status: 404 });
+    const parent = url.searchParams.get("parent") ?? "";
+    if (!/^https?:\/\/[a-z0-9.-]+(:\d+)?$/i.test(parent)) return new Response("bad parent", { status: 400 });
+    return new Response(turnstileFrame(env.TURNSTILE_SITE_KEY, parent), {
+      headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "x-robots-tag": "noindex" },
+    });
+  }
+
+  // Preview: anyone with the token can view a version. Never indexed. /preview/<token>[/privacy]
+  if (method === "GET" && parts[0] === "preview" && (parts.length === 2 || parts.length === 3)) {
+    const version = await versionByPreviewToken(env.DB, parts[1]!);
+    const site = await getSite(env.DB, version.site_id);
+    const { pages } = await renderSite(JSON.parse(version.config) as SiteConfig, {
+      assetBase: assetBase(),
+      origin: await siteOrigin(env, site),
+      preview: true,
+      turnstileFrame: null,
+      // Site links are root-relative (`/#inquiry`, `/privacy`); keep them inside this preview.
+      linkPrefix: `/preview/${parts[1]}`,
+    });
+    const route = parts[2] ? `/${parts[2]}` : "/";
+    const page = pages.find((entry) => entry.route === route);
+    if (!page) throw new HttpError(404, "없는 페이지입니다");
+    return new Response(page.html, {
+      headers: {
+        "content-type": "text/html; charset=utf-8",
+        "x-robots-tag": "noindex, nofollow",
+        "cache-control": "no-store",
+      },
+    });
+  }
+
+  requireAdmin(request, env.ADMIN_TOKEN);
+
+  // PUT /admin/shared/<version>/<path>: upload one shared asset file.
+  if (method === "PUT" && parts[0] === "admin" && parts[1] === "shared" && parts.length > 3) {
+    const key = r2SharedKey(parts.slice(2).join("/"));
+    await env.SITES.put(key, request.body, {
+      httpMetadata: { contentType: request.headers.get("content-type") ?? "application/octet-stream" },
+    });
+    return json({ key }, 201);
+  }
+
+  if (parts[0] !== "sites") throw new HttpError(404, "없는 경로입니다");
+
+  // POST /sites {config, createdBy}
+  if (method === "POST" && parts.length === 1) {
+    const body = await readJson<{ config: unknown; createdBy?: CreatedBy }>(request);
+    const config = validated(body.config);
+    const hostname = `${config.slug}.${env.BASE_DOMAIN}`;
+    const { siteId, versionId } = await createSite(env.DB, config, creator(body.createdBy), hostname);
+    await syncHostRecordsNow(env, siteId);
+    return json({ siteId, versionId, hostname }, 201);
+  }
+
+  // GET /sites: every site with its published version number and primary hostname.
+  if (method === "GET" && parts.length === 1) {
+    return json({ sites: await listSites(env.DB, env.BASE_DOMAIN) });
+  }
+  if (parts.length < 2) throw new HttpError(404, "없는 경로입니다");
+
+  const site = await getSite(env.DB, parts[1]!);
+
+  if (method === "GET" && parts.length === 2) {
+    return json({ site, versions: await listVersions(env.DB, site.id) });
+  }
+
+  // PATCH /sites/:id {notifyEmail}: operational settings outside the versioned config.
+  if (method === "PATCH" && parts.length === 2) {
+    const body = await readJson<{ notifyEmail?: unknown }>(request);
+    if ("notifyEmail" in body) {
+      await env.DB.prepare("UPDATE sites SET notify_email = ? WHERE id = ?").bind(requireEmail(body.notifyEmail), site.id).run();
+    }
+    return json({ site: await getSite(env.DB, site.id) });
+  }
+
+  // GET /sites/:id/metrics?from=YYYY-MM-DD&to=YYYY-MM-DD (Korean dates, inclusive; default last 30 days)
+  if (method === "GET" && parts[2] === "metrics" && parts.length === 3) {
+    const today = kstDay(new Date());
+    const from = url.searchParams.get("from") ?? kstDay(new Date(Date.now() - 29 * 86_400_000));
+    const to = url.searchParams.get("to") ?? today;
+    if (![from, to].every((d) => /^\d{4}-\d{2}-\d{2}$/.test(d))) throw new HttpError(400, "from·to는 YYYY-MM-DD");
+    return json(await metricsReport(env.DB, site.id, from, to));
+  }
+
+  // GET /sites/:id/inquiries[.csv]?from=&to= (ISO dates)
+  if (method === "GET" && (parts[2] === "inquiries" || parts[2] === "inquiries.csv") && parts.length === 3) {
+    const range = { from: url.searchParams.get("from") ?? undefined, to: url.searchParams.get("to") ?? undefined };
+    if (parts[2] === "inquiries") {
+      return json(
+        await listInquiries(env, site.id, {
+          ...range,
+          before: url.searchParams.get("before") ?? undefined,
+          limit: Number(url.searchParams.get("limit") ?? 200),
+        }),
+      );
+    }
+    return new Response(inquiriesCsv(await allInquiries(env, site.id, range)), {
+      headers: {
+        "content-type": "text/csv; charset=utf-8",
+        "content-disposition": `attachment; filename="inquiries-${site.slug}.csv"`,
+      },
+    });
+  }
+
+  // POST /sites/:id/versions {config, createdBy, note}: new draft version
+  if (method === "POST" && parts[2] === "versions") {
+    const body = await readJson<{ config: unknown; createdBy?: CreatedBy; note?: string }>(request);
+    const result = await addVersion(env.DB, site, validated(body.config), creator(body.createdBy), body.note ?? null);
+    return json(result, 201);
+  }
+
+  // POST /sites/:id/assets: raw image body, or JSON {url}. GET lists them.
+  if (parts[2] === "assets" && parts.length === 3) {
+    if (method === "POST") return json(await uploadAsset(env, site, request), 201);
+    if (method === "GET") return json({ assets: await listAssets(env, site) });
+  }
+
+  // POST /sites/:id/publish {versionId?}: latest version when omitted
+  if (method === "POST" && parts[2] === "publish") {
+    const body = await readJson<{ versionId?: string }>(request).catch(() => ({}) as { versionId?: string });
+    return json(await publish(env, site, body.versionId));
+  }
+
+  // POST /sites/:id/suspend | /resume: stop or restart public serving (non-payment, requests).
+  if (method === "POST" && (parts[2] === "suspend" || parts[2] === "resume") && parts.length === 3) {
+    if (site.cancelled_at) throw new HttpError(409, "해지된 사이트입니다");
+    const status = parts[2] === "suspend" ? "suspended" : "active";
+    await setSiteStatus(env.DB, site.id, status);
+    await syncHostRecordsNow(env, site.id);
+    return json({ siteId: site.id, status });
+  }
+
+  // POST /sites/:id/rollback {versionId}
+  if (method === "POST" && parts[2] === "rollback") {
+    const body = await readJson<{ versionId: string }>(request);
+    if (!body.versionId) throw new HttpError(400, "versionId가 필요합니다");
+    return json(await rollback(env, site, body.versionId));
+  }
+
+  throw new HttpError(404, "없는 경로입니다");
+}
+
+export { PublicApi } from "./public.js";
+
+export default {
+  async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext) {
+    ctx.waitUntil(
+      (async () => {
+        if (controller.cron === AUDIT_CRON) console.log("[routes] audit", JSON.stringify(await auditHostRecords(env)));
+        console.log("[routes] reconcile", JSON.stringify(await reconcileHostRecords(env)));
+      })(),
+    );
+  },
+
+  async fetch(request: Request, env: Env): Promise<Response> {
+    try {
+      return await handle(request, env);
+    } catch (error) {
+      if (error instanceof HttpError) return json({ error: error.message, details: error.details }, error.status);
+      if (error instanceof SiteConfigError) return json({ error: "설정 검증 실패", details: error.errors }, 422);
+      console.error(error);
+      return json({ error: "서버 오류" }, 500);
+    }
+  },
+};
+import { useSiteHref } from "../render-context.js";
+import type { SiteChrome } from "../view.js";
+
+/**
+ * Mobile bottom bar: the main conversion points for local businesses. `data-track` names the
+ * click event the tracking beacon records, so every channel is measured the same way.
+ */
+export function ContactBar({ site }: { site: SiteChrome }) {
+  const siteHref = useSiteHref();
+  const items: { label: string; href: string; track: string; external?: boolean }[] = [
+    { label: "전화", href: site.tel, track: "tel" },
+  ];
+  if (site.kakaoUrl) items.push({ label: "카톡", href: site.kakaoUrl, track: "kakao", external: true });
+  if (site.bookingUrl) items.push({ label: "예약", href: site.bookingUrl, track: "booking", external: true });
+  else if (site.mapUrl) items.push({ label: "지도", href: site.mapUrl, track: "map", external: true });
+  items.push({ label: site.inquiryLabel, href: siteHref("/#inquiry"), track: "inquiry_cta" });
+
+  return (
+    <nav
+      aria-label="빠른 연락"
+      className="sites-contact-bar fixed inset-x-0 bottom-0 z-40 grid border-t border-black/10 bg-white/95 backdrop-blur md:hidden"
+      style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }}
+    >
+      {items.map((item) => (
+        <a
+          key={item.track}
+          href={item.href}
+          data-track={item.track}
+          target={item.external ? "_blank" : undefined}
+          rel={item.external ? "noopener" : undefined}
+          className="flex min-h-14 items-center justify-center text-[15px] font-semibold text-[var(--color-text)] active:bg-black/5"
+        >
+          {item.label}
+        </a>
+      ))}
+    </nav>
+  );
+}
+import { useEffect, useRef, useState, type FormEvent } from "react";
+import type { InquiryFormBlock } from "@dani-builder/strapi-client/types";
+import { useIsPreview, useSiteHref, useTurnstileFrame } from "../render-context.js";
+
+export const INQUIRY_ENDPOINT = "/api/inquiry";
+
+type Status = "idle" | "sending" | "done" | "error";
+
+const field =
+  "w-full rounded-lg border border-black/15 bg-white px-4 py-3 text-base text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]";
+
+/**
+ * Turnstile token from the platform-hosted frame. The frame loads only after the visitor starts
+ * filling the form, so the challenge script never weighs on page load.
+ */
+function useTurnstile(frameUrl: string | null, active: boolean) {
+  const [token, setToken] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [round, setRound] = useState(0);
+  useEffect(() => {
+    if (!frameUrl || !active) return;
+    const frameOrigin = new URL(frameUrl, location.href).origin;
+    function onMessage(event: MessageEvent) {
+      if (event.origin !== frameOrigin || event.data?.type !== "dsites-turnstile") return;
+      if (event.data.error) setFailed(true);
+      else setToken(event.data.token ?? null);
+    }
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [frameUrl, active]);
+  const src = frameUrl && active ? `${frameUrl}?parent=${encodeURIComponent(location.origin)}&round=${round}` : null;
+  // Tokens are single-use: reloading the frame issues a fresh one.
+  const reset = () => {
+    setToken(null);
+    setFailed(false);
+    setRound((n) => n + 1);
+  };
+  return { token, failed, src, required: Boolean(frameUrl), reset };
+}
+
+/**
+ * Platform inquiry form for local businesses: name, phone and message. It posts to the shared
+ * `/api/inquiry` endpoint on the site's own host, which identifies the site by Host header.
+ */
+export function InquiryForm({ block }: { block: InquiryFormBlock }) {
+  const [status, setStatus] = useState<Status>("idle");
+  const [error, setError] = useState<string | null>(null);
+  const [touched, setTouched] = useState(false);
+  const mountedAt = useRef<number>(0);
+  const section = block.section;
+  const siteHref = useSiteHref();
+  const preview = useIsPreview();
+  const turnstile = useTurnstile(useTurnstileFrame(), touched && !preview);
+
+  useEffect(() => {
+    mountedAt.current = Date.now();
+  }, []);
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (preview) {
+      setError("프리뷰에서는 문의가 전송되지 않습니다.");
+      setStatus("error");
+      return;
+    }
+    if (turnstile.required && !turnstile.token) {
+      setError(turnstile.failed ? "스팸 방지 확인을 불러오지 못했습니다. 전화로 문의해 주세요." : "스팸 방지 확인이 끝나면 다시 눌러 주세요.");
+      setStatus("error");
+      return;
+    }
+    const form = event.currentTarget;
+    const data = Object.fromEntries(new FormData(form).entries());
+    setStatus("sending");
+    setError(null);
+    try {
+      const res = await fetch(INQUIRY_ENDPOINT, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          ...data,
+          consent: data.consent === "on",
+          page: location.pathname,
+          elapsedMs: Date.now() - mountedAt.current,
+          turnstileToken: turnstile.token ?? undefined,
+        }),
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(body?.error ?? block.errorMessage ?? "전송하지 못했습니다.");
+      }
+      form.reset();
+      setStatus("done");
+    } catch (e) {
+      // A Turnstile token is single-use; the frame issues a new one.
+      turnstile.reset();
+      setError(e instanceof Error ? e.message : String(e));
+      setStatus("error");
+    }
+  }
+
+  return (
+    <section id={section?.anchorId ?? "inquiry"} className="sites-inquiry px-5 py-16 md:py-24">
+      <div className="mx-auto max-w-xl">
+        {section?.kickerText ? <p className="mb-2 text-sm font-semibold text-[var(--color-primary)]">{section.kickerText}</p> : null}
+        {section?.heading ? <h2 className="text-2xl font-bold whitespace-pre-line md:text-3xl">{section.heading}</h2> : null}
+        {section?.subheading ? (
+          <p className="mt-3 whitespace-pre-line text-[var(--color-text-muted)]">{section.subheading}</p>
+        ) : null}
+        {status === "done" ? (
+          <p role="status" className="mt-8 rounded-lg bg-[var(--color-bg)] p-6 whitespace-pre-line">
+            {block.successMessage ?? "문의가 접수되었습니다."}
+          </p>
+        ) : (
+          <form onSubmit={submit} onFocus={() => setTouched(true)} className="mt-8 grid gap-4">
+            <label className="grid gap-1.5 text-sm font-medium">
+              이름
+              <input name="name" required maxLength={30} autoComplete="name" className={field} />
+            </label>
+            <label className="grid gap-1.5 text-sm font-medium">
+              연락처
+              <input
+                name="phone"
+                required
+                inputMode="tel"
+                autoComplete="tel"
+                pattern="[0-9\-\s]{9,14}"
+                placeholder="010-1234-5678"
+                className={field}
+              />
+            </label>
+            <label className="grid gap-1.5 text-sm font-medium">
+              문의 내용
+              <textarea name="message" required maxLength={1000} rows={5} className={field} />
+            </label>
+            {/* Honeypot: people never see or fill it. */}
+            <input name="website" tabIndex={-1} autoComplete="off" aria-hidden="true" className="hidden" />
+            <label className="flex items-start gap-2 text-sm text-[var(--color-text-muted)]">
+              <input name="consent" type="checkbox" required className="mt-1" />
+              <span>
+                문의 응대를 위한 개인정보 수집·이용에 동의합니다.{" "}
+                <a href={siteHref("/privacy")} className="underline">
+                  자세히
+                </a>
+              </span>
+            </label>
+            {turnstile.src ? (
+              <iframe
+                title="스팸 방지 확인"
+                src={turnstile.src}
+                className="h-[70px] w-full max-w-[320px] border-0"
+                data-turnstile-frame=""
+              />
+            ) : null}
+            {status === "error" && error ? (
+              <p role="alert" className="text-sm text-red-700">
+                {error}
+              </p>
+            ) : null}
+            <button
+              type="submit"
+              disabled={status === "sending"}
+              className="min-h-12 rounded-lg bg-[var(--color-cta)] px-6 font-semibold text-white disabled:opacity-60"
+            >
+              {status === "sending" ? "보내는 중…" : "문의 보내기"}
+            </button>
+          </form>
+        )}
+      </div>
+    </section>
+  );
+}
+{
+  "name": "daniworks-sites-platform",
+  "private": true,
+  "packageManager": "pnpm@10.28.0",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "build": "pnpm --filter @sites/renderer build",
+    "test": "pnpm -r test",
+    "check-types": "pnpm -r check-types",
+    "dev:api": "pnpm --filter api dev",
+    "dev:router": "pnpm --filter router dev",
+    "upload:shared": "node scripts/upload-shared.mjs",
+    "verify:m1": "node scripts/verify-m1.mjs",
+    "deploy:staging": "pnpm build && pnpm --filter api migrate:staging && pnpm --filter api deploy:staging && pnpm --filter router deploy:staging",
+    "verify:staging": "node scripts/verify-staging.mjs"
+  },
+  "devDependencies": {
+    "chrome-launcher": "1.2.3",
+    "lighthouse": "13.6.0",
+    "playwright": "1.65.1"
+  }
+}
+
+exec
+/bin/zsh -lc 'cat apps/router/src/index.ts; cat packages/renderer/src/view.tsx; cat packages/renderer/scripts/build*; cat apps/api/src/metrics.ts; cat apps/router/src/body.ts 2>/dev/null; git diff -- evidence; pnpm test; pnpm check-types' in /Users/steve/Projects/daniworks-sites-platform
+ succeeded in 1989ms:
+import {
+  kvHostKey,
+  kvSiteKey,
+  MEDIA_PATH,
+  r2MediaKey,
+  r2PageKey,
+  r2SharedKey,
+  type HostRecord,
+  type PublishedPointer,
+} from "./keys.js";
+
+/** RPC surface of the api Worker's `PublicApi` entrypoint (apps/api/src/public.ts). */
+interface PublicApi {
+  track(request: { siteId: string; userAgent: string | null; body: unknown }): Promise<"counted" | "ignored">;
+  submitInquiry(request: { siteId: string; hostname: string; ip: string | null; body: unknown }): Promise<{
+    status: number;
+    body: unknown;
+  }>;
+}
+
+interface Env {
+  SITES: R2Bucket;
+  ROUTES: KVNamespace;
+  BASE_DOMAIN: string;
+  API: PublicApi;
+}
+
+const MAX_FORM_BYTES = 16 * 1024;
+
+const jsonResponse = (status: number, body: unknown) =>
+  new Response(JSON.stringify(body), {
+    status,
+    headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" },
+  });
+
+/** Reads a small JSON body, refusing anything larger than the limit while streaming. */
+async function readSmallJson(request: Request, limit: number): Promise<unknown> {
+  const reader = request.body?.getReader();
+  if (!reader) return null;
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > limit) {
+      await reader.cancel();
+      throw new Error("too large");
+    }
+    chunks.push(value);
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return JSON.parse(new TextDecoder().decode(bytes));
+}
+
+// KV values are cached at the edge for this long (KV minimum); publish/rollback propagate within it.
+const KV_CACHE_TTL = 30;
+
+function page(status: number, message: string, headers: Record<string, string> = {}) {
+  return new Response(
+    `<!doctype html><html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>${message}</title><body style="font-family:system-ui;padding:48px"><p>${message}</p></body></html>`,
+    { status, headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", ...headers } },
+  );
+}
+
+async function serveObject(env: Env, key: string, cacheControl: string) {
+  const object = await env.SITES.get(key);
+  if (!object) return null;
+  const headers = new Headers();
+  object.writeHttpMetadata(headers);
+  headers.set("etag", object.httpEtag);
+  headers.set("cache-control", cacheControl);
+  return new Response(object.body, { headers });
+}
+
+/** One KV read for M2 records; M1 records (bare siteId) need a second read for the pointer. */
+async function resolveHost(env: Env, hostname: string): Promise<HostRecord | null> {
+  const raw = await env.ROUTES.get(kvHostKey(hostname), { cacheTtl: KV_CACHE_TTL });
+  if (!raw) return null;
+  if (raw.startsWith("{")) return JSON.parse(raw) as HostRecord;
+  const pointer = await env.ROUTES.get<PublishedPointer>(kvSiteKey(raw), { type: "json", cacheTtl: KV_CACHE_TTL });
+  return { siteId: raw, status: "active", pointer, redirectTo: null };
+}
+
+export default {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    const url = new URL(request.url);
+    const hostname = url.hostname.toLowerCase();
+
+    // Pageview and click beacons. Always 204: callers learn nothing, pages never wait on it.
+    if (url.pathname === "/api/track") {
+      if (request.method !== "POST") return new Response(null, { status: 405 });
+      const host = await resolveHost(env, hostname);
+      if (host && host.status === "active" && host.pointer) {
+        let body: unknown = null;
+        try {
+          body = await readSmallJson(request, 1024);
+        } catch {
+          body = null;
+        }
+        if (body) {
+          ctx.waitUntil(env.API.track({ siteId: host.siteId, userAgent: request.headers.get("user-agent"), body }));
+        }
+      }
+      return new Response(null, { status: 204, headers: { "cache-control": "no-store" } });
+    }
+
+    // Visitor inquiry: the site is identified by Host here, then handed to the api by RPC.
+    if (url.pathname === "/api/inquiry") {
+      if (request.method !== "POST") return jsonResponse(405, { ok: false, error: "method not allowed" });
+      const host = await resolveHost(env, hostname);
+      if (!host || host.status !== "active" || !host.pointer) {
+        return jsonResponse(404, { ok: false, error: "문의를 받을 수 없는 사이트입니다" });
+      }
+      if (!(request.headers.get("content-type") ?? "").startsWith("application/json")) {
+        return jsonResponse(415, { ok: false, error: "JSON으로 보내 주세요" });
+      }
+      let body: unknown;
+      try {
+        body = await readSmallJson(request, MAX_FORM_BYTES);
+      } catch {
+        return jsonResponse(400, { ok: false, error: "요청을 읽지 못했습니다" });
+      }
+      const result = await env.API.submitInquiry({
+        siteId: host.siteId,
+        hostname,
+        ip: request.headers.get("cf-connecting-ip"),
+        body,
+      });
+      return jsonResponse(result.status, result.body);
+    }
+
+    if (request.method !== "GET" && request.method !== "HEAD") {
+      return new Response("method not allowed", { status: 405 });
+    }
+
+    // Shared assets are content-addressed by version, so any host may serve them.
+    if (url.pathname.startsWith("/_shared/")) {
+      return (
+        (await serveObject(env, r2SharedKey(url.pathname.slice("/_shared/".length)), "public, max-age=31536000, immutable")) ??
+        new Response("not found", { status: 404 })
+      );
+    }
+    // Uploaded photos are public and content-addressed.
+    const media = MEDIA_PATH.exec(url.pathname);
+    if (media) {
+      return (
+        (await serveObject(env, r2MediaKey(media[1]!, media[2]!), "public, max-age=31536000, immutable")) ??
+        new Response("not found", { status: 404 })
+      );
+    }
+
+    const host = await resolveHost(env, hostname);
+    if (!host) return page(404, "연결된 사이트가 없습니다.");
+    if (host.status === "cancelled") return page(410, "운영이 종료된 사이트입니다.");
+    if (host.status === "suspended") return page(503, "잠시 운영을 멈춘 사이트입니다.", { "retry-after": "86400" });
+    if (host.redirectTo) {
+      return Response.redirect(`${url.protocol}//${host.redirectTo}${url.pathname}${url.search}`, 301);
+    }
+    const pointer = host.pointer;
+    if (!pointer) return page(404, "아직 공개되지 않은 사이트입니다.");
+
+    if (url.pathname === "/robots.txt") {
+      return new Response(`User-agent: *\nAllow: /\nSitemap: https://${hostname}/sitemap.xml\n`, {
+        headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "public, max-age=3600" },
+      });
+    }
+    const pages = pointer.pages ?? ["/"];
+    if (url.pathname === "/sitemap.xml") {
+      const lastmod = pointer.publishedAt.slice(0, 10);
+      const urls = pages
+        .map((route) => `<url><loc>https://${hostname}${route}</loc><lastmod>${lastmod}</lastmod></url>`)
+        .join("");
+      return new Response(
+        `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${urls}</urlset>\n`,
+        { headers: { "content-type": "application/xml; charset=utf-8", "cache-control": "public, max-age=3600" } },
+      );
+    }
+    const route = url.pathname === "/index.html" ? "/" : url.pathname.replace(/\/(index\.html)?$/, "") || "/";
+    if (pages.includes(route)) {
+      const path = route === "/" ? "index.html" : `${route.slice(1)}/index.html`;
+      const response = await serveObject(env, r2PageKey(host.siteId, pointer.versionId, path), "public, max-age=60");
+      if (response) {
+        response.headers.set("x-site-version", String(pointer.number));
+        return response;
+      }
+      return page(404, "페이지 파일을 찾지 못했습니다.");
+    }
+    return page(404, "없는 주소입니다.");
+  },
+};
+import type { CSSProperties } from "react";
+import {
+  BlockRenderer,
+  BlocksProvider,
+  SiteShell,
+  type BlocksContextValue,
+  type BlocksImageProps,
+  type BlocksLinkProps,
+} from "@dani-builder/blocks";
+import type {
+  BrandColors,
+  Footer,
+  InquiryFormBlock,
+  NavigationDocument,
+  PageDocument,
+} from "@dani-builder/strapi-client/types";
+import { srcSetFor } from "./images.js";
+import { RenderContext, useSiteHref } from "./render-context.js";
+import { ContactBar } from "./platform/contact-bar.js";
+import { InquiryForm } from "./platform/inquiry-form.js";
+
+/** Platform chrome for industry-template sites (v2). Legacy v1 sites have none. */
+export interface SiteChrome {
+  name: string;
+  tel: string;
+  kakaoUrl: string | null;
+  mapUrl: string | null;
+  bookingUrl: string | null;
+  inquiryLabel: string;
+  /** Platform-hosted Turnstile frame; null when spam checks are not configured. */
+  turnstileFrame?: string | null;
+}
+
+/** Everything the page needs at render and hydration time. Serialized into the HTML. */
+export interface PageData {
+  page: PageDocument;
+  navigation: NavigationDocument;
+  footer: Footer;
+  brandColors: BrandColors;
+  /** `/` or `/privacy`; drives the shell's current path. */
+  route?: string;
+  site?: SiteChrome | null;
+  /** Prefix for root-relative links, e.g. `/preview/<token>` so previews stay inside themselves. */
+  linkPrefix?: string;
+  /** Preview render: the inquiry form does not submit. */
+  preview?: boolean;
+}
+
+
+
+const fillStyle: CSSProperties = {
+  position: "absolute",
+  inset: 0,
+  width: "100%",
+  height: "100%",
+};
+
+function Img({ src, alt, fill, width, height, sizes, className, priority, onError }: BlocksImageProps) {
+  return (
+    <img
+      src={src}
+      srcSet={typeof src === "string" ? srcSetFor(src, width ? Number(width) : undefined) : undefined}
+      alt={alt}
+      width={fill ? undefined : width}
+      height={fill ? undefined : height}
+      sizes={sizes}
+      className={className}
+      style={fill ? fillStyle : undefined}
+      loading={priority ? "eager" : "lazy"}
+      fetchPriority={priority ? "high" : undefined}
+      decoding="async"
+      onError={onError}
+    />
+  );
+}
+
+function A({ source: _source, href, ...props }: BlocksLinkProps) {
+  const siteHref = useSiteHref();
+  return <a href={typeof href === "string" ? siteHref(href) : href} {...props} />;
+}
+
+/** M0 placeholder: the shared inquiry Worker arrives in M2. */
+function InquiryPlaceholder({ block }: { block: InquiryFormBlock }) {
+  return (
+    <section id={block.section?.anchorId ?? undefined} className="sites-inquiry-placeholder">
+      <p>문의 폼 자리 (M2에서 공용 문의 Worker로 연결)</p>
+    </section>
+  );
+}
+
+const adapters: BlocksContextValue = {
+  Image: Img,
+  Link: A,
+  resolveAssetUrl: (asset) => asset?.url ?? "",
+};
+
+export function SiteView({ data }: { data: PageData }) {
+  const { page, navigation, footer, brandColors, site } = data;
+  const first = page.blocks[0];
+  const route = data.route ?? "/";
+  const linkPrefix = data.linkPrefix ?? "";
+  return (
+    <RenderContext.Provider
+      value={{ linkPrefix, preview: data.preview ?? false, turnstileFrame: site?.turnstileFrame ?? null }}
+    >
+    <BlocksProvider value={adapters}>
+      <SiteShell
+        navigation={navigation}
+        footer={footer}
+        organization={footer.organization ?? ""}
+        homeHref={`${linkPrefix}/`}
+        currentPath={route}
+        headerMode={page.headerMode}
+        firstHero={first?.__component === "blocks.hero" ? first : null}
+        colors={brandColors}
+      >
+        <BlockRenderer
+          blocks={page.blocks}
+          renderers={{ "blocks.inquiry-form": site ? InquiryForm : InquiryPlaceholder }}
+        />
+      </SiteShell>
+      {site ? <ContactBar site={site} /> : null}
+    </BlocksProvider>
+    </RenderContext.Provider>
+  );
+}
+// Builds the shared, template-versioned assets once: CSS, client bundle, template images.
+// Output: dist/shared/<version>/... where <version> is a content hash, so the files can be
+// cached forever. Per-site publishing only renders HTML that points at this version.
+import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { cpSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { dirname, join, relative } from "node:path";
+import { fileURLToPath } from "node:url";
+import { build } from "esbuild";
+
+const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+const staging = join(root, "dist/.staging");
+const assets = join(staging, "_assets");
+rmSync(join(root, "dist"), { recursive: true, force: true });
+mkdirSync(assets, { recursive: true });
+
+execFileSync(
+  join(root, "node_modules/.bin/tailwindcss"),
+  ["-i", "src/styles.css", "-o", join(assets, "site.css"), "--minify"],
+  { cwd: root, stdio: ["ignore", "ignore", "inherit"] },
+);
+
+// Replace whole react-icons sets with the allowlist modules (src/icons/*.ts).
+const iconSets = { "react-icons/fa6": "src/icons/fa6.ts", "react-icons/fi": "src/icons/fi.ts" };
+const iconAllowlist = {
+  name: "icon-allowlist",
+  setup(b) {
+    b.onResolve({ filter: /^react-icons\/(fa6|fi)$/ }, (args) => {
+      const target = join(root, iconSets[args.path]);
+      if (args.importer === target) return undefined; // the allowlist module itself imports the real set
+      return { path: target };
+    });
+  },
+};
+
+await build({
+  entryPoints: [join(root, "src/client.tsx")],
+  outdir: assets,
+  entryNames: "[name]",
+  chunkNames: "chunks/[name]-[hash]",
+  bundle: true,
+  splitting: true,
+  format: "esm",
+  minify: true,
+  target: "es2022",
+  jsx: "automatic",
+  define: { "process.env.NODE_ENV": '"production"' },
+  plugins: [iconAllowlist],
+  logLevel: "warning",
+});
+
+cpSync(join(root, "node_modules/@dani-builder/site-templates/assets/business-basic"), join(staging, "site-templates"), {
+  recursive: true,
+});
+
+// Responsive WebP variants next to each sample photo (src/images.ts names them).
+const { default: sharp } = await import("sharp");
+const { VARIANT_WIDTHS, VARIANT_QUALITY, variantUrl } = await import("../src/images.ts");
+for (const file of readdirSync(join(staging, "site-templates")).filter((f) => /\.(jpg|png)$/.test(f))) {
+  const src = join(staging, "site-templates", file);
+  const { width } = await sharp(src).metadata();
+  for (const w of VARIANT_WIDTHS.filter((w) => w < width)) {
+    await sharp(src).resize({ width: w }).webp({ quality: VARIANT_QUALITY }).toFile(variantUrl(src, w));
+  }
+}
+
+function walk(dir) {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
+    e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)],
+  );
+}
+const files = walk(staging).sort();
+const hash = createHash("sha256");
+for (const file of files) hash.update(relative(staging, file)).update(readFileSync(file));
+const version = hash.digest("hex").slice(0, 12);
+
+mkdirSync(join(root, "dist/shared"), { recursive: true });
+renameSync(staging, join(root, "dist/shared", version));
+mkdirSync(join(root, "src/generated"), { recursive: true });
+writeFileSync(
+  join(root, "src/generated/asset-version.ts"),
+  `// Generated by scripts/build-assets.mjs. Do not edit.\nexport const ASSET_VERSION = "${version}";\n`,
+);
+
+const kib = (f) => (statSync(join(root, "dist/shared", version, f)).size / 1024).toFixed(1);
+const chunkDir = join(root, "dist/shared", version, "_assets/chunks");
+const chunkKiB = readdirSync(chunkDir).reduce((s, f) => s + statSync(join(chunkDir, f)).size, 0) / 1024;
+console.log(`asset version ${version}: ${files.length} files`);
+console.log(`site.css ${kib("_assets/site.css")} KiB, client.js ${kib("_assets/client.js")} KiB, chunks ${chunkKiB.toFixed(1)} KiB`);
+export const METRIC_EVENTS = ["pageview", "tel", "kakao", "map", "booking", "inquiry_cta", "inquiry"] as const;
+export type MetricEvent = (typeof METRIC_EVENTS)[number];
+
+/** Korean calendar day (UTC+9) for daily counters: reports are read in Korean days. */
+export const kstDay = (at: Date) => new Date(at.getTime() + 9 * 3600_000).toISOString().slice(0, 10);
+
+export async function bumpMetric(db: D1Database, siteId: string, event: MetricEvent, at = new Date()) {
+  await db
+    .prepare(
+      "INSERT INTO metrics_daily (site_id, date, event, count) VALUES (?, ?, ?, 1) ON CONFLICT (site_id, date, event) DO UPDATE SET count = count + 1",
+    )
+    .bind(siteId, kstDay(at), event)
+    .run();
+}
+
+/** Events visitors' browsers may report; `inquiry` is counted by the server on a stored inquiry. */
+const CLIENT_EVENTS = new Set<MetricEvent>(["pageview", "tel", "kakao", "map", "booking", "inquiry_cta"]);
+
+/** Crawlers, link previews, monitors and headless browsers do not count as visits. */
+export const BOT_UA =
+  /bot|crawl|spider|slurp|bingpreview|facebookexternalhit|kakaotalk-scrap|yeti|daumoa|headless|lighthouse|pagespeed|curl|wget|python|node-fetch|axios|go-http|java\//i;
+
+export interface TrackRequest {
+  siteId: string;
+  userAgent: string | null;
+  body: unknown;
+}
+
+/** Records one beacon. Returns what happened, for logs and tests; the router always answers 204. */
+export async function recordTrack(db: D1Database, request: TrackRequest): Promise<"counted" | "ignored"> {
+  const event = (request.body as { event?: unknown } | null)?.event;
+  if (typeof event !== "string" || !CLIENT_EVENTS.has(event as MetricEvent)) return "ignored";
+  if (!request.userAgent || BOT_UA.test(request.userAgent)) return "ignored";
+  const site = await db.prepare("SELECT status, cancelled_at FROM sites WHERE id = ?")
+    .bind(request.siteId)
+    .first<{ status: string; cancelled_at: string | null }>();
+  if (!site || site.status !== "active" || site.cancelled_at) return "ignored";
+  await bumpMetric(db, request.siteId, event as MetricEvent);
+  return "counted";
+}
+
+/** Totals and daily rows for a KST date range (inclusive), for reports and the console. */
+export async function metricsReport(db: D1Database, siteId: string, from: string, to: string) {
+  const { results } = await db
+    .prepare("SELECT date, event, count FROM metrics_daily WHERE site_id = ? AND date >= ? AND date <= ? ORDER BY date, event")
+    .bind(siteId, from, to)
+    .all<{ date: string; event: MetricEvent; count: number }>();
+  const totals = Object.fromEntries(METRIC_EVENTS.map((event) => [event, 0])) as Record<MetricEvent, number>;
+  for (const row of results) totals[row.event] += row.count;
+  return { from, to, totals, daily: results };
+}
+diff --git a/evidence/m2-inquiry/results.json b/evidence/m2-inquiry/results.json
+index ac31a46..31a333c 100644
+--- a/evidence/m2-inquiry/results.json
++++ b/evidence/m2-inquiry/results.json
+@@ -1,5 +1,5 @@
+ {
+-  "siteId": "7a1ce324-c394-491a-864b-af4261b8c259",
++  "siteId": "0b1ad9b2-625b-4b32-8621-7fca388328f5",
+   "results": [
+     {
+       "name": "알림 이메일 설정",
+@@ -13,8 +13,8 @@
+       "name": "페이지 로드 때는 Turnstile을 불러오지 않음",
+       "pass": true,
+       "external": [
+-        "http://127.0.0.1:8788/turnstile-frame?parent=http%3A%2F%2Finq-mwmh26js.localhost%3A8787&round=0",
+-        "blob:https://challenges.cloudflare.com/aabed1e6-e0ee-4862-b9c4-4fc27094d8d2"
++        "http://127.0.0.1:8788/turnstile-frame?parent=http%3A%2F%2Finq-mwmh9uml.localhost%3A8787&round=0",
++        "blob:https://challenges.cloudflare.com/f65f7b9a-0759-4dec-b5f7-f5158cc95c74"
+       ]
+     },
+     {
+@@ -26,12 +26,12 @@
+     {
+       "name": "브라우저 시험",
+       "pass": true,
+-      "id": "198bfab3-c67a-46af-8282-0db5a5142048",
++      "id": "3a90ddcd-bc6d-4a74-aa35-44db7aa84ace",
+       "phone": "01012345678",
+       "message": "주말반 자리 있나요?\n초급입니다.",
+       "page": "/",
+       "notify_status": "sent",
+-      "created_at": "2026-11-18T18:46:02.542Z"
++      "created_at": "2026-11-18T18:51:59.958Z"
+     },
+     {
+       "name": "사장님 메일 수신: 제목에 상호, 본문에 이름·연락처·내용",
+diff --git a/evidence/m2-router/results.json b/evidence/m2-router/results.json
+index 32abaa3..68b26b7 100644
+--- a/evidence/m2-router/results.json
++++ b/evidence/m2-router/results.json
+@@ -1,10 +1,10 @@
+ {
+-  "siteId": "f87646ff-39ef-46d1-a532-357bff0d8fa6",
++  "siteId": "de0f8af8-76c6-4c9d-a3ce-e10f6f075847",
+   "results": [
+     {
+       "name": "생성 직후 호스트 레코드: 상태 active, 포인터 없음",
+       "pass": true,
+-      "siteId": "f87646ff-39ef-46d1-a532-357bff0d8fa6",
++      "siteId": "de0f8af8-76c6-4c9d-a3ce-e10f6f075847",
+       "status": "active",
+       "pointer": null,
+       "redirectTo": null
+@@ -16,12 +16,12 @@
+     {
+       "name": "게시 후 호스트 레코드에 포인터·페이지 목록",
+       "pass": true,
+-      "siteId": "f87646ff-39ef-46d1-a532-357bff0d8fa6",
++      "siteId": "de0f8af8-76c6-4c9d-a3ce-e10f6f075847",
+       "status": "active",
+       "pointer": {
+-        "versionId": "454704c0-37af-42a6-8bc2-fd4915f117dc",
++        "versionId": "7ef795db-149c-46d8-9744-470ae743a394",
+         "number": 1,
+-        "publishedAt": "2026-11-18T18:43:16.210Z",
++        "publishedAt": "2026-11-18T18:52:06.817Z",
+         "pages": [
+           "/",
+           "/privacy"
+@@ -50,11 +50,11 @@
+       "pass": true,
+       "d1": {
+         "status": "suspended",
+-        "published": "532315bc-73f6-49b2-81e0-9ba88b77a424"
++        "published": "d7228c27-7b3a-4b95-b09e-236669d6e025"
+       },
+       "kv": {
+         "status": "suspended",
+-        "pointer": "532315bc-73f6-49b2-81e0-9ba88b77a424"
++        "pointer": "d7228c27-7b3a-4b95-b09e-236669d6e025"
+       }
+     },
+     {
+@@ -62,14 +62,14 @@
+       "pass": true,
+       "kv": "suspended",
+       "synced": {
+-        "routes_synced_at": "2026-11-18T18:43:18.690Z",
+-        "updated_at": "2026-11-18T18:43:18.690Z"
++        "routes_synced_at": "2026-11-18T18:52:08.951Z",
++        "updated_at": "2026-11-18T18:52:08.951Z"
+       }
+     },
+     {
+       "name": "매시간 점검: 동기화 표시가 있어도 KV가 틀리면 찾아서 복구",
+       "pass": true,
+-      "marker": "2026-11-18T18:43:22.604Z",
++      "marker": "2026-11-18T18:52:12.249Z",
+       "kv": "active"
+     },
+     {
+diff --git a/evidence/m2-template/results.json b/evidence/m2-template/results.json
+index 67b4fb9..15450f2 100644
+--- a/evidence/m2-template/results.json
++++ b/evidence/m2-template/results.json
+@@ -1,18 +1,18 @@
+ {
+   "sites": {
+     "lesson": {
+-      "siteId": "c751b494-1307-46a8-970a-10dac51775de",
+-      "versionId": "08994749-367b-4918-a3d1-25ae645975df",
+-      "hostname": "jefes-mwmgy3h1.localhost",
+-      "slug": "jefes-mwmgy3h1",
+-      "token": "0625def8b6114db3a11b8124e71362ba"
++      "siteId": "b4aafef9-b5a1-4e42-8641-5873d6f40b0e",
++      "versionId": "68299590-23ea-4951-8ceb-f266623dfbec",
++      "hostname": "jefes-mwmh98y6.localhost",
++      "slug": "jefes-mwmh98y6",
++      "token": "cdb26c07dafc4adc9931827183cc6778"
+     },
+     "field": {
+-      "siteId": "34813ef0-6973-4a0a-b36d-a5702c5c3280",
+-      "versionId": "b5e58792-e917-460f-a046-df5e68153377",
+-      "hostname": "sangkwae-mwmgy3h1.localhost",
+-      "slug": "sangkwae-mwmgy3h1",
+-      "token": "11b3b2d914fa455b89c4ce9d8ad9324e"
++      "siteId": "f2b8a4c7-1fd9-48db-9c1e-1bedbf37c4d0",
++      "versionId": "7d1519fb-3c7c-4244-a65a-9a552820a802",
++      "hostname": "sangkwae-mwmh98y6.localhost",
++      "slug": "sangkwae-mwmh98y6",
++      "token": "8a683c72cd304845af4aea96aba4d363"
+     }
+   },
+   "scores": {
+@@ -21,18 +21,18 @@
+       "accessibility": 100,
+       "bestPractices": 96,
+       "seo": 92,
+-      "lcpMs": 2268,
++      "lcpMs": 2263,
+       "cls": 0,
+-      "tbtMs": 2
++      "tbtMs": 4
+     },
+     "field": {
+-      "performance": 100,
++      "performance": 99,
+       "accessibility": 100,
+       "bestPractices": 96,
+       "seo": 92,
+-      "lcpMs": 1300,
++      "lcpMs": 1967,
+       "cls": 0,
+-      "tbtMs": 9
++      "tbtMs": 2
+     }
+   },
+   "results": [
+@@ -47,7 +47,7 @@
+     {
+       "name": "lesson: 사이트 생성 201",
+       "pass": true,
+-      "hostname": "jefes-mwmgy3h1.localhost"
++      "hostname": "jefes-mwmh98y6.localhost"
+     },
+     {
+       "name": "lesson: 저장된 설정은 v2",
+@@ -64,9 +64,9 @@
+     {
+       "name": "lesson: 게시 200",
+       "pass": true,
+-      "versionId": "08994749-367b-4918-a3d1-25ae645975df",
++      "versionId": "68299590-23ea-4951-8ceb-f266623dfbec",
+       "number": 1,
+-      "publishedAt": "2026-11-18T18:42:46.076Z",
++      "publishedAt": "2026-11-18T18:51:26.349Z",
+       "pages": [
+         "/",
+         "/privacy"
+@@ -91,7 +91,7 @@
+     {
+       "name": "field: 사이트 생성 201",
+       "pass": true,
+-      "hostname": "sangkwae-mwmgy3h1.localhost"
++      "hostname": "sangkwae-mwmh98y6.localhost"
+     },
+     {
+       "name": "field: 저장된 설정은 v2",
+@@ -108,9 +108,9 @@
+     {
+       "name": "field: 게시 200",
+       "pass": true,
+-      "versionId": "b5e58792-e917-460f-a046-df5e68153377",
++      "versionId": "7d1519fb-3c7c-4244-a65a-9a552820a802",
+       "number": 1,
+-      "publishedAt": "2026-11-18T18:42:46.267Z",
++      "publishedAt": "2026-11-18T18:51:26.540Z",
+       "pages": [
+         "/",
+         "/privacy"
+@@ -136,7 +136,7 @@
+       "name": "프리뷰: 하이드레이션 오류 없음, 링크가 프리뷰 안, 문의 전송 차단",
+       "pass": true,
+       "errors": [],
+-      "privacyHref": "/preview/0625def8b6114db3a11b8124e71362ba/privacy",
++      "privacyHref": "/preview/cdb26c07dafc4adc9931827183cc6778/privacy",
+       "blocked": "프리뷰에서는 문의가 전송되지 않습니다."
+     },
+     {
+@@ -182,9 +182,9 @@
+       "accessibility": 100,
+       "bestPractices": 96,
+       "seo": 92,
+-      "lcpMs": 2268,
++      "lcpMs": 2263,
+       "cls": 0,
+-      "tbtMs": 2
++      "tbtMs": 4
+     },
+     {
+       "name": "lesson: Lighthouse SEO 90 이상, 접근성 90 이상",
+@@ -193,31 +193,31 @@
+       "accessibility": 100,
+       "bestPractices": 96,
+       "seo": 92,
+-      "lcpMs": 2268,
++      "lcpMs": 2263,
+       "cls": 0,
+-      "tbtMs": 2
++      "tbtMs": 4
+     },
+     {
+       "name": "field: Lighthouse 모바일 성능 90 이상, LCP 2.5초 이하",
+       "pass": true,
+-      "performance": 100,
++      "performance": 99,
+       "accessibility": 100,
+       "bestPractices": 96,
+       "seo": 92,
+-      "lcpMs": 1300,
++      "lcpMs": 1967,
+       "cls": 0,
+-      "tbtMs": 9
++      "tbtMs": 2
+     },
+     {
+       "name": "field: Lighthouse SEO 90 이상, 접근성 90 이상",
+       "pass": true,
+-      "performance": 100,
++      "performance": 99,
+       "accessibility": 100,
+       "bestPractices": 96,
+       "seo": 92,
+-      "lcpMs": 1300,
++      "lcpMs": 1967,
+       "cls": 0,
+-      "tbtMs": 9
++      "tbtMs": 2
+     }
+   ]
+ }
+\ No newline at end of file
+
+> daniworks-sites-platform@ test /Users/steve/Projects/daniworks-sites-platform
+> pnpm -r test
+
+Scope: 4 of 5 workspace projects
+packages/schema test$ vitest run
+packages/schema test:  RUN  v5.1.1 /Users/steve/Projects/daniworks-sites-platform/packages/schema
+packages/schema test:  Test Files  1 passed (1)
+packages/schema test:       Tests  22 passed (22)
+packages/schema test:    Start at  03:52:47
+packages/schema test:    Duration  129ms (import 74%, transform 13%, tests 9%, worker 3%)
+packages/schema test: Done
+packages/renderer test$ vitest run
+packages/renderer test:  RUN  v5.1.1 /Users/steve/Projects/daniworks-sites-platform/packages/renderer
+packages/renderer test:  Test Files  3 passed (3)
+packages/renderer test:       Tests  28 passed (28)
+packages/renderer test:    Start at  03:52:48
+packages/renderer test:    Duration  281ms (import 57%, tests 30%, transform 12%, worker 1%)
+packages/renderer test: Done
+apps/api test$ vitest run
+apps/api test:  RUN  v5.1.1 /Users/steve/Projects/daniworks-sites-platform/apps/api
+apps/api test:  Test Files  3 passed (3)
+apps/api test:       Tests  50 passed (50)
+apps/api test:    Start at  03:52:48
+apps/api test:    Duration  196ms (import 72%, tests 17%, transform 8%, worker 3%)
+apps/api test: Done
+
+> daniworks-sites-platform@ check-types /Users/steve/Projects/daniworks-sites-platform
+> pnpm -r check-types
+
+Scope: 4 of 5 workspace projects
+apps/router check-types$ tsc -p tsconfig.json
+packages/schema check-types$ tsc -p tsconfig.json
+apps/router check-types: Done
+packages/schema check-types: Done
+packages/renderer check-types$ tsc -p tsconfig.json
+packages/renderer check-types: Done
+apps/api check-types$ tsc -p tsconfig.json
+apps/api check-types: Done
+
+exec
+/bin/zsh -lc "rg -n 'mapUrl|bookingUrl|kakaoUrl|inquiry|track' packages/renderer/src/templates/service-local/index* packages/schema/src/* | head -70; ls -a | head; rg -n '측정|집계|pageview|metrics|비콘' docs | head -55" in /Users/steve/Projects/daniworks-sites-platform
+ succeeded in 0ms:
+zsh:1: no matches found: packages/renderer/src/templates/service-local/index*
+.
+..
+.dockerignore
+.git
+.gitignore
+README.md
+apps
+docker
+docker-compose.yml
+docs
+docs/m0-render-poc.md:36:| 렌더 시간 | 36~107ms/요청 (로컬 측정) |
+docs/m0-render-poc.md:48:5. **렌더 시간 측정.** 배포된 Workers에서는 I/O 전까지 `Date.now()`가 멈추므로 `server-timing` 값을 믿을 수 없다. 운영 측정은 게시 job 단위로 한다.
+docs/staging-deploy.md:72:측정 위치는 한국(KT 계열) 사무실 회선이다. 이 회선의 dsites.kr 요청은 ICN이 아니라 DFW·LAX·TXL·ARN 같은 해외 콜로로 들어갔다(아래 라우팅 참고). 그래서 아래 값에는 대륙 간 왕복이 들어 있다.
+docs/staging-deploy.md:88:| 이벤트 | 측정 위치 | 1차 | 2차 |
+docs/staging-deploy.md:90:| v1 첫 게시 | 측정 PC | 0.7초 (DFW) | **52.2초** |
+docs/staging-deploy.md:91:| v2 게시 | 측정 PC | 0.6초 (DFW) | 4.1초 |
+docs/staging-deploy.md:93:| v1 롤백 | 측정 PC | 1.1초 (LAX) | 0.8초 |
+docs/staging-deploy.md:103:- 아무도 읽지 않은 콜로는 몇 초 안에 새 값을 준다(v2 게시 지역 측정).
+docs/staging-deploy.md:118:| 측정 PC (KT 계열 사무실, 8회) | LAX·ATL·LHR | 706~1,818 ms |
+docs/prd.md:17:- 상품: 블로그·네이버 플레이스·인스타 정보로 원페이지 홈페이지를 만들고, 월 구독(공급가 3만원)으로 호스팅·수정·AI 노출 재측정을 맡는다.
+docs/prd.md:19:- 원가 구조: 매출 대비 인프라 원가는 작고, 인건비(구축·수정·재측정)가 대부분이다. 출시 전제는 **구축 3시간 이하**.
+docs/prd.md:100:### 4-6. 측정
+docs/prd.md:102:- 방문·클릭: 페이지 조회와 전화·카톡·지도·네이버 예약·문의 클릭을 `POST /api/track` 비콘으로 수집한다. 봇 UA를 걸러내고 D1 일별 집계 테이블에 upsert한다.
+docs/prd.md:104:- 분기 리포트용 사이트별·기간별 집계 API.
+docs/prd.md:139:                       ├→ apps/api (Worker) ─→ D1: customers, sites, site_versions, domains, inquiries, metrics_daily
+docs/prd.md:173:| `metrics_daily` | site_id, date, event(pageview·tel·kakao·map·booking·inquiry), count |
+docs/prd.md:221:| M2 첫 고객 | 업종 템플릿 1번(레슨·교육·출장), 문의, 측정, MCP 도구, 사진, 커스텀 도메인(내부 등록), 운영자 콘솔 v1 | 실제 리드 1곳 오픈 |
+docs/prd.md:222:| M3 운영 | 나머지 업종 템플릿, RSS, 분기 리포트 집계, 전체 재게시, 해지·인출 | 10곳 운영 |
+docs/prd.md:229:- 분기 AI 노출 재측정(geo-prove)과 리포트 생성의 위치: 이 플랫폼 안인지 별도 시스템인지
+docs/prd.md:235:- 2026-11-19: DB는 D1을 유지한다. 측정도 D1 일별 집계로 한다. 메일은 Cloudflare Email Sending, 로컬은 Mailpit.
+
+2026-11-18T18:53:00.196457Z ERROR codex_core::session: failed to record rollout items: thread 01a1f000-b8a8-76e0-a78d-3e968afe7cec not found
+codex
+No actionable defects were identified in the staged, unstaged, or untracked changes. The workspace tests and TypeScript checks pass.
+No actionable defects were identified in the staged, unstaged, or untracked changes. The workspace tests and TypeScript checks pass.

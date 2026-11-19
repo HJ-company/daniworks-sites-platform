@@ -1,0 +1,1150 @@
+OpenAI Codex v0.167.0
+--------
+workdir: /Users/steve/Projects/daniworks-sites-platform
+model: gpt-6.1-sol
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: low
+reasoning summaries: none
+session id: 01a1f073-10c0-7393-9c21-13ca258b1871
+--------
+user
+current changes
+exec
+/bin/zsh -lc 'git status --short; find .. -name AGENTS.md -o -name AGENTS.override.md' in /Users/steve/Projects/daniworks-sites-platform
+exec
+/bin/zsh -lc 'pwd; ls -a | head; for p in /AGENTS.md /Users/AGENTS.md /Users/steve/AGENTS.md /Users/steve/Projects/AGENTS.md; do test ! -f "$p" || cat "$p"; done; find . -name AGENTS.md -o -name AGENTS.override.md; git diff --stat; git diff -- apps/api/src scripts/verify-all.mjs; cat apps/api/src/republish.ts apps/api/migrations/0006_staged_renders.sql' in /Users/steve/Projects/daniworks-sites-platform
+ succeeded in 1055ms:
+/Users/steve/Projects/daniworks-sites-platform
+.
+..
+.dockerignore
+.git
+.gitignore
+README.md
+apps
+docker
+docker-compose.yml
+docs
+./node_modules/.pnpm/@dani-builder+strapi-client@2.5.0/node_modules/@dani-builder/strapi-client/AGENTS.md
+./node_modules/.pnpm/next@16.4.6_react-dom@19.3.1_react@19.3.1__react@19.3.1/node_modules/next/AGENTS.md
+./node_modules/.pnpm/next@16.4.6_@opentelemetry+api@1.10.0_@types+node@26.6.6_react-dom@19.3.1_react@19.3.1__react@19.3.1/node_modules/next/AGENTS.md
+ apps/api/src/index.ts             | 17 ++++++++
+ apps/api/src/publish.ts           | 40 +++++++++--------
+ evidence/m2-domains/results.json  | 16 +++----
+ evidence/m2-router/results.json   | 22 +++++-----
+ evidence/m2-template/results.json | 92 +++++++++++++++++++--------------------
+ evidence/verify-all.json          | 34 +++++++++------
+ scripts/verify-all.mjs            |  1 +
+ 7 files changed, 127 insertions(+), 95 deletions(-)
+diff --git a/apps/api/src/index.ts b/apps/api/src/index.ts
+index 8e96b61..c1bb617 100644
+--- a/apps/api/src/index.ts
++++ b/apps/api/src/index.ts
+@@ -11,6 +11,7 @@ import { addDomain, auditOrigins, domainQuota, listDomains, maintainDomains, ref
+ import { handleMcp } from "./mcp.js";
+ import { assetBase, publish, rollback, siteOrigin } from "./publish.js";
+ import { auditHostRecords, reconcileHostRecords, syncHostRecordsNow } from "./routes.js";
++import { commitRepublish, republishPlan, stagedPage, stageRepublish } from "./republish.js";
+ import { addDraft, configFromBody, createSiteFromInput, creator, previewUrl } from "./sites.js";
+ import { getSite, listSites, listVersions, setSiteStatus, versionByPreviewToken, type CreatedBy } from "./store.js";
+ 
+@@ -101,6 +102,12 @@ async function handle(request: Request, env: Env): Promise<Response> {
+     return json(report);
+   }
+ 
++  // Full republish: GET /republish/plan; staged HTML at GET /staged/:siteId/:renderId[/privacy]
++  if (method === "GET" && url.pathname === "/republish/plan") return json(await republishPlan(env));
++  if (method === "GET" && parts[0] === "staged" && (parts.length === 3 || parts.length === 4)) {
++    return stagedPage(env, parts[1]!, parts[2]!, parts[3] ?? "");
++  }
++
+   // GET /domains/quota: custom hostnames on the zone vs. the 100 included.
+   if (method === "GET" && url.pathname === "/domains/quota") return json(await domainQuota(env));
+ 
+@@ -152,6 +159,16 @@ async function handle(request: Request, env: Env): Promise<Response> {
+     if (method === "DELETE" && parts.length === 4) return json(await removeDomain(env, site.id, hostname));
+   }
+ 
++  // POST /sites/:id/republish/stage | /republish/commit {renderId}
++  if (method === "POST" && parts[2] === "republish" && parts.length === 4) {
++    if (parts[3] === "stage") return json(await stageRepublish(env, site.id), 201);
++    if (parts[3] === "commit") {
++      const body = await readJson<{ renderId?: string }>(request);
++      if (!body.renderId) throw new HttpError(400, "renderId가 필요합니다");
++      return json(await commitRepublish(env, site.id, body.renderId));
++    }
++  }
++
+   // POST /sites/:id/blog/refresh: fetch the blog RSS now (normally every 3 hours by cron)
+   if (method === "POST" && parts[2] === "blog" && parts[3] === "refresh" && parts.length === 4) {
+     return json(await refreshBlog(env, site.id));
+diff --git a/apps/api/src/publish.ts b/apps/api/src/publish.ts
+index d704e77..45fb352 100644
+--- a/apps/api/src/publish.ts
++++ b/apps/api/src/publish.ts
+@@ -34,35 +34,41 @@ async function requireSharedAssets(env: Env) {
+   }
+ }
+ 
+-/**
+- * Renders every page of a version to R2 unless it is already rendered against the current
+- * shared assets and origin.
+- */
+ /** Everything outside the config that changes the HTML (stored in rendered_origin). */
+ export const renderKeyOf = (env: Env, origin: string) => JSON.stringify({ origin, turnstileFrame: turnstileFrameUrl(env) });
+ 
+-async function ensureRendered(env: Env, version: VersionRow, origin: string, { keepAssets = false } = {}) {
++/**
++ * Renders every page of a version with the current renderer and shared assets under a fresh,
++ * immutable render_id. Nothing points at it yet: concurrent renders never mix pages.
++ */
++export async function renderToR2(env: Env, version: VersionRow, origin: string) {
+   const config = JSON.parse(version.config) as SiteConfig;
+-  const turnstileFrame = turnstileFrameUrl(env);
+-  const renderKey = renderKeyOf(env, origin);
+-  // Rollback keeps the version's own shared assets; publish moves it to the current ones.
+-  const assetsOk = keepAssets || version.asset_version === ASSET_VERSION;
+-  if (version.rendered_at && assetsOk && version.rendered_origin === renderKey) {
+-    return routesOf(config);
+-  }
+   // HTML comes from the current renderer, so it must point at the current client bundle.
+   await requireSharedAssets(env);
+-  const { pages } = await renderSite(config, { assetBase: assetBase(), origin, turnstileFrame });
+-  // A fresh, immutable prefix per render: concurrent renders never mix pages, and the pointer
+-  // switches to a complete set only after markRendered.
++  const { pages } = await renderSite(config, { assetBase: assetBase(), origin, turnstileFrame: turnstileFrameUrl(env) });
+   const renderId = crypto.randomUUID().replace(/-/g, "").slice(0, 16);
+   for (const page of pages) {
+     await env.SITES.put(r2PageKey(version.site_id, version.id, page.path, renderId), page.html, {
+       httpMetadata: { contentType: "text/html; charset=utf-8" },
+     });
+   }
+-  await markRendered(env.DB, version.id, ASSET_VERSION, renderKey, renderId);
+-  return pages.map((page) => page.route);
++  return { renderId, renderKey: renderKeyOf(env, origin), routes: pages.map((page) => page.route) };
++}
++
++/**
++ * Renders a version unless it is already rendered against the current shared assets and
++ * origin, then records the render (the pointer follows it on the next sync).
++ */
++async function ensureRendered(env: Env, version: VersionRow, origin: string, { keepAssets = false } = {}) {
++  const config = JSON.parse(version.config) as SiteConfig;
++  // Rollback keeps the version's own shared assets; publish moves it to the current ones.
++  const assetsOk = keepAssets || version.asset_version === ASSET_VERSION;
++  if (version.rendered_at && assetsOk && version.rendered_origin === renderKeyOf(env, origin)) {
++    return routesOf(config);
++  }
++  const render = await renderToR2(env, version, origin);
++  await markRendered(env.DB, version.id, ASSET_VERSION, render.renderKey, render.renderId);
++  return render.routes;
+ }
+ 
+ async function pointTo(env: Env, site: SiteRow, version: VersionRow, pages: string[]) {
+diff --git a/scripts/verify-all.mjs b/scripts/verify-all.mjs
+index 80aa18d..11fd647 100644
+--- a/scripts/verify-all.mjs
++++ b/scripts/verify-all.mjs
+@@ -15,6 +15,7 @@ const steps = [
+   ["m2-console", "verify-m2-console.mjs"],
+   ["m3-blog", "verify-m3-blog.mjs"],
+   ["m3-reports", "verify-m3-reports.mjs"],
++  ["m3-republish", "verify-m3-republish.mjs"],
+ ];
+ const only = process.argv.slice(2);
+ const summary = [];
+import { ASSET_VERSION } from "@sites/renderer";
+import type { Env } from "./env.js";
+import { HttpError } from "./http.js";
+import { r2PageKey } from "./keys.js";
+import { renderKeyOf, renderToR2, siteOrigin } from "./publish.js";
+import { syncHostRecordsNow } from "./routes.js";
+import { getSite, getVersion, primaryHostname } from "./store.js";
+
+/**
+ * Full republish after a renderer or template update, in three explicit steps so a visual
+ * check can sit between rendering and serving: plan → stage (render, not served) → commit.
+ */
+export async function republishPlan(env: Env) {
+  const { results } = await env.DB.prepare(
+    `SELECT s.id, s.slug, s.published_version_id AS version_id, v.number, v.asset_version
+     FROM sites s JOIN site_versions v ON v.id = s.published_version_id
+     WHERE s.cancelled_at IS NULL ORDER BY s.slug`,
+  ).all<{ id: string; slug: string; version_id: string; number: number; asset_version: string | null }>();
+  const sites = [];
+  for (const row of results) {
+    const site = await getSite(env.DB, row.id);
+    sites.push({
+      siteId: row.id,
+      slug: row.slug,
+      versionId: row.version_id,
+      number: row.number,
+      assetVersion: row.asset_version,
+      outdated: row.asset_version !== ASSET_VERSION,
+      liveUrl: `${env.PUBLIC_SCHEME ?? "https"}://${await primaryHostname(env.DB, site, env.BASE_DOMAIN)}/`,
+    });
+  }
+  return { assetVersion: ASSET_VERSION, total: sites.length, outdated: sites.filter((s) => s.outdated).length, sites };
+}
+
+/** Renders the live version with the current renderer under a new render_id. Not served. */
+export async function stageRepublish(env: Env, siteId: string) {
+  const site = await getSite(env.DB, siteId);
+  if (!site.published_version_id) throw new HttpError(409, "게시된 버전이 없습니다");
+  const version = await getVersion(env.DB, siteId, site.published_version_id);
+  const render = await renderToR2(env, version, await siteOrigin(env, site));
+  await env.DB.prepare(
+    "INSERT INTO staged_renders (render_id, site_id, version_id, render_key, asset_version, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+  )
+    .bind(render.renderId, siteId, version.id, render.renderKey, ASSET_VERSION, new Date().toISOString())
+    .run();
+  return {
+    siteId,
+    versionId: version.id,
+    renderId: render.renderId,
+    stagedPath: `/staged/${siteId}/${render.renderId}/`,
+    /** Every route in the render; all must look the same before committing. */
+    routes: render.routes,
+  };
+}
+
+/**
+ * Serves the staged render (switched in only after a visual check). Valid only while that
+ * version is still live and its origin unchanged, so an older render cannot replace newer work.
+ */
+export async function commitRepublish(env: Env, siteId: string, renderId: string) {
+  const staged = await env.DB.prepare("SELECT * FROM staged_renders WHERE render_id = ? AND site_id = ?")
+    .bind(renderId, siteId)
+    .first<{ version_id: string; render_key: string; asset_version: string }>();
+  if (!staged) throw new HttpError(404, "스테이지 렌더가 없습니다");
+  const site = await getSite(env.DB, siteId);
+  if (site.published_version_id !== staged.version_id) throw new HttpError(409, "그사이 다른 버전이 게시되었습니다. 다시 스테이지하세요");
+  if (staged.render_key !== renderKeyOf(env, await siteOrigin(env, site))) {
+    throw new HttpError(409, "그사이 사이트 주소가 바뀌었습니다. 다시 스테이지하세요");
+  }
+  const now = new Date().toISOString();
+  const updated = await env.DB.prepare(
+    `UPDATE site_versions SET render_id = ?, rendered_origin = ?, asset_version = ?, rendered_at = ?
+     WHERE id = ? AND id = (SELECT published_version_id FROM sites WHERE id = ?)`,
+  )
+    .bind(renderId, staged.render_key, staged.asset_version, now, staged.version_id, siteId)
+    .run();
+  if (updated.meta.changes !== 1) throw new HttpError(409, "그사이 다른 버전이 게시되었습니다. 다시 스테이지하세요");
+  await env.DB.batch([
+    env.DB.prepare("UPDATE sites SET template_version = ?, updated_at = ? WHERE id = ?").bind(staged.asset_version, now, siteId),
+    env.DB.prepare("DELETE FROM staged_renders WHERE site_id = ?").bind(siteId),
+  ]);
+  await syncHostRecordsNow(env, siteId);
+  return { siteId, versionId: staged.version_id, renderId, assetVersion: staged.asset_version };
+}
+
+/** Raw staged HTML for the visual check (admin only). `path`: `` or `privacy`. */
+export async function stagedPage(env: Env, siteId: string, renderId: string, path: string) {
+  const staged = await env.DB.prepare("SELECT version_id FROM staged_renders WHERE render_id = ? AND site_id = ?")
+    .bind(renderId, siteId)
+    .first<{ version_id: string }>();
+  if (!staged) throw new HttpError(404, "스테이지 렌더가 없습니다");
+  const object = await env.SITES.get(r2PageKey(siteId, staged.version_id, path ? `${path}/index.html` : "index.html", renderId));
+  if (!object) throw new HttpError(404, "페이지가 없습니다");
+  return new Response(object.body, {
+    headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "x-robots-tag": "noindex" },
+  });
+}
+-- Full republish: a live version rendered with the current renderer and assets under a new
+-- render_id, not yet served. Committed (pointer switched) only after a visual check.
+CREATE TABLE staged_renders (
+  render_id TEXT PRIMARY KEY,
+  site_id TEXT NOT NULL REFERENCES sites(id),
+  version_id TEXT NOT NULL REFERENCES site_versions(id),
+  render_key TEXT NOT NULL,
+  asset_version TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX staged_renders_site ON staged_renders(site_id, created_at DESC);
+
+exec
+/bin/zsh -lc 'cat /Users/steve/.codex/skills/workers-best-practices/SKILL.md' in /Users/steve/Projects/daniworks-sites-platform
+ succeeded in 0ms:
+---
+name: workers-best-practices
+description: Cloudflare Workers best practices for production applications. Use when writing, reviewing, or configuring Workers.
+---
+
+Your knowledge of Cloudflare Workers APIs, types, and configuration may be outdated. **Prefer retrieval over pre-training** when writing or reviewing Workers code.
+
+Use the project's installed versions, generated types, and Wrangler compatibility settings as the baseline for existing code. Retrieve relevant Cloudflare documentation to verify API, configuration, runtime behavior, and limit claims.
+
+## References
+
+Read the sections relevant to the task:
+
+| Reference | When to use it |
+|-----------|----------------|
+| [Configuration and observability](references/configuration.md) | Compatibility dates, bindings, generated types, secrets, logs, and traces |
+| [Runtime patterns](references/runtime-patterns.md) | Streaming, promise lifetime, request state, service calls, security, and runtime tests |
+| [Platform API checks](references/platform-apis.md) | Handler signatures, platform classes, binding access, and serialization |
+
+For missing evidence, consult [Workers best practices](https://developers.cloudflare.com/workers/best-practices/workers-best-practices/index.md) or find the affected product in the [Cloudflare docs directory](https://developers.cloudflare.com/directory/index.md). Use the installed Wrangler schema for config fields. A newer type package does not supersede the project's configured target.
+
+## Keep Compatibility Dates Current
+
+Use today's date for new Workers. Encourage periodic updates for existing Workers, reviewing compatibility changes and running relevant tests. Assess existing behavior against its configured date and flags; see [compatibility guidance](references/configuration.md#keep-compatibility_date-current).
+
+## Enable Observability
+
+Enable [Workers Logs](https://developers.cloudflare.com/workers/observability/logs/workers-logs/index.md) and [Traces](https://developers.cloudflare.com/workers/observability/traces/index.md) when creating or preparing a Worker for production. Set `observability.enabled` and `observability.traces.enabled` to `true`; the top-level setting alone does not enable traces. Use structured JSON logging and configure sampling for the workload. During reviews, flag missing logs or traces. See the [configuration example](references/configuration.md#enable-workers-logs-and-traces).
+
+## Anti-Patterns to Flag
+
+| Anti-pattern | Consequence and preferred pattern |
+|-------------|-----------------------------------|
+| `await response.text()` or similar buffering on unbounded data | Can exhaust Worker memory; [stream large or unbounded bodies](references/runtime-patterns.md#stream-request-and-response-bodies). |
+| Hardcoded secrets in source or config | Leaks credentials through version control; use Wrangler secrets. |
+| `Math.random()` for security-sensitive tokens or IDs | Predictable values; use `crypto.randomUUID()` or `crypto.getRandomValues()`. |
+| Async work started without awaiting, returning, or attaching it to `ctx.waitUntil()` | Work can be dropped and errors missed; tie it to the request or background-work lifetime. |
+| Module-level mutable request state | Leaks data across requests and can cause I/O ownership errors; pass request state explicitly. |
+| Cloudflare REST API calls for operations available through Worker bindings | Adds network and authentication overhead; use the available binding. |
+| `ctx.passThroughOnException()` used as general error handling | Can conceal Worker failures by forwarding to the origin; use explicit error handling and structured error responses. |
+| Hand-written `Env` that duplicates Wrangler bindings | Can drift from configuration; generate binding types with `wrangler types`. |
+| Direct string comparison of secret values | Can expose timing differences; use the [Web Crypto comparison pattern](references/runtime-patterns.md#use-web-crypto-for-secure-token-generation). |
+| Destructuring `ctx` methods, such as `const { waitUntil } = ctx` | Loses the receiver; call `ctx.waitUntil(...)`. |
+| `any` on `Env` or handler parameters | Hides binding and handler contract errors; use the project's generated and platform types. |
+| `as unknown as T` to force a platform type match | Hides incompatibilities; fix the underlying contract. |
+| `implements` used in place of extending a platform base class | Does not inherit runtime behavior, `this.ctx`, or `this.env`; use the appropriate base class. |
+| Unbound `env.X` in a platform class method | Bindings are available through `this.env.X`; see [binding access patterns](references/platform-apis.md#binding-access--the-most-common-error). |
+| Applying one serialization rule across Queues, Workflow steps, storage, and WebSockets | Can reject valid payloads or accept unsupported ones; check the [specific API and encoding](references/platform-apis.md#serialization-boundaries). |
+
+## Validation
+
+Use the project's existing checks for affected Workers behavior: type-check binding or handler contract changes, and run relevant runtime tests for behavior changes. Preserve required repository checks; a narrow edit does not require a full Workers audit.
+
+## Scope
+
+This skill covers Workers-specific best practices and code review. For related topics:
+
+- **Durable Objects**: load the `durable-objects` skill
+- **Workflows**: see [Rules of Workflows](https://developers.cloudflare.com/workflows/build/rules-of-workflows/index.md)
+- **Wrangler CLI commands**: load the `wrangler` skill
+
+exec
+/bin/zsh -lc 'cat scripts/republish-all.mjs scripts/verify-m3-republish.mjs; cat apps/api/src/routes.ts; cat apps/api/src/index.ts | head -110; cat apps/api/src/publish.ts; cat package.json' in /Users/steve/Projects/daniworks-sites-platform
+ succeeded in 0ms:
+// Operator command: republish every live site with the current renderer and assets, switching
+// a site only when its new render looks the same as what is live.
+//
+//   API_URL=https://api.dsites.kr ADMIN_TOKEN=... node scripts/republish-all.mjs [--apply]
+//     [--all] [--only=slug,slug] [--threshold=0.0001]
+//
+// Without --apply it stages and compares only (nothing served changes). Sites over the
+// threshold are listed with their diff images for a person to look at.
+import { mkdirSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
+
+const require = createRequire(import.meta.url);
+const { chromium } = require("playwright");
+const sharp = createRequire(new URL("../packages/renderer/package.json", import.meta.url))("sharp");
+
+const API = process.env.API_URL ?? "http://127.0.0.1:8788";
+const TOKEN = process.env.ADMIN_TOKEN ?? "dev-admin-token";
+/** Local Docker: live sites are http://<slug>.localhost on the router port. */
+const LIVE_PORT = process.env.LIVE_PORT;
+const args = Object.fromEntries(process.argv.slice(2).map((a) => a.replace(/^--/, "").split("=")).map(([k, v]) => [k, v ?? true]));
+// Identical renders differ by exactly 0 pixels (measured); one changed heading is ~0.26% of a
+// full page, a changed word far less. Any visible change should go to a person.
+const threshold = Number(args.threshold ?? 0.0001);
+const only = typeof args.only === "string" ? args.only.split(",") : null;
+const out = `evidence/republish/${new Date().toISOString().replace(/[:.]/g, "-")}`;
+mkdirSync(out, { recursive: true });
+
+async function api(method, path, body) {
+  const res = await fetch(`${API}${path}`, {
+    method,
+    headers: { authorization: `Bearer ${TOKEN}`, "content-type": "application/json" },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const data = await res.json().catch(() => null);
+  if (!res.ok) throw new Error(`${method} ${path}: ${res.status} ${data?.error ?? ""}`);
+  return data;
+}
+
+const liveUrl = (url) => (LIVE_PORT ? url.replace(/^(https?:\/\/[^/]+)\//, `$1:${LIVE_PORT}/`) : url);
+
+/** Hides what legitimately differs between two renders of the same version. */
+const STABILIZE = `*, *::before, *::after { animation: none !important; transition: none !important; caret-color: transparent !important; }
+[data-blog-feed] { display: none !important; }`; /* filled only on live pages, at request time */
+
+async function shot(context, url, viewport) {
+  const page = await context.newPage();
+  await page.setViewportSize(viewport);
+  await page.goto(url, { waitUntil: "networkidle" });
+  await page.addStyleTag({ content: STABILIZE });
+  await page.evaluate(async () => {
+    for (let y = 0; y < document.body.scrollHeight; y += 500) {
+      window.scrollTo(0, y);
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    window.scrollTo(0, 0);
+  });
+  await page.waitForLoadState("networkidle");
+  const png = await page.screenshot({ fullPage: true });
+  await page.close();
+  return png;
+}
+
+/** Share of pixels that differ noticeably; a size change counts as fully different. */
+async function diff(a, b, name) {
+  const [ra, rb] = await Promise.all([a, b].map((png) => sharp(png).ensureAlpha().raw().toBuffer({ resolveWithObject: true })));
+  if (ra.info.width !== rb.info.width || ra.info.height !== rb.info.height) {
+    return { ratio: 1, reason: `size ${ra.info.width}x${ra.info.height} → ${rb.info.width}x${rb.info.height}` };
+  }
+  const { width, height } = ra.info;
+  const mask = Buffer.alloc(width * height * 4);
+  let changed = 0;
+  for (let i = 0; i < ra.data.length; i += 4) {
+    const d = Math.max(Math.abs(ra.data[i] - rb.data[i]), Math.abs(ra.data[i + 1] - rb.data[i + 1]), Math.abs(ra.data[i + 2] - rb.data[i + 2]));
+    if (d > 24) {
+      changed++;
+      mask[i] = 255;
+      mask[i + 3] = 255;
+    } else {
+      mask[i] = mask[i + 1] = mask[i + 2] = ra.data[i] >> 2;
+      mask[i + 3] = 255;
+    }
+  }
+  const ratio = changed / (width * height);
+  if (ratio > threshold) await sharp(mask, { raw: { width, height, channels: 4 } }).png().toFile(`${out}/${name}-diff.png`);
+  return { ratio };
+}
+
+const plan = await api("GET", "/republish/plan");
+const targets = plan.sites.filter((s) => (args.all || s.outdated) && (!only || only.includes(s.slug)));
+console.log(`asset ${plan.assetVersion}: ${plan.outdated}/${plan.total} outdated, ${targets.length} to check${args.apply ? " (apply)" : ""}`);
+
+const browser = await chromium.launch({ args: ["--disable-dev-shm-usage"] });
+const liveContext = await browser.newContext();
+// The admin token goes only on the staged HTML requests themselves, never on subresources
+// (blog images and other third-party hosts must not see it).
+const stagedContext = await browser.newContext();
+await stagedContext.route(`${API}/staged/**`, (route) =>
+  route.continue({ headers: { ...route.request().headers(), authorization: `Bearer ${TOKEN}` } }),
+);
+const leaks = [];
+for (const context of [liveContext, stagedContext]) {
+  context.on("request", (request) => {
+    if (request.headers().authorization && !request.url().startsWith(`${API}/staged/`)) leaks.push(request.url());
+  });
+}
+const report = [];
+for (const site of targets) {
+  const entry = { slug: site.slug, siteId: site.siteId, from: site.assetVersion, to: plan.assetVersion };
+  try {
+    const staged = await api("POST", `/sites/${site.siteId}/republish/stage`);
+    entry.renderId = staged.renderId;
+    const diffs = {};
+    // Every rendered route (home, privacy) at both widths.
+    for (const route of staged.routes ?? ["/"]) {
+      const rel = route === "/" ? "" : route.slice(1);
+      for (const [vp, viewport] of Object.entries({ mobile: { width: 390, height: 844 }, desktop: { width: 1280, height: 800 } })) {
+        const key = `${rel || "home"}-${vp}`;
+        const live = await shot(liveContext, `${liveUrl(site.liveUrl)}${rel}`, viewport);
+        const next = await shot(stagedContext, `${API}${staged.stagedPath}${rel}`, viewport);
+        diffs[key] = await diff(live, next, `${site.slug}-${key}`);
+        if (diffs[key].ratio > threshold) {
+          writeFileSync(`${out}/${site.slug}-${key}-live.png`, live);
+          writeFileSync(`${out}/${site.slug}-${key}-staged.png`, next);
+        }
+      }
+    }
+    entry.diffs = diffs;
+    entry.same = Object.values(diffs).every((d) => d.ratio <= threshold);
+    if (entry.same && args.apply) {
+      await api("POST", `/sites/${site.siteId}/republish/commit`, { renderId: staged.renderId });
+      entry.result = "applied";
+    } else {
+      entry.result = entry.same ? "same (not applied)" : "review";
+    }
+  } catch (error) {
+    entry.result = "error";
+    entry.error = String(error.message ?? error);
+  }
+  report.push(entry);
+  console.log(`${entry.result.padEnd(18)} ${site.slug} ${entry.diffs ? Object.entries(entry.diffs).map(([k, v]) => `${k} ${(v.ratio * 100).toFixed(2)}%`).join(" ") : entry.error ?? ""}`);
+}
+await browser.close();
+writeFileSync(`${out}/report.json`, JSON.stringify({ assetVersion: plan.assetVersion, threshold, apply: Boolean(args.apply), tokenLeaks: leaks, report }, null, 2));
+if (leaks.length) console.error(`admin token sent outside the staged endpoint: ${leaks.join(", ")}`);
+const review = report.filter((r) => r.result === "review" || r.result === "error");
+console.log(`\n${report.filter((r) => r.result === "applied").length} applied, ${review.length} need review → ${out}/report.json`);
+process.exit(review.some((r) => r.result === "error") || leaks.length ? 1 : 0);
+// M3 step 3-3: full republish. Two outdated sites: one renders the same (applied), one whose
+// rendering changed (held for review). Commit is refused when the live version moved on.
+import { execFileSync } from "node:child_process";
+import { readdirSync, readFileSync } from "node:fs";
+import { API, api, evidence, localD1, localKv, routerRequest, uploadShared } from "./lib/verify.mjs";
+
+const { fieldFixture, lessonFixture } = await import("../packages/renderer/src/templates/service-local/fixtures.ts");
+const ev = evidence("m3-republish");
+const { check } = ev;
+const run = Date.now().toString(36);
+
+uploadShared();
+// The "same" site has a blog section: its images are third-party requests the token must not reach.
+const same = { ...structuredClone(lessonFixture), slug: `rp-same-${run}` };
+same.business.blogUrl = "https://blog.naver.com/fixtureblog";
+const changed = { ...structuredClone(fieldFixture), slug: `rp-changed-${run}` };
+const ids = {};
+for (const config of [same, changed]) {
+  const created = await api("POST", "/sites", { config, createdBy: "operator" });
+  ids[config.slug] = created.data.siteId;
+  await api("POST", `/sites/${created.data.siteId}/publish`);
+}
+// Live pages get blog cards injected by the router; staged HTML never does.
+await api("POST", `/sites/${ids[same.slug]}/blog/refresh`);
+check("공개 화면에는 블로그 카드가 있음(비교 조건)", (await routerRequest(`${same.slug}.localhost`, "/")).body.includes("sites-blog-card"));
+const pointerOf = (slug) => JSON.parse(localKv("get", `host:${slug}.localhost`)).pointer;
+const before = { same: pointerOf(same.slug), changed: pointerOf(changed.slug) };
+
+// Simulate a renderer update: both live versions were rendered with an older asset version.
+localD1(`UPDATE site_versions SET asset_version = 'old-assets' WHERE site_id IN ('${ids[same.slug]}', '${ids[changed.slug]}')`);
+// …and for one of them the new renderer changes what it draws.
+localD1(
+  `UPDATE site_versions SET config = replace(config, '하루 한 집만', '렌더러가 바뀐 문구') WHERE site_id = '${ids[changed.slug]}'`,
+);
+const plan = (await api("GET", "/republish/plan")).data;
+check("계획: 두 사이트가 outdated", ["same", "changed"].every((k) => plan.sites.find((s) => s.slug === (k === "same" ? same.slug : changed.slug))?.outdated));
+check("스테이지 HTML은 관리자만", (await fetch(`${API}/staged/${ids[same.slug]}/x/`)).status === 401);
+
+// Run the operator command (apply), only on these two sites.
+let output = "";
+try {
+  output = execFileSync("node", ["scripts/republish-all.mjs", "--apply", `--only=${same.slug},${changed.slug}`], {
+    encoding: "utf8",
+    env: { ...process.env, LIVE_PORT: "8787" },
+  });
+} catch (error) {
+  output = String(error.stdout ?? "") + String(error.stderr ?? "");
+}
+console.log(output.trim());
+const runs = readdirSync("evidence/republish").sort();
+const full = JSON.parse(readFileSync(`evidence/republish/${runs.at(-1)}/report.json`, "utf8"));
+const report = full.report;
+check("관리자 토큰은 스테이지 HTML 요청에만(외부 요청에 없음)", Array.isArray(full.tokenLeaks) && full.tokenLeaks.length === 0, { leaks: full.tokenLeaks });
+const sameEntry = report.find((r) => r.slug === same.slug);
+const changedEntry = report.find((r) => r.slug === changed.slug);
+check("같은 화면인 사이트는 홈·개인정보처리방침 × 모바일·데스크톱 모두 차이 0으로 적용", sameEntry?.result === "applied" && Object.keys(sameEntry.diffs).length === 4 && Object.values(sameEntry.diffs).every((d) => d.ratio === 0), sameEntry?.diffs);
+check("화면이 바뀐 사이트는 보류(review)와 diff 이미지", changedEntry?.result === "review" && changedEntry.diffs["home-mobile"].ratio > 0.0001 &&
+  readdirSync(`evidence/republish/${runs.at(-1)}`).some((f) => f.startsWith(`${changed.slug}-home-mobile-diff`)), changedEntry?.diffs);
+
+// A renderer change that breaks only the privacy page is caught too.
+const privacyOnly = { ...structuredClone(fieldFixture), slug: `rp-privacy-${run}` };
+const p = await api("POST", "/sites", { config: privacyOnly, createdBy: "operator" });
+await api("POST", `/sites/${p.data.siteId}/publish`);
+localD1(`UPDATE site_versions SET asset_version = 'old-assets', config = replace(config, '"representative":"김철수"', '"representative":"바뀐 대표"') WHERE site_id = '${p.data.siteId}'`);
+let out2 = "";
+try {
+  out2 = execFileSync("node", ["scripts/republish-all.mjs", "--apply", `--only=${privacyOnly.slug}`], { encoding: "utf8", env: { ...process.env, LIVE_PORT: "8787" } });
+} catch (error) {
+  out2 = String(error.stdout ?? "");
+}
+const runs2 = readdirSync("evidence/republish").sort();
+const privacyEntry = JSON.parse(readFileSync(`evidence/republish/${runs2.at(-1)}/report.json`, "utf8")).report[0];
+check("개인정보처리방침만 바뀌어도 보류", privacyEntry?.result === "review" && privacyEntry.diffs["privacy-mobile"].ratio > 0.0001, privacyEntry?.diffs);
+
+const after = { same: pointerOf(same.slug), changed: pointerOf(changed.slug) };
+const versionRow = (slug) => localD1(`SELECT v.asset_version, v.render_id FROM sites s JOIN site_versions v ON v.id = s.published_version_id WHERE s.id = '${ids[slug]}'`)[0];
+check("적용된 사이트: 새 render_id로 서빙, 자산 버전 현재값", after.same.renderId === sameEntry.renderId && after.same.renderId !== before.same.renderId &&
+  versionRow(same.slug).asset_version === plan.assetVersion && (await routerRequest(`${same.slug}.localhost`, "/")).status === 200);
+check("보류된 사이트: 공개 화면 그대로", after.changed.renderId === before.changed.renderId && versionRow(changed.slug).asset_version === "old-assets" &&
+  !(await routerRequest(`${changed.slug}.localhost`, "/")).body.includes("렌더러가 바뀐 문구"));
+
+// Commit is refused once the live version moved on.
+const staged = (await api("POST", `/sites/${ids[changed.slug]}/republish/stage`)).data;
+const draft = await api("POST", `/sites/${ids[changed.slug]}/versions`, { config: changed });
+await api("POST", `/sites/${ids[changed.slug]}/publish`, { versionId: draft.data.versionId });
+const refused = await api("POST", `/sites/${ids[changed.slug]}/republish/commit`, { renderId: staged.renderId });
+check("그사이 새 버전이 게시되면 적용 거부(409)", refused.status === 409 && pointerOf(changed.slug).versionId === draft.data.versionId);
+check("없는 스테이지 적용은 404", (await api("POST", `/sites/${ids[same.slug]}/republish/commit`, { renderId: "nope" })).status === 404);
+
+ev.finish({ ids, run: runs.at(-1) });
+import type { Env } from "./env.js";
+import { kvHostKey, type HostRecord, type PublishedPointer } from "./keys.js";
+import {
+  acquireRoutesLease,
+  clearRoutesSynced,
+  holdsRoutesLease,
+  markRoutesSynced,
+  primaryHostname,
+  releaseRoutesLease,
+  servingState,
+  sitesNeedingRouteSync,
+  type SiteRow,
+} from "./store.js";
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** KV allows one write per key per second; retry rate-limited writes a few times. */
+export async function kvWrite(op: () => Promise<void>) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await op();
+    } catch (error) {
+      const limited = /429|too many/i.test(String(error));
+      if (!limited || attempt >= 3) throw error;
+      await sleep(1100);
+    }
+  }
+}
+
+/** Public status of a site as the router sees it. */
+export function hostStatus(site: SiteRow): HostRecord["status"] {
+  if (site.cancelled_at) return "cancelled";
+  return site.status === "suspended" ? "suspended" : "active";
+}
+
+type Snapshot = Awaited<ReturnType<typeof snapshot>>;
+type DomainRow = Snapshot["domains"][number];
+
+/** What KV should hold for a hostname; null means the key must not exist. */
+function expectedRecord(state: Snapshot, domain: DomainRow): HostRecord | null {
+  // Custom hostnames that are not active yet must not serve the site.
+  if (domain.kind === "custom" && domain.status !== "active") return null;
+  return {
+    siteId: state.site.id,
+    status: state.status,
+    pointer: state.pointer,
+    redirectTo: domain.hostname === state.primary ? null : state.primary,
+  };
+}
+
+/** Routes a stored config renders to (v2 adds the privacy page). */
+export const routesOf = (config: { version?: unknown }) => (config.version === 2 ? ["/", "/privacy"] : ["/"]);
+
+async function snapshot(env: Env, siteId: string) {
+  const { site, version } = await servingState(env.DB, siteId);
+  const pointer: PublishedPointer | null =
+    version
+      ? {
+          versionId: version.id,
+          number: version.number,
+          // Rows from before migration 0003 are backfilled; never drop a live pointer over a missing time.
+          publishedAt: site.published_at ?? site.updated_at,
+          pages: routesOf(JSON.parse(version.config) as { version?: unknown }),
+          renderId: version.render_id,
+        }
+      : null;
+  const primary = await primaryHostname(env.DB, site, env.BASE_DOMAIN);
+  const { results: domains } = await env.DB.prepare("SELECT hostname, kind, status FROM domains WHERE site_id = ?")
+    .bind(site.id)
+    .all<{ hostname: string; kind: string; status: string }>();
+  const status = hostStatus(site);
+  const key = JSON.stringify([status, pointer?.versionId, pointer?.publishedAt, pointer?.renderId, primary, domains]);
+  return { site, pointer, primary, domains, status, key };
+}
+
+/**
+ * Rewrites the KV record of every hostname of a site from D1, the source of truth: status,
+ * published pointer and redirect. One writer per site at a time (D1 lease). A caller that
+ * cannot take the lease leaves the site marked unsynced; the holder re-reads D1 after writing
+ * and catches up, and the reconcile cron covers anything left. Returns whether KV now matches.
+ */
+export async function syncHostRecords(env: Env, siteId: string): Promise<boolean> {
+  await clearRoutesSynced(env.DB, siteId);
+  const token = await acquireRoutesLease(env.DB, siteId);
+  if (!token) return false;
+  try {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const state = await snapshot(env, siteId);
+      for (const domain of state.domains) {
+        // Fence: a holder whose lease expired must not overwrite a newer writer.
+        if (!(await holdsRoutesLease(env.DB, siteId, token))) return false;
+        const record = expectedRecord(state, domain);
+        await kvWrite(() =>
+          record
+            ? env.ROUTES.put(kvHostKey(domain.hostname), JSON.stringify(record))
+            : env.ROUTES.delete(kvHostKey(domain.hostname)),
+        );
+        // The lease may have expired while the write was in flight; then this write may be
+        // stale, so leave the site dirty for the cron instead of trusting anyone's marker.
+        if (!(await holdsRoutesLease(env.DB, siteId, token))) {
+          await clearRoutesSynced(env.DB, siteId);
+          return false;
+        }
+      }
+      if ((await snapshot(env, siteId)).key === state.key) {
+        await markRoutesSynced(env.DB, siteId, state.site.updated_at);
+        return true;
+      }
+    }
+    return false;
+  } finally {
+    await releaseRoutesLease(env.DB, siteId, token);
+  }
+}
+
+/**
+ * For request handlers: syncs now, retrying briefly while another writer holds the lease, so
+ * the caller's change is live when it responds. The cron catches anything still pending.
+ */
+export async function syncHostRecordsNow(env: Env, siteId: string) {
+  for (let attempt = 0; attempt < 4; attempt++) {
+    if (await syncHostRecords(env, siteId)) return true;
+    await sleep(1000);
+  }
+  return false;
+}
+
+/**
+ * Cron safety net: re-syncs sites whose host records may lag D1 (a request failed after D1
+ * committed, or KV kept rejecting writes). Guarantees serving converges to D1 within minutes.
+ */
+export async function reconcileHostRecords(env: Env) {
+  const ids = await sitesNeedingRouteSync(env.DB);
+  let synced = 0;
+  for (const id of ids) {
+    try {
+      if (await syncHostRecords(env, id)) synced++;
+    } catch (error) {
+      console.error("[routes] reconcile failed", id, error);
+    }
+  }
+  return { pending: ids.length, synced };
+}
+
+/**
+ * Hourly audit: compares every site's expected host records with KV and marks mismatches
+ * dirty, so the reconcile pass repairs them whatever race produced them. Writes nothing itself.
+ */
+export async function auditHostRecords(env: Env) {
+  const { results } = await env.DB.prepare("SELECT id FROM sites").all<{ id: string }>();
+  let dirty = 0;
+  // Orphans: host records whose hostname no longer exists in D1 (a race recreated one after
+  // removal). Routing must never outlive the domain row, so they are deleted here.
+  const known = new Set(
+    (await env.DB.prepare("SELECT hostname FROM domains").all<{ hostname: string }>()).results.map((row) => row.hostname),
+  );
+  let orphans = 0;
+  let cursor: string | undefined;
+  do {
+    const page = await env.ROUTES.list({ prefix: "host:", cursor });
+    for (const key of page.keys) {
+      const hostname = key.name.slice("host:".length);
+      if (known.has(hostname)) continue;
+      // The snapshot may predate a site created during this audit: confirm against D1 now.
+      const exists = await env.DB.prepare("SELECT 1 AS n FROM domains WHERE hostname = ?").bind(hostname).first();
+      if (exists) continue;
+      await kvWrite(() => env.ROUTES.delete(key.name));
+      orphans++;
+    }
+    cursor = page.list_complete ? undefined : page.cursor;
+  } while (cursor);
+  for (const { id } of results) {
+    const state = await snapshot(env, id);
+    for (const domain of state.domains) {
+      const expected = expectedRecord(state, domain);
+      const actual = await env.ROUTES.get(kvHostKey(domain.hostname));
+      if ((expected ? JSON.stringify(expected) : null) !== actual) {
+        await clearRoutesSynced(env.DB, id);
+        dirty++;
+        break;
+      }
+    }
+  }
+  return { sites: results.length, dirty, orphans };
+}
+import { parseSiteConfig, renderSite, SiteConfigError, type SiteConfig } from "@sites/renderer";
+import { listAssets, uploadAsset } from "./assets.js";
+import { refreshBlog, refreshDueBlogs } from "./blog.js";
+import { allInquiries, inquiriesCsv, listInquiries, requireEmail } from "./inquiries.js";
+import { currentQuarter, kstDay, metricsReport, quarterlyCsv, quarterlyOverview, quarterlyReport } from "./metrics.js";
+import { turnstileFrame } from "./turnstile.js";
+import type { Env } from "./env.js";
+import { HttpError, json, readJson, requireAdmin } from "./http.js";
+import { MEDIA_PATH, r2MediaKey, r2SharedKey } from "./keys.js";
+import { addDomain, auditOrigins, domainQuota, listDomains, maintainDomains, refreshDomain, removeDomain, type DomainRow } from "./domains.js";
+import { handleMcp } from "./mcp.js";
+import { assetBase, publish, rollback, siteOrigin } from "./publish.js";
+import { auditHostRecords, reconcileHostRecords, syncHostRecordsNow } from "./routes.js";
+import { commitRepublish, republishPlan, stagedPage, stageRepublish } from "./republish.js";
+import { addDraft, configFromBody, createSiteFromInput, creator, previewUrl } from "./sites.js";
+import { getSite, listSites, listVersions, setSiteStatus, versionByPreviewToken, type CreatedBy } from "./store.js";
+
+/** Must match wrangler.toml [triggers]: the hourly audit; the 5-minute cron only reconciles. */
+const AUDIT_CRON = "17 * * * *";
+
+async function serveImmutable(env: Env, key: string) {
+  const object = await env.SITES.get(key);
+  if (!object) return new Response("not found", { status: 404 });
+  const headers = new Headers();
+  object.writeHttpMetadata(headers);
+  headers.set("cache-control", "public, max-age=31536000, immutable");
+  return new Response(object.body, { headers });
+}
+
+async function handle(request: Request, env: Env): Promise<Response> {
+  const url = new URL(request.url);
+  const parts = url.pathname.split("/").filter(Boolean);
+  const method = request.method;
+
+  if (method === "GET" && url.pathname === "/health") return json({ ok: true });
+
+  // Shared assets are public and immutable; previews load them from here.
+  if (method === "GET" && parts[0] === "_shared") return serveImmutable(env, r2SharedKey(parts.slice(1).join("/")));
+  // Uploaded photos (public, content-addressed) so previews show them before publishing.
+  const media = method === "GET" ? MEDIA_PATH.exec(url.pathname) : null;
+  if (media) return serveImmutable(env, r2MediaKey(media[1]!, media[2]!));
+
+  // Turnstile widget frame embedded by public sites (see turnstile.ts).
+  if (method === "GET" && url.pathname === "/turnstile-frame") {
+    if (!env.TURNSTILE_SITE_KEY) return new Response("turnstile not configured", { status: 404 });
+    const parent = url.searchParams.get("parent") ?? "";
+    if (!/^https?:\/\/[a-z0-9.-]+(:\d+)?$/i.test(parent)) return new Response("bad parent", { status: 400 });
+    return new Response(turnstileFrame(env.TURNSTILE_SITE_KEY, parent), {
+      headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "x-robots-tag": "noindex" },
+    });
+  }
+
+  // Preview: anyone with the token can view a version. Never indexed. /preview/<token>[/privacy]
+  if (method === "GET" && parts[0] === "preview" && (parts.length === 2 || parts.length === 3)) {
+    const version = await versionByPreviewToken(env.DB, parts[1]!);
+    const site = await getSite(env.DB, version.site_id);
+    const { pages } = await renderSite(JSON.parse(version.config) as SiteConfig, {
+      assetBase: assetBase(),
+      origin: await siteOrigin(env, site),
+      preview: true,
+      turnstileFrame: null,
+      // Site links are root-relative (`/#inquiry`, `/privacy`); keep them inside this preview.
+      linkPrefix: `/preview/${parts[1]}`,
+    });
+    const route = parts[2] ? `/${parts[2]}` : "/";
+    const page = pages.find((entry) => entry.route === route);
+    if (!page) throw new HttpError(404, "없는 페이지입니다");
+    return new Response(page.html, {
+      headers: {
+        "content-type": "text/html; charset=utf-8",
+        "x-robots-tag": "noindex, nofollow",
+        "cache-control": "no-store",
+      },
+    });
+  }
+
+  requireAdmin(request, env.ADMIN_TOKEN);
+
+  // MCP tools for AI agents (Streamable HTTP, stateless). Same admin token.
+  if (url.pathname === "/mcp") return handleMcp(request, env);
+
+  // PUT /admin/shared/<version>/<path>: upload one shared asset file.
+  if (method === "PUT" && parts[0] === "admin" && parts[1] === "shared" && parts.length > 3) {
+    const key = r2SharedKey(parts.slice(2).join("/"));
+    await env.SITES.put(key, request.body, {
+      httpMetadata: { contentType: request.headers.get("content-type") ?? "application/octet-stream" },
+    });
+    return json({ key }, 201);
+  }
+
+  // POST /validate {config}: errors without saving (console editor, scripts).
+  if (method === "POST" && url.pathname === "/validate") {
+    const body = await readJson<{ config?: unknown }>(request);
+    const result = parseSiteConfig(body.config);
+    return json(result.ok ? { valid: true, errors: [], config: result.config } : { valid: false, errors: result.errors });
+  }
+
+  // GET /reports/quarterly?quarter=2026-Q4: every site's totals for the quarter.
+  if (method === "GET" && url.pathname === "/reports/quarterly") {
+    const report = await quarterlyOverview(env.DB, url.searchParams.get("quarter") ?? currentQuarter(), env.BASE_DOMAIN);
+    if (!report) throw new HttpError(400, "quarter는 YYYY-Q1~Q4");
+    return json(report);
+  }
+
+  // Full republish: GET /republish/plan; staged HTML at GET /staged/:siteId/:renderId[/privacy]
+  if (method === "GET" && url.pathname === "/republish/plan") return json(await republishPlan(env));
+  if (method === "GET" && parts[0] === "staged" && (parts.length === 3 || parts.length === 4)) {
+    return stagedPage(env, parts[1]!, parts[2]!, parts[3] ?? "");
+  }
+
+import { ASSET_VERSION, renderSite, type SiteConfig } from "@sites/renderer";
+import type { Env } from "./env.js";
+import { HttpError } from "./http.js";
+import { kvSiteKey, r2PageKey, r2SharedKey, type PublishedPointer } from "./keys.js";
+import { syncBlogFeed } from "./blog.js";
+import { routesOf, syncHostRecordsNow } from "./routes.js";
+import {
+  getSite,
+  getVersion,
+  latestVersion,
+  markPublished,
+  markRendered,
+  primaryHostname,
+  type SiteRow,
+  type VersionRow,
+} from "./store.js";
+
+export const assetBase = () => `/_shared/${ASSET_VERSION}`;
+
+/** Turnstile frame URL baked into published pages; null when Turnstile is not configured. */
+export const turnstileFrameUrl = (env: Env) =>
+  env.TURNSTILE_SITE_KEY && env.API_ORIGIN ? `${env.API_ORIGIN}/turnstile-frame` : null;
+
+/** Public origin a site is served from: its active custom domain, else `<slug>.<BASE_DOMAIN>`. */
+export async function siteOrigin(env: Env, site: SiteRow) {
+  const host = await primaryHostname(env.DB, site, env.BASE_DOMAIN);
+  return `${env.PUBLIC_SCHEME ?? "https"}://${host}`;
+}
+
+async function requireSharedAssets(env: Env) {
+  const head = await env.SITES.head(r2SharedKey(`${ASSET_VERSION}/_assets/site.css`));
+  if (!head) {
+    throw new HttpError(409, `공용 에셋 ${ASSET_VERSION}이 R2에 없습니다. scripts/upload-shared.mjs를 먼저 실행하세요`);
+  }
+}
+
+/** Everything outside the config that changes the HTML (stored in rendered_origin). */
+export const renderKeyOf = (env: Env, origin: string) => JSON.stringify({ origin, turnstileFrame: turnstileFrameUrl(env) });
+
+/**
+ * Renders every page of a version with the current renderer and shared assets under a fresh,
+ * immutable render_id. Nothing points at it yet: concurrent renders never mix pages.
+ */
+export async function renderToR2(env: Env, version: VersionRow, origin: string) {
+  const config = JSON.parse(version.config) as SiteConfig;
+  // HTML comes from the current renderer, so it must point at the current client bundle.
+  await requireSharedAssets(env);
+  const { pages } = await renderSite(config, { assetBase: assetBase(), origin, turnstileFrame: turnstileFrameUrl(env) });
+  const renderId = crypto.randomUUID().replace(/-/g, "").slice(0, 16);
+  for (const page of pages) {
+    await env.SITES.put(r2PageKey(version.site_id, version.id, page.path, renderId), page.html, {
+      httpMetadata: { contentType: "text/html; charset=utf-8" },
+    });
+  }
+  return { renderId, renderKey: renderKeyOf(env, origin), routes: pages.map((page) => page.route) };
+}
+
+/**
+ * Renders a version unless it is already rendered against the current shared assets and
+ * origin, then records the render (the pointer follows it on the next sync).
+ */
+async function ensureRendered(env: Env, version: VersionRow, origin: string, { keepAssets = false } = {}) {
+  const config = JSON.parse(version.config) as SiteConfig;
+  // Rollback keeps the version's own shared assets; publish moves it to the current ones.
+  const assetsOk = keepAssets || version.asset_version === ASSET_VERSION;
+  if (version.rendered_at && assetsOk && version.rendered_origin === renderKeyOf(env, origin)) {
+    return routesOf(config);
+  }
+  const render = await renderToR2(env, version, origin);
+  await markRendered(env.DB, version.id, ASSET_VERSION, render.renderKey, render.renderId);
+  return render.routes;
+}
+
+async function pointTo(env: Env, site: SiteRow, version: VersionRow, pages: string[]) {
+  const publishedAt = await markPublished(env.DB, site.id, version.id, ASSET_VERSION);
+  const renderId = (await getVersion(env.DB, site.id, version.id)).render_id;
+  const pointer: PublishedPointer = { versionId: version.id, number: version.number, publishedAt, pages, renderId };
+  await env.ROUTES.put(kvSiteKey(site.id), JSON.stringify(pointer));
+  await syncHostRecordsNow(env, site.id);
+  await syncBlogFeed(env, site.id, JSON.parse(version.config) as { business?: { blogUrl?: string } });
+  return pointer;
+}
+
+/** Publish = render (if needed) → R2 → move the KV pointer. Visible worldwide within about a minute. */
+export async function publish(env: Env, site: SiteRow, versionId?: string) {
+  await requireSharedAssets(env);
+  const version = versionId ? await getVersion(env.DB, site.id, versionId) : await latestVersion(env.DB, site.id);
+  const pages = await ensureRendered(env, version, await siteOrigin(env, site));
+  return pointTo(env, site, version, pages);
+}
+
+/**
+ * Rollback = move the pointer back to a version that was published before. No re-render, unless
+ * the site's origin changed since that version was rendered (custom domain added or removed):
+ * then only its HTML is re-rendered so canonical and OG URLs point at the current host.
+ */
+export async function rollback(env: Env, site: SiteRow, versionId: string) {
+  const version = await getVersion(env.DB, site.id, versionId);
+  if (!version.first_published_at) throw new HttpError(409, "게시된 적 없는 버전으로는 롤백할 수 없습니다");
+  const exists = await env.SITES.head(r2PageKey(site.id, version.id, "index.html", version.render_id));
+  if (!exists) throw new HttpError(409, "렌더된 파일이 R2에 없습니다. publish로 다시 게시하세요");
+  const pages = await ensureRendered(env, version, await siteOrigin(env, site), { keepAssets: true });
+  return pointTo(env, site, version, pages);
+}
+
+/**
+ * The site's origin changed (custom domain activated, failed or removed): re-render the live
+ * version's HTML in place (same R2 keys). The KV pointer is not touched, so this can never undo
+ * a concurrent publish; if the live version changes meanwhile, the new one is checked too.
+ * Returns false when it could not settle (the caller keeps origin_pending for the cron).
+ */
+export async function rerenderLive(env: Env, siteId: string): Promise<boolean> {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const site = await getSite(env.DB, siteId);
+    if (!site.published_version_id) {
+      await syncHostRecordsNow(env, siteId);
+      return true;
+    }
+    const version = await getVersion(env.DB, siteId, site.published_version_id);
+    await ensureRendered(env, version, await siteOrigin(env, site));
+    // Settled only if the live version is unchanged and its HTML matches the origin as of now
+    // (an overlapping domain change may have moved it while this render ran).
+    const after = await getSite(env.DB, siteId);
+    const rendered = await getVersion(env.DB, siteId, version.id);
+    if (after.published_version_id === version.id && rendered.rendered_origin === renderKeyOf(env, await siteOrigin(env, after))) {
+      await syncHostRecordsNow(env, siteId);
+      return true;
+    }
+  }
+  return false;
+}
+{
+  "name": "daniworks-sites-platform",
+  "private": true,
+  "packageManager": "pnpm@10.28.0",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "build": "pnpm --filter @sites/renderer build",
+    "test": "pnpm -r test",
+    "check-types": "pnpm -r check-types",
+    "dev:api": "pnpm --filter api dev",
+    "dev:router": "pnpm --filter router dev",
+    "upload:shared": "node scripts/upload-shared.mjs",
+    "verify:m1": "node scripts/verify-m1.mjs",
+    "deploy:staging": "pnpm build && pnpm --filter api migrate:staging && pnpm --filter api deploy:staging && pnpm --filter router deploy:staging",
+    "verify:staging": "node scripts/verify-staging.mjs"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/client": "2.4.0",
+    "chrome-launcher": "1.2.3",
+    "lighthouse": "13.6.0",
+    "playwright": "1.65.1"
+  }
+}
+
+exec
+/bin/zsh -lc "rg -n 'cache|renderId|_shared|blog-feed' apps/router/src/index.ts; rg -n 'ASSET_VERSION' packages/renderer/src; nl -ba apps/api/src/republish.ts | sed -n '58,100p'; nl -ba scripts/republish-all.mjs | sed -n '40,58p'; cat apps/api/package.json; rg -n 'sitesNeedingRouteSync|markRendered' apps/api/src/store.ts" in /Users/steve/Projects/daniworks-sites-platform
+ succeeded in 0ms:
+34:    headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" },
+62:// KV values are cached at the edge for this long (KV minimum); publish/rollback propagate within it.
+68:    { status, headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", ...headers } },
+72:async function serveObject(env: Env, key: string, cacheControl: string) {
+78:  headers.set("cache-control", cacheControl);
+84:  const raw = await env.ROUTES.get(kvHostKey(hostname), { cacheTtl: KV_CACHE_TTL });
+87:  const pointer = await env.ROUTES.get<PublishedPointer>(kvSiteKey(raw), { type: "json", cacheTtl: KV_CACHE_TTL });
+111:      return new Response(null, { status: 204, headers: { "cache-control": "no-store" } });
+144:    if (url.pathname.startsWith("/_shared/")) {
+146:        (await serveObject(env, r2SharedKey(url.pathname.slice("/_shared/".length)), "public, max-age=31536000, immutable")) ??
+171:        headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "public, max-age=3600" },
+182:        { headers: { "content-type": "application/xml; charset=utf-8", "cache-control": "public, max-age=3600" } },
+188:      const response = await serveObject(env, r2PageKey(host.siteId, pointer.versionId, path, pointer.renderId), "public, max-age=60");
+192:        // Latest blog posts, filled at request time from the cron's KV cache. The body now
+197:          .on("[data-blog-feed]", {
+199:              const feed = await env.ROUTES.get<BlogFeed>(`blog:${siteId}`, { type: "json", cacheTtl: 300 });
+200:              // Edge caches can lag a blog change: only posts from the blog this page links to.
+201:              const html = feed && feed.source === element.getAttribute("data-blog-feed") ? blogCardsHtml(feed.posts) : "";
+packages/renderer/src/index.ts:8:export { ASSET_VERSION } from "./generated/asset-version.js";
+    58	 * version is still live and its origin unchanged, so an older render cannot replace newer work.
+    59	 */
+    60	export async function commitRepublish(env: Env, siteId: string, renderId: string) {
+    61	  const staged = await env.DB.prepare("SELECT * FROM staged_renders WHERE render_id = ? AND site_id = ?")
+    62	    .bind(renderId, siteId)
+    63	    .first<{ version_id: string; render_key: string; asset_version: string }>();
+    64	  if (!staged) throw new HttpError(404, "스테이지 렌더가 없습니다");
+    65	  const site = await getSite(env.DB, siteId);
+    66	  if (site.published_version_id !== staged.version_id) throw new HttpError(409, "그사이 다른 버전이 게시되었습니다. 다시 스테이지하세요");
+    67	  if (staged.render_key !== renderKeyOf(env, await siteOrigin(env, site))) {
+    68	    throw new HttpError(409, "그사이 사이트 주소가 바뀌었습니다. 다시 스테이지하세요");
+    69	  }
+    70	  const now = new Date().toISOString();
+    71	  const updated = await env.DB.prepare(
+    72	    `UPDATE site_versions SET render_id = ?, rendered_origin = ?, asset_version = ?, rendered_at = ?
+    73	     WHERE id = ? AND id = (SELECT published_version_id FROM sites WHERE id = ?)`,
+    74	  )
+    75	    .bind(renderId, staged.render_key, staged.asset_version, now, staged.version_id, siteId)
+    76	    .run();
+    77	  if (updated.meta.changes !== 1) throw new HttpError(409, "그사이 다른 버전이 게시되었습니다. 다시 스테이지하세요");
+    78	  await env.DB.batch([
+    79	    env.DB.prepare("UPDATE sites SET template_version = ?, updated_at = ? WHERE id = ?").bind(staged.asset_version, now, siteId),
+    80	    env.DB.prepare("DELETE FROM staged_renders WHERE site_id = ?").bind(siteId),
+    81	  ]);
+    82	  await syncHostRecordsNow(env, siteId);
+    83	  return { siteId, versionId: staged.version_id, renderId, assetVersion: staged.asset_version };
+    84	}
+    85	
+    86	/** Raw staged HTML for the visual check (admin only). `path`: `` or `privacy`. */
+    87	export async function stagedPage(env: Env, siteId: string, renderId: string, path: string) {
+    88	  const staged = await env.DB.prepare("SELECT version_id FROM staged_renders WHERE render_id = ? AND site_id = ?")
+    89	    .bind(renderId, siteId)
+    90	    .first<{ version_id: string }>();
+    91	  if (!staged) throw new HttpError(404, "스테이지 렌더가 없습니다");
+    92	  const object = await env.SITES.get(r2PageKey(siteId, staged.version_id, path ? `${path}/index.html` : "index.html", renderId));
+    93	  if (!object) throw new HttpError(404, "페이지가 없습니다");
+    94	  return new Response(object.body, {
+    95	    headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "x-robots-tag": "noindex" },
+    96	  });
+    97	}
+    40	
+    41	/** Hides what legitimately differs between two renders of the same version. */
+    42	const STABILIZE = `*, *::before, *::after { animation: none !important; transition: none !important; caret-color: transparent !important; }
+    43	[data-blog-feed] { display: none !important; }`; /* filled only on live pages, at request time */
+    44	
+    45	async function shot(context, url, viewport) {
+    46	  const page = await context.newPage();
+    47	  await page.setViewportSize(viewport);
+    48	  await page.goto(url, { waitUntil: "networkidle" });
+    49	  await page.addStyleTag({ content: STABILIZE });
+    50	  await page.evaluate(async () => {
+    51	    for (let y = 0; y < document.body.scrollHeight; y += 500) {
+    52	      window.scrollTo(0, y);
+    53	      await new Promise((r) => setTimeout(r, 50));
+    54	    }
+    55	    window.scrollTo(0, 0);
+    56	  });
+    57	  await page.waitForLoadState("networkidle");
+    58	  const png = await page.screenshot({ fullPage: true });
+{
+  "name": "api",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler d1 migrations apply DB --local --persist-to ../../.wrangler/state && wrangler dev --port 8788 --ip 127.0.0.1 --persist-to ../../.wrangler/state",
+    "check-types": "tsc -p tsconfig.json",
+    "deploy:staging": "wrangler deploy --env staging",
+    "migrate:staging": "wrangler d1 migrations apply DB --env staging --remote",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@cf-wasm/photon": "0.4.0",
+    "@modelcontextprotocol/server": "2.4.0",
+    "@sites/renderer": "workspace:*",
+    "@sites/schema": "workspace:*",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261118.1",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.1",
+    "wrangler": "^4.164.0"
+  }
+}
+124:export async function markRendered(db: D1Database, versionId: string, assetVersion: string, renderKey: string, renderId: string) {
+189:export async function sitesNeedingRouteSync(db: D1Database, limit = 100) {
+
+codex
+The staged commit safeguards do not fully prevent older renders from replacing newer work. Concurrent domain changes and stages retained across renderer deployments can both install stale HTML.
+
+Full review comments:
+
+- [P2] Fence the origin check against concurrent domain changes — /Users/steve/Projects/daniworks-sites-platform/apps/api/src/republish.ts:71-75
+  If a domain change occurs after the origin check and its `rerenderLive` finishes before this UPDATE, the commit overwrites the corrected render with HTML staged for the old origin. The UPDATE only checks the published version, which remains unchanged during domain changes, so the new hostname can indefinitely serve incorrect canonical and OG URLs. Make the write conditional on the origin/render state that was validated, and reject or retry when that state changes.
+
+- [P2] Reject staged renders from an obsolete asset release — /Users/steve/Projects/daniworks-sites-platform/apps/api/src/republish.ts:64-69
+  A stage survives API deployments, but commit never compares its `asset_version` with the current `ASSET_VERSION`. Consequently, a render staged before a renderer deployment can still be committed afterward, even after the same live version has been published with the newer assets. The version and origin checks both pass, silently downgrading the live render. Reject obsolete stages and require staging again against the current release.
+The staged commit safeguards do not fully prevent older renders from replacing newer work. Concurrent domain changes and stages retained across renderer deployments can both install stale HTML.
+
+Full review comments:
+
+- [P2] Fence the origin check against concurrent domain changes — /Users/steve/Projects/daniworks-sites-platform/apps/api/src/republish.ts:71-75
+  If a domain change occurs after the origin check and its `rerenderLive` finishes before this UPDATE, the commit overwrites the corrected render with HTML staged for the old origin. The UPDATE only checks the published version, which remains unchanged during domain changes, so the new hostname can indefinitely serve incorrect canonical and OG URLs. Make the write conditional on the origin/render state that was validated, and reject or retry when that state changes.
+
+- [P2] Reject staged renders from an obsolete asset release — /Users/steve/Projects/daniworks-sites-platform/apps/api/src/republish.ts:64-69
+  A stage survives API deployments, but commit never compares its `asset_version` with the current `ASSET_VERSION`. Consequently, a render staged before a renderer deployment can still be committed afterward, even after the same live version has been published with the newer assets. The version and origin checks both pass, silently downgrading the live render. Reject obsolete stages and require staging again against the current release.

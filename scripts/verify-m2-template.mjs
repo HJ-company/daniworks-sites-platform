@@ -2,7 +2,7 @@
 // create → validation errors → preview (home, privacy) → publish → router pages, sitemap,
 // structured data → browser (mobile/desktop) → Lighthouse mobile. Uses local-only fixtures.
 import { writeFileSync } from "node:fs";
-import { api, chromium, evidence, inspectPage, lighthouse, ROUTER_PORT, routerRequest, uploadShared, viewports } from "./lib/verify.mjs";
+import { api, chromium, evidence, inspectPage, lighthouse, ROUTER_PORT, routerRequest, uploadShared, viewports, paySite } from "./lib/verify.mjs";
 
 // Node strips the TypeScript types (type-only imports) at load time.
 const { fieldFixture, lessonFixture } = await import("../packages/renderer/src/templates/service-local/fixtures.ts");
@@ -52,6 +52,7 @@ for (const [name, fixture] of Object.entries({ lesson: lessonFixture, field: fie
   check(`${name}: 프리뷰 개인정보처리방침 200`, privacy.status === 200 && (await privacy.text()).includes("개인정보 보호책임자"));
 
   // 4. publish and serve
+  await paySite(created.data.siteId);
   const published = await api("POST", `/sites/${created.data.siteId}/publish`);
   check(`${name}: 게시 200`, published.status === 200 && published.data.pages?.join() === "/,/privacy", published.data);
   const host = `${config.slug}.localhost`;
@@ -85,7 +86,7 @@ const kakao = ["https://pf.kakao.com/", "https://open.kakao.com/"];
   const blocked = await r.page.getByRole("alert").textContent();
   check(
     "프리뷰: 하이드레이션 오류 없음, 링크가 프리뷰 안, 문의 전송 차단",
-    r.hydrated && !r.errors.length && privacyHref === `/preview/${sites.lesson.token}/privacy` && blocked?.includes("프리뷰"),
+    r.hydrated && !r.errors.length && privacyHref === `/preview/${sites.lesson.token}/privacy` && blocked?.includes("시안에서는 문의가 전송되지 않습니다"),
     { errors: r.errors, privacyHref, blocked },
   );
   await r.page.close();

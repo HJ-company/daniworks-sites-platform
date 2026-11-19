@@ -20,15 +20,16 @@ pnpm test && pnpm check-types
 호스트 node_modules와 무관하게 Linux 컨테이너에서 Workers·브라우저 검증을 돌린다. 단계마다 이 경로로 확인한다.
 
 ```bash
-docker compose up -d --build                      # api :8788, router :8787, 콘솔 :8789, mailpit :8025, cf-mock :8790
+docker compose up -d --build                      # api :8788, router :8787, 콘솔 :8789, Authentik 목업 :8791, mailpit :8025, cf-mock :8790
 docker compose run --rm verify node scripts/verify-all.mjs  # 전체 검증. 단계별: verify-m2-<단계>.mjs, 결과는 evidence/<단계>/
 docker compose down -v                            # 로컬 D1·R2·KV 상태까지 지움
 ```
 
 `verify`는 workers 컨테이너의 네트워크를 함께 써서, 스크립트가 `127.0.0.1`·`*.localhost`로 Workers에 닿는다.
 
-- 운영자 콘솔: http://127.0.0.1:8789 (로컬은 Access 검사 생략)
-- MCP: `http://127.0.0.1:8788/mcp`, `Authorization: Bearer dev-admin-token`
+- 운영자 콘솔: http://127.0.0.1:8789 → Authentik 목업(:8791) 로그인 화면에서 `kim`·`lee`(운영자), `guest`(권한 없음), `many`(그룹이 많은 운영자) 중 선택
+- MCP: `http://127.0.0.1:8788/mcp`. 사람은 OAuth(목업 클라이언트 `dsites-mcp`/`dev-mcp-secret`, mcp-inspector 콜백 `http://localhost:6274/oauth/callback`), 스크립트는 `Authorization: Bearer dev-admin-token`
+- 시안 링크: http://localhost:8787/preview/<토큰> (콘솔 사이트 개요에서 발급)
 - 메일 확인: http://127.0.0.1:8025 (Mailpit)
 
 ### 운영 명령

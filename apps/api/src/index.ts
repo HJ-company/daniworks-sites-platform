@@ -1,21 +1,40 @@
-import { parseSiteConfig, renderSite, SiteConfigError, type SiteConfig } from "@sites/renderer";
+import { parseSiteConfig, renderSite, SiteConfigError, STARTER_TODO, type SiteConfig } from "@sites/renderer";
 import { listAssets, uploadAsset } from "./assets.js";
 import { refreshBlog, refreshDueBlogs } from "./blog.js";
+import {
+  billingQueue,
+  billSite,
+  GRACE_DAYS,
+  listPayments,
+  recordPayment,
+  refreshAllBilling,
+  refreshBilling,
+  requirePublishable,
+  sitePayments,
+  subscriptionOf,
+  today,
+  updatePayment,
+  updateSubscription,
+  voidPayment,
+} from "./billing.js";
+import { draftLink, issueDraftLink, revokeDraftLink } from "./draft-links.js";
+import { createCustomer, customerDetail, linkSite, listCustomers, updateCustomer } from "./customers.js";
 import { allInquiries, inquiriesCsv, listInquiries, requireEmail } from "./inquiries.js";
 import { currentQuarter, kstDay, metricsReport, quarterlyCsv, quarterlyOverview, quarterlyReport } from "./metrics.js";
 import { turnstileFrame } from "./turnstile.js";
 import type { Env } from "./env.js";
-import { HttpError, json, readJson, requireAdmin } from "./http.js";
+import { actionOf, actorName, audit, authenticate, mcpChallenge, protectedResourceMetadata, type Actor } from "./auth.js";
+import { HttpError, json, readJson } from "./http.js";
 import { MEDIA_PATH, r2MediaKey, r2SharedKey } from "./keys.js";
 import { addDomain, auditOrigins, domainQuota, listDomains, maintainDomains, refreshDomain, removeDomain, type DomainRow } from "./domains.js";
 import { templateSeedExport } from "./handoff.js";
 import { handleMcp } from "./mcp.js";
 import { assetBase, publish, rollback, siteOrigin } from "./publish.js";
 import { auditHostRecords, reconcileHostRecords, syncHostRecordsNow } from "./routes.js";
-import { cancelSite, exportSite, listCancellations, purgeSite, reactivateSite } from "./lifecycle.js";
+import { cancelSite, exportSite, listCancellations, purgeSite, reactivateSite, retentionDays } from "./lifecycle.js";
 import { commitRepublish, republishPlan, stagedPage, stageRepublish } from "./republish.js";
 import { addDraft, configFromBody, createSiteFromInput, creator, previewUrl } from "./sites.js";
-import { getSite, listSites, listVersions, setSiteStatus, versionByPreviewToken, type CreatedBy } from "./store.js";
+import { businessName, getSite, listSites, listVersions, setSiteStatus, versionByPreviewToken, type CreatedBy } from "./store.js";
 
 /** Must match wrangler.toml [triggers]: the hourly audit; the 5-minute cron only reconciles. */
 const AUDIT_CRON = "17 * * * *";
@@ -76,10 +95,66 @@ async function handle(request: Request, env: Env): Promise<Response> {
     });
   }
 
-  requireAdmin(request, env.ADMIN_TOKEN);
+  // RFC 9728: where MCP clients (Claude, ChatGPT) find the authorization server (Authentik).
+  if (method === "GET" && (url.pathname === "/.well-known/oauth-protected-resource" || url.pathname === "/.well-known/oauth-protected-resource/mcp")) {
+    return json(protectedResourceMetadata(env));
+  }
 
-  // MCP tools for AI agents (Streamable HTTP, stateless). Same admin token.
-  if (url.pathname === "/mcp") return handleMcp(request, env);
+  let actor: Actor;
+  try {
+    actor = await authenticate(request, env);
+  } catch (error) {
+    // MCP clients start the OAuth flow from this challenge.
+    if (url.pathname === "/mcp" && error instanceof HttpError && error.status === 401) {
+      return new Response(JSON.stringify({ error: error.message }), {
+        status: 401,
+        headers: { "content-type": "application/json; charset=utf-8", "www-authenticate": mcpChallenge(env) },
+      });
+    }
+    throw error;
+  }
+
+  // MCP tools for AI agents (Streamable HTTP, stateless).
+  if (url.pathname === "/mcp") return handleMcp(request, env, actor);
+  if (method === "GET" || method === "HEAD") return operatorRoutes(request, env, url, parts, method, actor, { target: null });
+
+  // Every change is recorded with who made it, refused ones included.
+  let status = 500;
+  let createdSiteId: string | null = null;
+  // Details a route adds to its audit row (e.g. a draft link replaced rather than first issued).
+  const note: AuditNote = { target: null };
+  // Payment corrections belong to the payment's site history.
+  const paymentSite =
+    parts[0] === "payments" && parts[1]
+      ? ((await env.DB.prepare("SELECT site_id FROM payments WHERE id = ?").bind(parts[1]).first<{ site_id: string }>())?.site_id ?? null)
+      : null;
+  try {
+    const response = await operatorRoutes(request, env, url, parts, method, actor, note);
+    status = response.status;
+    // A new site's id is only known from the answer.
+    if (method === "POST" && parts.length === 1 && parts[0] === "sites" && status === 201) {
+      createdSiteId = ((await response.clone().json()) as { siteId?: string }).siteId ?? null;
+    }
+    return response;
+  } catch (error) {
+    status = error instanceof HttpError ? error.status : error instanceof SiteConfigError ? 422 : 500;
+    throw error;
+  } finally {
+    await audit(env, actor, {
+      action: actionOf(method, parts),
+      siteId: parts[0] === "sites" && parts[1] ? parts[1] : (paymentSite ?? createdSiteId),
+      target: note.target ?? (parts[0] === "payments" || parts[0] === "customers" ? (parts[1] ?? null) : null),
+      status,
+    });
+  }
+}
+
+/** Routes for authenticated operators (Authentik `operator` group) and scripts. */
+interface AuditNote {
+  target: string | null;
+}
+
+async function operatorRoutes(request: Request, env: Env, url: URL, parts: string[], method: string, actor: Actor, note: AuditNote): Promise<Response> {
 
   // PUT /admin/shared/<version>/<path>: upload one shared asset file.
   if (method === "PUT" && parts[0] === "admin" && parts[1] === "shared" && parts.length > 3) {
@@ -116,12 +191,37 @@ async function handle(request: Request, env: Env): Promise<Response> {
   // GET /domains/quota: custom hostnames on the zone vs. the 100 included.
   if (method === "GET" && url.pathname === "/domains/quota") return json(await domainQuota(env));
 
+  // Customers: GET/POST /customers, GET/PATCH /customers/:id
+  if (parts[0] === "customers") {
+    if (parts.length === 1 && method === "GET") return json({ customers: await listCustomers(env.DB) });
+    if (parts.length === 1 && method === "POST") return json({ customer: await createCustomer(env.DB, await readJson(request)) }, 201);
+    if (parts.length === 2 && method === "GET") return json(await customerDetail(env.DB, parts[1]!));
+    if (parts.length === 2 && method === "PATCH") return json({ customer: await updateCustomer(env.DB, parts[1]!, await readJson(request)) });
+    throw new HttpError(404, "없는 경로입니다");
+  }
+
+  // Billing work list and payment history: GET /billing/queue, GET /payments?from=&to=&method=
+  if (method === "GET" && url.pathname === "/billing/queue") return json({ today: today(), graceDays: GRACE_DAYS, sites: await billingQueue(env.DB) });
+  if (parts[0] === "payments") {
+    if (parts.length === 1 && method === "GET") {
+      const filter = { from: url.searchParams.get("from"), to: url.searchParams.get("to"), method: url.searchParams.get("method") };
+      return json(await listPayments(env.DB, filter));
+    }
+    // PATCH /payments/:id {periodStart, periodEnd, payerName, invoiceIssuedOn, memo, amount}; POST /payments/:id/void {reason}
+    if (parts.length === 2 && method === "PATCH") return json({ payment: await updatePayment(env, parts[1]!, await readJson(request)) });
+    if (parts.length === 3 && parts[2] === "void" && method === "POST") {
+      const body = await readJson<{ reason?: unknown }>(request);
+      return json({ payment: await voidPayment(env, parts[1]!, body.reason) });
+    }
+    throw new HttpError(404, "없는 경로입니다");
+  }
+
   if (parts[0] !== "sites") throw new HttpError(404, "없는 경로입니다");
 
   // POST /sites {config, createdBy}
   if (method === "POST" && parts.length === 1) {
-    const body = await readJson<{ config?: unknown; starter?: Record<string, unknown>; createdBy?: CreatedBy }>(request);
-    return json(await createSiteFromInput(env, configFromBody(body), creator(body.createdBy)), 201);
+    const body = await readJson<{ config?: unknown; starter?: Record<string, unknown>; createdBy?: CreatedBy; customerId?: unknown }>(request);
+    return json(await createSiteFromInput(env, configFromBody(body), creator(body.createdBy), body.customerId, actorName(actor)), 201);
   }
 
   // GET /sites: every site with its published version number and primary hostname.
@@ -134,16 +234,59 @@ async function handle(request: Request, env: Env): Promise<Response> {
 
   if (method === "GET" && parts.length === 2) {
     const versions = (await listVersions(env.DB, site.id)) as { preview_token: string }[];
-    return json({ site, versions: versions.map((v) => ({ ...v, preview_url: previewUrl(env, v.preview_token) })) });
+    const purgeAfter = site.cancelled_at ? new Date(Date.parse(site.cancelled_at) + retentionDays(env) * 86_400_000).toISOString() : null;
+    const { preview_token: _token, preview_expires_at: _expires, ...rest } = site;
+    // Starter copy still to write in the latest draft: the console warns before it goes to the owner.
+    const latest = await env.DB.prepare("SELECT config FROM site_versions WHERE site_id = ? ORDER BY number DESC LIMIT 1").bind(site.id).first<{ config: string }>();
+    const draftTodos = latest ? latest.config.split(STARTER_TODO).length - 1 : 0;
+    return json({
+      site: { ...rest, business_name: await businessName(env.DB, site), purge_after: purgeAfter, draft_link: draftLink(env, site), draft_todos: draftTodos },
+      versions: versions.map((v) => ({ ...v, preview_url: previewUrl(env, v.preview_token) })),
+    });
   }
 
-  // PATCH /sites/:id {notifyEmail}: operational settings outside the versioned config.
+  // PATCH /sites/:id {notifyEmail, customerId}: operational settings outside the versioned config.
   if (method === "PATCH" && parts.length === 2) {
-    const body = await readJson<{ notifyEmail?: unknown }>(request);
+    const body = await readJson<{ notifyEmail?: unknown; customerId?: unknown }>(request);
     if ("notifyEmail" in body) {
       await env.DB.prepare("UPDATE sites SET notify_email = ? WHERE id = ?").bind(requireEmail(body.notifyEmail), site.id).run();
     }
+    if ("customerId" in body) await linkSite(env.DB, site.id, body.customerId);
     return json({ site: await getSite(env.DB, site.id) });
+  }
+
+  // GET /sites/:id/audit: recent changes to this site and who made them.
+  if (method === "GET" && parts.length === 3 && parts[2] === "audit") {
+    const { results } = await env.DB.prepare(
+      "SELECT actor_type, actor_name, via, action, target, status, created_at FROM audit_log WHERE site_id = ? ORDER BY created_at DESC LIMIT 50",
+    )
+      .bind(site.id)
+      .all();
+    return json({ entries: results });
+  }
+
+  // Customer draft link: POST issues (or reissues: the old link stops), DELETE revokes.
+  if (parts.length === 3 && parts[2] === "draft-link") {
+    if (method === "POST") {
+      note.target = site.preview_token ? "replaced" : "issued";
+      return json({ draftLink: await issueDraftLink(env, site) }, 201);
+    }
+    if (method === "DELETE") {
+      await revokeDraftLink(env, site);
+      return json({ draftLink: null });
+    }
+  }
+
+  // Subscription: GET (with payments), PATCH {cycle, amount}, POST /bill; POST /sites/:id/payments
+  if (parts[2] === "subscription") {
+    if (parts.length === 3 && method === "GET") {
+      return json({ subscription: await subscriptionOf(env.DB, site.id), payments: await sitePayments(env.DB, site.id) });
+    }
+    if (parts.length === 3 && method === "PATCH") return json({ subscription: await updateSubscription(env, site, await readJson(request)) });
+    if (parts.length === 4 && parts[3] === "bill" && method === "POST") return json({ subscription: await billSite(env, site) });
+  }
+  if (method === "POST" && parts.length === 3 && parts[2] === "payments") {
+    return json(await recordPayment(env, site, await readJson(request), actorName(actor)), 201);
   }
 
   // Custom domains: GET list, POST {hostname}, POST /:host/refresh, DELETE /:host
@@ -257,7 +400,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
   // POST /sites/:id/versions {config, createdBy, note}: new draft version
   if (method === "POST" && parts[2] === "versions") {
     const body = await readJson<{ config: unknown; createdBy?: CreatedBy; note?: string }>(request);
-    const result = await addDraft(env, site, body.config, creator(body.createdBy), body.note ?? null);
+    const result = await addDraft(env, site, body.config, creator(body.createdBy), body.note ?? null, actorName(actor));
     return json(result, 201);
   }
 
@@ -277,8 +420,12 @@ async function handle(request: Request, env: Env): Promise<Response> {
   if (method === "POST" && (parts[2] === "suspend" || parts[2] === "resume") && parts.length === 3) {
     if (site.cancelled_at) throw new HttpError(409, "해지된 사이트입니다");
     const status = parts[2] === "suspend" ? "suspended" : "active";
+    // Going public again follows the same rule as publishing: no exceptions before payment.
+    if (status === "active" && site.published_version_id) await requirePublishable(env.DB, site.id);
     await setSiteStatus(env.DB, site.id, status);
     await syncHostRecordsNow(env, site.id);
+    // A payment voided after the check above must still take the site down.
+    if (status === "active") await refreshBilling(env, site.id);
     return json({ siteId: site.id, status });
   }
 
@@ -305,6 +452,12 @@ export default {
         }
         console.log("[domains] maintain", JSON.stringify(await maintainDomains(env)));
         console.log("[blog] refresh", JSON.stringify(await refreshDueBlogs(env)));
+        // Billing moves with the date (KST); hourly is soon enough for a 14-day grace period.
+        if (controller.cron === AUDIT_CRON) {
+          await refreshAllBilling(env)
+            .then((result) => console.log("[billing] refresh", JSON.stringify(result)))
+            .catch((error) => console.error("[billing] refresh failed", error));
+        }
         console.log("[routes] reconcile", JSON.stringify(await reconcileHostRecords(env)));
       })(),
     );

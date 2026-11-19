@@ -2,10 +2,9 @@
 // create → edit (form + JSON) → validate → draft → publish → rollback → photos (browser resize)
 // → domain → inquiries CSV → stats → suspend/resume. No credential ever reaches the browser.
 import { createRequire } from "node:module";
-import { API, ROUTER_PORT, chromium, evidence, routerRequest, uploadShared } from "./lib/verify.mjs";
+import { API, ROUTER_PORT, chromium, evidence, paySite, routerRequest, uploadShared, consoleLogin, CONSOLE } from "./lib/verify.mjs";
 
 const sharp = createRequire(new URL("../packages/renderer/package.json", import.meta.url))("sharp");
-const CONSOLE = process.env.CONSOLE_URL ?? "http://127.0.0.1:8789";
 const ev = evidence("m2-console");
 const { check } = ev;
 const run = Date.now().toString(36);
@@ -16,6 +15,7 @@ uploadShared();
 const browser = await chromium().launch();
 const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, permissions: ["clipboard-read", "clipboard-write"] });
 const page = await context.newPage();
+await consoleLogin(page);
 const errors = [];
 const bodies = [];
 page.on("pageerror", (e) => errors.push(String(e)));
@@ -59,7 +59,8 @@ check("수정 후 검증 통과", fixed, { errors: fixed ? null : await page.get
 await page.getByRole("button", { name: "초안으로 저장" }).click();
 check("초안 저장(v2)", await toast("v2 초안을 저장했습니다"));
 
-// 4. publish and roll back from the version table
+// 4. publish and roll back from the version table (M4: after a payment)
+await paySite(siteId);
 await page.getByTestId("tab-overview").click();
 await page.getByTestId("version-1").getByRole("button", { name: "게시" }).click();
 await toast("v1을 게시했습니다");
@@ -70,7 +71,7 @@ check("콘솔에서 게시한 v2가 공개, 주소 반영", live2.status === 200
 await page.getByTestId("version-1").getByRole("button", { name: "롤백" }).click();
 await toast("v1로 되돌렸습니다");
 check("콘솔 롤백 → v1 공개", (await routerRequest(host, "/")).headers["x-site-version"] === "1");
-const previewHref = await page.getByTestId("version-2").getByRole("link", { name: "프리뷰" }).getAttribute("href");
+const previewHref = await page.getByTestId("version-2").getByRole("link", { name: "내부 미리보기" }).getAttribute("href");
 const preview = await fetch(previewHref.replace(/^https?:\/\/[^/]+/, API));
 check("프리뷰 링크는 api 절대 URL이고 열림", previewHref.startsWith("http") && preview.status === 200);
 await shot("overview");
@@ -88,7 +89,7 @@ await page.getByTestId("tab-domains").click();
 await page.locator("input[name=hostname]").fill(`www.console-${run}.co.kr`);
 await page.getByRole("button", { name: "연결" }).click();
 const domainCard = page.getByTestId(`domain-www.console-${run}.co.kr`);
-check("도메인 등록과 CNAME 안내 표시", (await domainCard.textContent({ timeout: 10000 })).includes("fallback.dsites.kr"));
+check("도메인 등록과 CNAME 안내 표시", (await domainCard.textContent({ timeout: 10000 })).includes("connect.dsites.kr"));
 await domainCard.getByRole("button", { name: "삭제" }).click();
 check("도메인 삭제", await domainCard.waitFor({ state: "detached", timeout: 10000 }).then(() => true).catch(() => false));
 
@@ -103,6 +104,7 @@ check("통계 카드(전환 + 7종)", (await page.locator('[data-testid^="metric
 // 8. suspend / resume
 await page.getByTestId("tab-overview").click();
 await page.getByRole("button", { name: "공개 정지" }).click();
+await page.getByRole("dialog").getByRole("button", { name: "정지" }).click();
 await toast("공개를 정지했습니다");
 check("콘솔 공개 정지 → 503", (await routerRequest(host, "/")).status === 503);
 await page.getByRole("button", { name: "공개 재개" }).click();

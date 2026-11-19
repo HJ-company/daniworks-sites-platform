@@ -1,0 +1,106 @@
+{
+  "at": "2026-11-18T16:43:08.882Z",
+  "id": "2oaJvTBPplCqu2Rvm00021WmJ",
+  "rows": [
+    {
+      "city": "Chuncheon",
+      "asn": 31898,
+      "net": "Oracle",
+      "colo": "ICN",
+      "status": 200,
+      "ttfb": 662,
+      "total": 704,
+      "tls": 14
+    },
+    {
+      "city": "Seoul",
+      "asn": 4766,
+      "net": "Korea Telecom",
+      "colo": "CMH",
+      "status": 200,
+      "ttfb": 983,
+      "total": 1399,
+      "tls": 213
+    },
+    {
+      "city": "Seoul",
+      "asn": 31898,
+      "net": "Oracle",
+      "colo": "ICN",
+      "status": 200,
+      "ttfb": 672,
+      "total": 731,
+      "tls": 23
+    },
+    {
+      "city": "Seoul",
+      "asn": 63473,
+      "net": "HostHatch",
+      "colo": "ICN",
+      "status": 200,
+      "ttfb": 683,
+      "total": 705,
+      "tls": 14
+    },
+    {
+      "city": "Seoul",
+      "asn": 155029,
+      "net": "HostHatch Korea",
+      "colo": "ICN",
+      "status": 200,
+      "ttfb": 628,
+      "total": 723,
+      "tls": 13
+    },
+    {
+      "city": "Seoul",
+      "asn": 20473,
+      "net": "The Constant Company",
+      "colo": "ICN",
+      "status": 200,
+      "ttfb": 657,
+      "total": 704,
+      "tls": 22
+    },
+    {
+      "city": "Seoul",
+      "asn": 8075,
+      "net": "Microsoft",
+      "colo": "ICN",
+      "status": 200,
+      "ttfb": 677,
+      "total": 704,
+      "tls": 11
+    },
+    {
+      "city": "Gwacheon",
+      "asn": 9318,
+      "net": "SK Broadband Co",
+      "colo": "HKG",
+      "status": 200,
+      "ttfb": 1031,
+      "total": 1142,
+      "tls": 54
+    },
+    {
+      "city": "Cheonan",
+      "asn": 4766,
+      "net": "Korea Telecom",
+      "colo": "CMH",
+      "status": 200,
+      "ttfb": 1146,
+      "total": 1598,
+      "tls": 209
+    },
+    {
+      "city": "Suwon",
+      "asn": 17858,
+      "net": "LG POWERCOMM",
+      "colo": "NRT",
+      "status": 200,
+      "ttfb": 190,
+      "total": 291,
+      "tls": 50
+    }
+  ]
+}

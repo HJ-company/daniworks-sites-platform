@@ -88,6 +88,9 @@ check("인증 없는 요청은 401", (await api("POST", "/sites", { config: conf
 const created = await api("POST", "/sites", { config: config("M1 v1"), createdBy: "ai" });
 check("사이트 생성 201", created.status === 201, { hostname: created.data.hostname });
 const siteId = created.data.siteId;
+// M4: nothing is published before a payment.
+check("입금 전 게시는 409", (await api("POST", `/sites/${siteId}/publish`)).status === 409);
+await api("POST", `/sites/${siteId}/payments`, { payerName: "검증" });
 const v1 = created.data.versionId;
 
 // 3. preview before publish

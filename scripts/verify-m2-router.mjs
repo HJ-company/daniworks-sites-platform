@@ -4,7 +4,7 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { API, api, evidence, localD1, localKv, routerRequest, uploadShared } from "./lib/verify.mjs";
+import { API, api, evidence, localD1, localKv, routerRequest, uploadShared, paySite } from "./lib/verify.mjs";
 
 const { fieldFixture } = await import("../packages/renderer/src/templates/service-local/fixtures.ts");
 const ev = evidence("m2-router");
@@ -16,6 +16,7 @@ const config = { ...structuredClone(fieldFixture), slug: `router-${run}` };
 const host = `${config.slug}.localhost`;
 const created = await api("POST", "/sites", { config, createdBy: "operator" });
 const siteId = created.data.siteId;
+await paySite(siteId);
 
 const before = JSON.parse(localKv("get", `host:${host}`));
 check("생성 직후 호스트 레코드: 상태 active, 포인터 없음", before.siteId === siteId && before.status === "active" && before.pointer === null, before);

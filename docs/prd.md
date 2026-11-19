@@ -104,7 +104,7 @@ policy: https://app.notion.com/p/41cecd5a3ac28107820effaeb6cb4fc8
 | `<slug>.dsites.kr` | 공개 사이트 기본 주소 |
 | `dsites.kr/preview/{token}` | 고객용 시안 링크 |
 | `api.dsites.kr` | 플랫폼 API, MCP(`/mcp`), 버전 프리뷰, Turnstile 프레임 |
-| fallback origin(`*.dsites.kr` 하위) | 커스텀 도메인 CNAME 대상 |
+| `connect.dsites.kr` | 커스텀 도메인 CNAME 대상(for SaaS fallback origin) |
 | `dsites-console.daniworks.kr` | 관리자 콘솔 |
 | `authentik.daniworks.kr` | 운영자 로그인(OIDC·OAuth) |
 
@@ -132,7 +132,7 @@ policy: https://app.notion.com/p/41cecd5a3ac28107820effaeb6cb4fc8
 
 - 다니웍스 운영자 전용. Vite + React CSR + MUI. 화면과 정책은 [관리자 콘솔](admin-console.md).
 - 역할: 검수, 게시·롤백, 입금 확인, 연체·해지, 도메인, 문의·통계·리포트, 전체 재게시. 사이트 제작과 콘텐츠 작성은 MCP가 맡고, 콘솔에서는 급한 오타 수정만 한다.
-- 인증: Authentik OIDC(Authorization Code + PKCE). 콘솔 Worker가 세션을 들고 Authentik 액세스 토큰을 API에 넘기며, API가 JWKS로 검증해 운영자 ID를 감사 기록에 남긴다. 스크립트는 고정 토큰(`ADMIN_TOKEN`)을 쓴다.
+- 인증: Authentik OIDC(Authorization Code + PKCE). 콘솔 Worker가 세션(암호화 쿠키)을 들고 Authentik 액세스 토큰을 API에 넘기며, API가 JWKS로 검증해 운영자 이름을 작업 기록(`audit_log`)에 남긴다. 스크립트는 고정 토큰(`ADMIN_TOKEN`)을 쓴다. 설정은 [관리자 콘솔 4절](admin-console.md#mcp-인증).
 
 ### 4-9. 고객 콘솔 (보류)
 
@@ -146,12 +146,15 @@ policy: https://app.notion.com/p/41cecd5a3ac28107820effaeb6cb4fc8
 
 ### 4-10. 과금·구독
 
-- 구독 단위는 사이트다. 고객 1명이 사이트 여러 개를 가질 수 있고, 사이트마다 정액으로 청구한다.
+- 구독 단위는 사이트다. 고객 1명이 사이트 여러 개를 가질 수 있고, 사이트마다 정액으로 청구한다. 주기는 월·연, 기본 금액은 월 30,000원·연 360,000원(공급가)이고 사이트마다 바꿀 수 있다.
 - 지금은 수동 입금 확인이다. 수동 확인과 PG 웹훅은 둘 다 `payments` 행을 만들고, 그 결과로 구독 상태가 바뀐다. PG는 셀프서비스 단계에서 붙인다.
-- 구독 상태: 시안 → 입금 대기 → 활성 → 연체 → 중단 → 해지.
-- 연체: 결제일이 지나면 `연체`. 유예 14일 동안 공개를 유지한다. 지나면 공개를 중단(`중단`)하고 호스트네임·데이터는 유지한다. 입금이 확인되면 바로 다시 공개한다(포인터 복구, 재렌더 없음).
+- 입금마다 이용 기간(KST 날짜, 시작·종료 포함)을 기록한다. 기본값은 다음 미납 기간(유예 안에 내면 이어서, 중단 뒤에 내면 입금일부터)이고, 운영자가 기간을 늘리거나 줄이거나 입금을 사유와 함께 취소할 수 있다.
+- 구독 상태는 이용 기간에서 계산한다. 시안(청구 전) → 입금 대기(청구 후, 또는 시작 전인 선납만 있음) → 활성(오늘이 납부 구간 안) → 연체(구간 끝난 뒤 14일, 공개 유지) → 중단(유예 지남) → 해지.
+- 게시·롤백·공개 재개는 활성·연체일 때만 된다. API가 검사하므로 콘솔·MCP 모두 같다. 게시된 사이트의 공개 여부는 입금·기간 수정·취소·게시·재개 뒤와 매시간 결제 상태에 맞춘다.
+- 정지 사유를 구분한다. 미납 중단은 입금이 확인되면 자동으로 다시 공개하고(재렌더 없음), 운영자 정지는 입금과 관계없이 운영자가 풀어야 한다.
 - 중단 중 방문자에게는 업체명만 넣은 "준비 중" 페이지를 503 + `Retry-After`로 보여준다. 연체 사실과 연락처·문의 폼은 드러내지 않는다.
-- 세금계산서는 홈택스에서 발행하고 콘솔에는 발행 여부만 기록한다.
+- 세금계산서는 홈택스에서 발행하고 콘솔에는 발행일만 기록한다.
+- 결제 기록은 회계 자료라 사이트를 완전 삭제해도 남는다(slug·상호를 함께 저장).
 
 ### 4-11. 운영·AI 도구
 
@@ -197,9 +200,9 @@ packages/
 | 테이블 | 주요 필드 |
 | --- | --- |
 | `customers` | id, 업체명, 담당자 연락처, external_ref(외부 리드), 사업자번호, 계산서 메일, 상태 |
-| `subscriptions` | id, site_id, 요금제, 금액, 주기, 상태, 다음 결제일. 사이트당 정액 |
-| `payments` | id, subscription_id, 금액, 수단(manual/pg), 입금자명, 결제일, 확인자, pg_tx_id, 세금계산서 발행일 |
-| `sites` | id, customer_id, slug, 업종 템플릿, 템플릿 버전, published_version_id, 상태, preview_token, preview_expires_at |
+| `subscriptions` | site_id(사이트당 1개), 주기(월·연), 금액, 상태(이용 기간에서 계산해 저장), 청구일, billing_rev(동시 갱신 방지) |
+| `payments` | id, site_id·slug·상호(사이트 삭제 뒤에도 보존), 금액, 수단(manual/pg), 입금자명, 입금일, 이용 기간(시작·종료), 확인자, pg_tx_id, 세금계산서 발행일, 취소일·사유 |
+| `sites` | id, customer_id, slug, 업종 템플릿, 템플릿 버전, published_version_id, 상태, 정지 사유(미납·운영자), preview_token, preview_expires_at |
 | `site_versions` | id, site_id, config(JSON), status, created_by(ai/operator), 참고한 지침 버전, created_at, published_at |
 | `domains` | id, site_id, hostname, cf_hostname_id, 검증 상태, 인증서 상태 |
 | `inquiries` | id, site_id, 항목(JSON), created_at, 알림 결과 |
@@ -267,10 +270,10 @@ packages/
 
 | 단계 | 내용 | 비고 |
 | --- | --- | --- |
-| 4-A 정합화 | 보관 기간 기본값 365일, 중단 페이지(업체명만, 503 + `Retry-After`), CNAME 대상 정리(코드 `fallback.dsites.kr` ↔ 스테이징 `connect.dsites.kr`) | 작은 수정 |
-| 4-B 고객·구독·입금 | `customers` 확장, `subscriptions`·`payments`, 게시 시 구독 검사, 상태 전이, 연체 cron(14일 유예 → 자동 중단, 입금 시 재공개), 콘솔 결제·고객 화면 | 첫 고객 오픈의 전제 |
-| 4-C 시안 링크 | 사이트 단위 토큰(30일), `dsites.kr/preview/{token}` 서빙, 배너·문의 차단·수집 끔·만료 페이지, 콘솔 복사·폐기·재발급, `site_preview_link` | 4-B와 병행 가능 |
-| 4-D Authentik | 콘솔 OIDC(Access 대체, `dsites-console.daniworks.kr`), MCP OAuth(보호 자원 메타데이터, JWKS 검증, 그룹), `audit_log`. 실측 표 완료 | Authentik provider 2개 생성 필요(사용자 작업) |
+| 4-A 정합화 (완료) | 보관 기간 기본값 365일, 중단 페이지(업체명만, 503 + `Retry-After`), CNAME 대상 정리(`connect.dsites.kr`로 통일), 1차 화면 테스트 반영(상호 표시·검색, 도메인 안내문, 쉬운 해지 안내) | |
+| 4-B 고객·구독·입금 (완료) | `customers` 확장, `subscriptions`·`payments`, 게시 시 구독 검사, 상태 전이, 매시간 결제 상태 갱신(14일 유예 → 자동 중단, 입금 시 재공개), 콘솔 결제·고객 화면 | |
+| 4-C 시안 링크 (완료) | 사이트 단위 토큰(30일), `dsites.kr/preview/{token}` 서빙(라우터 → api RPC), 배너·문의 차단·수집 끔·만료 페이지, 콘솔 복사·안내문·막기·새 링크, `site_preview_link`, 편집 탭 첫 화면 문구 폼 | 스테이징은 `dsites.kr` 루트에 DNS 레코드 필요 |
+| 4-D Authentik (로컬 완료) | 콘솔 OIDC(Access 대체, `dsites-console.daniworks.kr`), MCP OAuth(보호 자원 메타데이터, JWKS 검증, 그룹), `audit_log`와 작업 기록 카드. 로컬은 Authentik 목업으로 실측 | 실제 Authentik 애플리케이션 2개 생성과 커넥터 실측은 M5 |
 | 4-E MCP 제작 도구 | `customer_*`, `guide_*`(스키마 문서 자동 생성 포함), `asset_import_url`·`asset_list`·`asset_delete`, `image_generate`, 콘솔 제작 화면을 오타 수정 수준으로 축소 | `OPENAI_IMAGE_MODEL` 결정 필요 |
 
 ## 10. 미결 사항
@@ -284,6 +287,13 @@ packages/
 - 출시 시 스테이징 분리: 지금은 `dsites.kr`을 스테이징으로 같이 쓴다. 별도 존(도메인)이 필요하다
 
 ## 11. 결정 기록
+
+- 2026-11-20: 콘솔·MCP 인증은 Authentik 애플리케이션 2개(각자 issuer)로 하고, API가 issuer·aud로 둘을 구분해 검증한다. 콘솔은 서버(Worker)가 토큰을 쥐는 BFF 방식이고 세션은 상태 없는 암호화 쿠키다(KV를 두지 않음). 로컬 검증은 Authentik 목업으로 한다.
+
+- 2026-11-20: 시안 링크는 라우터가 기본 도메인 루트(`dsites.kr/preview/<token>`)에서 api RPC로 렌더해 준다. 항상 최신 버전, 30일, 새 링크를 만들면 예전 링크는 막힌다. 버전 프리뷰(`api.dsites.kr/preview/`)는 운영자 내부 검수용으로 남긴다. 콘솔 편집은 업체 정보와 첫 화면·검색 문구까지 폼으로 하고, 나머지는 JSON 또는 AI 도구로 한다.
+
+- 2026-11-20: 결제 주기는 월·연, 입금마다 이용 기간을 기록하고 운영자가 기간을 고칠 수 있다. 게시는 활성·연체(유예 중)일 때 허용한다. 결제 기록은 사이트 완전 삭제 뒤에도 남긴다. 미납 중단은 입금으로 자동 해제, 운영자 정지는 수동 해제.
+- 2026-11-20: 도메인 안내의 호스트 칸은 공개 접미사 목록(PSL, `tldts`)으로 계산한다(`seoul.kr`·`co.uk` 같은 다단계 접미사).
 
 - 2026-11-19: 공개 사이트 기본 도메인은 `dsites.kr`로 확정한다. `dsites.daniworks.kr`은 ACM(월 $10)이 필요하고, for SaaS 라우터의 `*/*` 라우트가 daniworks.kr의 다른 호스트와 충돌한다. 관리자 콘솔은 `dsites-console.daniworks.kr`, 시안 링크는 `dsites.kr/preview/{token}`.
 - 2026-11-19: 관리자 콘솔과 MCP 인증은 Authentik으로 한다. M2의 Cloudflare Access는 대체한다.

@@ -1,0 +1,1539 @@
+OpenAI Codex v0.167.0
+--------
+workdir: /Users/steve/Projects/daniworks-sites-platform
+model: gpt-6.1-sol
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: low
+reasoning summaries: none
+session id: 01a1f00a-aa86-7d51-a6ef-175007dbc683
+--------
+user
+current changes
+exec
+/bin/zsh -lc 'pwd; git status --short; find .. -name AGENTS.md -o -name AGENTS.override.md' in /Users/steve/Projects/daniworks-sites-platform
+exec
+/bin/zsh -lc 'pwd; ls -a; for p in /AGENTS.md /Users/AGENTS.md /Users/steve/AGENTS.md /Users/steve/Projects/AGENTS.md; do test ! -f "$p" || cat "$p"; done; find . -name AGENTS.md -o -name AGENTS.override.md; git diff --stat; git diff' in /Users/steve/Projects/daniworks-sites-platform
+ succeeded in 411ms:
+/Users/steve/Projects/daniworks-sites-platform
+.
+..
+.dockerignore
+.git
+.gitignore
+README.md
+apps
+docker
+docker-compose.yml
+docs
+evidence
+node_modules
+package.json
+packages
+pnpm-lock.yaml
+pnpm-workspace.yaml
+scripts
+tsconfig.base.json
+./node_modules/.pnpm/@dani-builder+strapi-client@2.5.0/node_modules/@dani-builder/strapi-client/AGENTS.md
+./node_modules/.pnpm/next@16.4.6_react-dom@19.3.1_react@19.3.1__react@19.3.1/node_modules/next/AGENTS.md
+./node_modules/.pnpm/next@16.4.6_@opentelemetry+api@1.10.0_@types+node@26.6.6_react-dom@19.3.1_react@19.3.1__react@19.3.1/node_modules/next/AGENTS.md
+ apps/api/package.json                              |   8 +-
+ apps/api/src/assets.ts                             |   3 +-
+ apps/api/src/index.ts                              |  41 ++------
+ package.json                                       |   1 +
+ packages/renderer/src/index.ts                     |   1 +
+ .../renderer/src/templates/service-local/guide.ts  |   3 +
+ pnpm-lock.yaml                                     | 109 +++++++++++++++++++++
+ 7 files changed, 131 insertions(+), 35 deletions(-)
+diff --git a/apps/api/package.json b/apps/api/package.json
+index d272c1e..10b8bb5 100644
+--- a/apps/api/package.json
++++ b/apps/api/package.json
+@@ -11,13 +11,15 @@
+   },
+   "dependencies": {
+     "@cf-wasm/photon": "0.4.0",
++    "@modelcontextprotocol/server": "2.4.0",
+     "@sites/renderer": "workspace:*",
+-    "@sites/schema": "workspace:*"
++    "@sites/schema": "workspace:*",
++    "zod": "4.6.7"
+   },
+   "devDependencies": {
+     "@cloudflare/workers-types": "^5.20261118.1",
+     "typescript": "^7.0.2",
+-    "wrangler": "^4.164.0",
+-    "vitest": "^5.1.1"
++    "vitest": "^5.1.1",
++    "wrangler": "^4.164.0"
+   }
+ }
+diff --git a/apps/api/src/assets.ts b/apps/api/src/assets.ts
+index 40e4667..fb0f216 100644
+--- a/apps/api/src/assets.ts
++++ b/apps/api/src/assets.ts
+@@ -4,6 +4,7 @@ import { HttpError } from "./http.js";
+ import { r2MediaKey } from "./keys.js";
+ import { sha256Hex } from "./hash.js";
+ import { MAX_INPUT_BYTES, processPhotoExclusive } from "./media.js";
++import { normalizeNaverImage } from "./remote-image.js";
+ import type { SiteRow } from "./store.js";
+ 
+ export interface AssetResult {
+@@ -55,7 +56,7 @@ async function readUpload(request: Request): Promise<{ bytes: Uint8Array; name:
+     const url = body?.url;
+     if (!url || !/^https:\/\/[^\s]+$/.test(url)) throw new HttpError(400, "url은 https:// 주소여야 합니다");
+     // No Referer: Naver blog images refuse foreign referrers but serve requests without one.
+-    const res = await fetch(url, { redirect: "follow", headers: { accept: "image/*" } });
++    const res = await fetch(normalizeNaverImage(url), { redirect: "follow", headers: { accept: "image/*" } });
+     if (!res.ok) throw new HttpError(422, `사진을 가져오지 못했습니다 (${res.status})`);
+     return { bytes: await readLimited(res.body), name: url };
+   }
+diff --git a/apps/api/src/index.ts b/apps/api/src/index.ts
+index 6f32b26..2f9de3f 100644
+--- a/apps/api/src/index.ts
++++ b/apps/api/src/index.ts
+@@ -1,4 +1,4 @@
+-import { parseSiteConfig, renderSite, SiteConfigError, type SiteConfig } from "@sites/renderer";
++import { renderSite, SiteConfigError, type SiteConfig } from "@sites/renderer";
+ import { listAssets, uploadAsset } from "./assets.js";
+ import { allInquiries, inquiriesCsv, listInquiries, requireEmail } from "./inquiries.js";
+ import { kstDay, metricsReport } from "./metrics.js";
+@@ -6,34 +6,14 @@ import { turnstileFrame } from "./turnstile.js";
+ import type { Env } from "./env.js";
+ import { HttpError, json, readJson, requireAdmin } from "./http.js";
+ import { MEDIA_PATH, r2MediaKey, r2SharedKey } from "./keys.js";
++import { handleMcp } from "./mcp.js";
++import { assetBase, publish, rollback, siteOrigin } from "./publish.js";
+ import { auditHostRecords, reconcileHostRecords, syncHostRecordsNow } from "./routes.js";
++import { addDraft, createSiteFromInput, creator } from "./sites.js";
++import { getSite, listSites, listVersions, setSiteStatus, versionByPreviewToken, type CreatedBy } from "./store.js";
+ 
+ /** Must match wrangler.toml [triggers]: the hourly audit; the 5-minute cron only reconciles. */
+ const AUDIT_CRON = "17 * * * *";
+-import { assetBase, publish, rollback, siteOrigin } from "./publish.js";
+-import {
+-  addVersion,
+-  createSite,
+-  getSite,
+-  listSites,
+-  listVersions,
+-  setSiteStatus,
+-  versionByPreviewToken,
+-  type CreatedBy,
+-} from "./store.js";
+-
+-const CREATORS: CreatedBy[] = ["ai", "operator", "customer"];
+-
+-/** Parsed config with defaults filled; what gets stored. */
+-function validated(input: unknown): SiteConfig {
+-  const result = parseSiteConfig(input);
+-  if (!result.ok) throw new HttpError(422, "설정 검증 실패", result.errors);
+-  return result.config;
+-}
+-
+-function creator(value: unknown): CreatedBy {
+-  return CREATORS.includes(value as CreatedBy) ? (value as CreatedBy) : "operator";
+-}
+ 
+ async function serveImmutable(env: Env, key: string) {
+   const object = await env.SITES.get(key);
+@@ -93,6 +73,9 @@ async function handle(request: Request, env: Env): Promise<Response> {
+ 
+   requireAdmin(request, env.ADMIN_TOKEN);
+ 
++  // MCP tools for AI agents (Streamable HTTP, stateless). Same admin token.
++  if (url.pathname === "/mcp") return handleMcp(request, env);
++
+   // PUT /admin/shared/<version>/<path>: upload one shared asset file.
+   if (method === "PUT" && parts[0] === "admin" && parts[1] === "shared" && parts.length > 3) {
+     const key = r2SharedKey(parts.slice(2).join("/"));
+@@ -107,11 +90,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
+   // POST /sites {config, createdBy}
+   if (method === "POST" && parts.length === 1) {
+     const body = await readJson<{ config: unknown; createdBy?: CreatedBy }>(request);
+-    const config = validated(body.config);
+-    const hostname = `${config.slug}.${env.BASE_DOMAIN}`;
+-    const { siteId, versionId } = await createSite(env.DB, config, creator(body.createdBy), hostname);
+-    await syncHostRecordsNow(env, siteId);
+-    return json({ siteId, versionId, hostname }, 201);
++    return json(await createSiteFromInput(env, body.config, creator(body.createdBy)), 201);
+   }
+ 
+   // GET /sites: every site with its published version number and primary hostname.
+@@ -167,7 +146,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
+   // POST /sites/:id/versions {config, createdBy, note}: new draft version
+   if (method === "POST" && parts[2] === "versions") {
+     const body = await readJson<{ config: unknown; createdBy?: CreatedBy; note?: string }>(request);
+-    const result = await addVersion(env.DB, site, validated(body.config), creator(body.createdBy), body.note ?? null);
++    const result = await addDraft(env, site, body.config, creator(body.createdBy), body.note ?? null);
+     return json(result, 201);
+   }
+ 
+diff --git a/package.json b/package.json
+index 0c35bce..4754a11 100644
+--- a/package.json
++++ b/package.json
+@@ -17,6 +17,7 @@
+     "verify:staging": "node scripts/verify-staging.mjs"
+   },
+   "devDependencies": {
++    "@modelcontextprotocol/client": "2.4.0",
+     "chrome-launcher": "1.2.3",
+     "lighthouse": "13.6.0",
+     "playwright": "1.65.1"
+diff --git a/packages/renderer/src/index.ts b/packages/renderer/src/index.ts
+index 6b29d59..36fe16d 100644
+--- a/packages/renderer/src/index.ts
++++ b/packages/renderer/src/index.ts
+@@ -11,3 +11,4 @@ export { presets } from "./templates/service-local/presets.js";
+ export { lessonFixture, fieldFixture } from "./templates/service-local/fixtures.js";
+ export { serviceLocalGuide } from "./templates/service-local/guide.js";
+ export { VARIANT_WIDTHS, variantUrl, srcSetFor } from "./images.js";
++export { serviceLocalSkeleton } from "./templates/service-local/skeleton.js";
+diff --git a/packages/renderer/src/templates/service-local/guide.ts b/packages/renderer/src/templates/service-local/guide.ts
+index d7dd19d..8dcccde 100644
+--- a/packages/renderer/src/templates/service-local/guide.ts
++++ b/packages/renderer/src/templates/service-local/guide.ts
+@@ -42,6 +42,9 @@ export const serviceLocalGuide = `# service-local 템플릿 작성 지침
+ 
+ - 사진이 없으면 t:<샘플> 키를 임시로 쓰고, 시안 단계에서 고객 사진으로 바꾼다.
+ - 업로드 사진은 asset_upload 결과의 key·width·height를 그대로 넣는다.
++- asset_upload는 사이트가 있어야 쓸 수 있다. 샘플 사진으로 site_create 한 뒤 사진을 올리고 site_update_draft로 바꾼다.
++- 네이버 블로그 RSS의 썸네일 URL(blogthumb.pstatic.net, 365px)은 그대로 넘기면 된다. 원본 크기(약 900px)로 바꿔 받는다.
++- 블로그 사진은 900px 안팎이라 히어로에는 작다. 고객에게 원본을 받을 항목으로 보고한다.
+ - alt는 사진 내용을 설명한다('주방 후드 청소 전후'). 키워드를 나열하지 않는다.
+ 
+ ## 5. 검증
+diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
+index c4e2d7c..05d5a9f 100644
+--- a/pnpm-lock.yaml
++++ b/pnpm-lock.yaml
+@@ -8,6 +8,9 @@ importers:
+ 
+   .:
+     devDependencies:
++      '@modelcontextprotocol/client':
++        specifier: 2.4.0
++        version: 2.4.0
+       chrome-launcher:
+         specifier: 1.2.3
+         version: 1.2.3
+@@ -23,12 +26,18 @@ importers:
+       '@cf-wasm/photon':
+         specifier: 0.4.0
+         version: 0.4.0
++      '@modelcontextprotocol/server':
++        specifier: 2.4.0
++        version: 2.4.0
+       '@sites/renderer':
+         specifier: workspace:*
+         version: link:../../packages/renderer
+       '@sites/schema':
+         specifier: workspace:*
+         version: link:../../packages/schema
++      zod:
++        specifier: 4.6.7
++        version: 4.6.7
+     devDependencies:
+       '@cloudflare/workers-types':
+         specifier: ^5.20261118.1
+@@ -561,6 +570,18 @@ packages:
+   '@jridgewell/trace-mapping@0.3.9':
+     resolution: {integrity: sha512-3Belt6tdc8bPgAtbcmdtNJlirVoTmEb5e2gC94PnkwEW9jI6CAHUeoG85tjWP5WquqfavoMtMwiG4P926ZKKuQ==}
+ 
++  '@modelcontextprotocol/client@2.4.0':
++    resolution: {integrity: sha512-LgrD2OphHuG12vfKFKz6SOnq7bKHQmhGJIAYdD+MZBn2npHEyry6uD8zvktodtl5CQM85MO0anUyD9JwmUmxww==}
++    engines: {node: '>=20'}
++
++  '@modelcontextprotocol/core@2.4.0':
++    resolution: {integrity: sha512-z8QBKqdfXLPzkLQuG4xp8hrVEMm1PZ1IgxMN2sMbJiFiAKOWXnAzogXn2W4aqIBlP1ea6U5yiqVquvUNM1Cj6Q==}
++    engines: {node: '>=20'}
++
++  '@modelcontextprotocol/server@2.4.0':
++    resolution: {integrity: sha512-rgR9yxSaAJ+bcsi/XroT/S2AfPiIWloXAnrdfYSCms9ivVju0ishu/wW0J21Ho6+ZOR1r7RyeRbjiRuF87ix5Q==}
++    engines: {node: '>=20'}
++
+   '@napi-rs/wasm-runtime@1.2.6':
+     resolution: {integrity: sha512-mRyDmEw9/fCDXCGfL1sbgIw/GUK0PVxRW4YwgPN61F3LQ+fSyoBFarJVzgGyhF6kRzEQZ0FejDqm4WLXSeqQmw==}
+     engines: {node: ^20.19.0 || ^22.13.0 || >=23.5.0}
+@@ -1351,6 +1372,10 @@ packages:
+     resolution: {integrity: sha512-ei8Aos7ja0weRpFzJnEA9UHJ/7XQmqglbRwnf2ATjcB9Wq874VKH9kfjjirM6UhU2/E5fFYadylyhFldcqSidQ==}
+     engines: {node: '>=18'}
+ 
++  cross-spawn@7.0.6:
++    resolution: {integrity: sha512-uV2QOWP2nWzsy2aMp8aRibhi9dlzF5Hgh5SHaB9OiTGEyDTiJJyx0uy51QXdyWbtAHNua4XJzUKca3OzKUd3vA==}
++    engines: {node: '>= 8'}
++
+   csp_evaluator@1.1.8:
+     resolution: {integrity: sha512-EwOnfYuNbTytvbMKsLixTrRgnjOa0WZCxGy8A9nnSYAicrdwn+T/epU/yjgymmOxlgKnvH+8wXt+7p/8ak5Feg==}
+ 
+@@ -1456,6 +1481,14 @@ packages:
+   estree-walker@3.0.3:
+     resolution: {integrity: sha512-7RUKfXgSMMkzt6ZuXmqapOurLGPPfgj6l9uRZ7lRGolvk0y2yocc35LdcxKC5PQZdn2DMqioAQ2NoWcrTKmm6g==}
+ 
++  eventsource-parser@3.1.1:
++    resolution: {integrity: sha512-EKN1vKAMcZ8MlYMpaNuxN6R9yakzH6uajHcHVTqWJzvu5pWw9DyhbP35HH8MVBQ+dZjAfDxk+A8NiR9KWaXiyQ==}
++    engines: {node: '>=18.0.0'}
++
++  eventsource@3.0.7:
++    resolution: {integrity: sha512-CRT1WTyuQoD771GW56XEZFQ/ZoSfWid1alKGDYMmkt2yl8UXrVR4pspqWNEcqKvVIzg6PAltWjxcSSPrboA4iA==}
++    engines: {node: '>=18.0.0'}
++
+   expect-type@1.4.0:
+     resolution: {integrity: sha512-KfYbmpRm0VbLjEvVa9yGwCi9GI34xvi7A/HXYWQO65CSD2u3MczUJSuwXKFIxlGsgBQizV9q5J9NHj4VG0n+pA==}
+     engines: {node: '>=12.0.0'}
+@@ -1582,10 +1615,16 @@ packages:
+     resolution: {integrity: sha512-e6rvdUCiQCAuumZslxRJWR/Doq4VpPR82kqclvcS0efgt430SlGIk05vdCN58+VrzgtIcfNODjozVielycD4Sw==}
+     engines: {node: '>=16'}
+ 
++  isexe@2.0.0:
++    resolution: {integrity: sha512-RHxMLp9lnKHGHRng9QFhRCMbYAcVpn69smSGcq3f36xjgVVWThj4qqLbTLlq7Ssj8B+fIQ1EuCEGI2lKsyQeIw==}
++
+   jiti@2.7.0:
+     resolution: {integrity: sha512-AC/7JofJvZGrrneWNaEnJeOLUx+JlGt7tNa0wZiRPT4MY1wmfKjt2+6O2p2uz2+skll8OZZmJMNqeke7kKbNgQ==}
+     hasBin: true
+ 
++  jose@6.2.17:
++    resolution: {integrity: sha512-wOuK9V1yujQFH5S0ZWmLcDZN7+IKh9bUCC2ZPCf2HDlol3WWHy+PPyNjEI75FXRLMp3vDKQcupP59xhVU95hcg==}
++
+   jpeg-js@0.4.4:
+     resolution: {integrity: sha512-WZzeDOEtTOBK4Mdsar0IqEU5sMr3vSV2RqkAIzUEV2BHnUfKGyswWFPFwK5EeDo93K3FohSHbLAjj0s1Wzd+dg==}
+ 
+@@ -1776,6 +1815,10 @@ packages:
+     resolution: {integrity: sha512-ZztsZgaCWmPeKYMdoTT5e0oV/oxD1NeLWNR3kAtr/G707cUPYaaozRlVDHLCGnszHJRszN9mJwmPNpqgwloC0A==}
+     engines: {node: ^20.19.0 || >=22.12.0}
+ 
++  path-key@3.1.1:
++    resolution: {integrity: sha512-ojmeN0qd+y0jszEtoY48r0Peq5dwMEkIlCOu6Q5f41lfkswXuKtYrhgoTpLnyIcHm24Uhqx+5Tqm2InSwLhE6Q==}
++    engines: {node: '>=8'}
++
+   path-scurry@3.0.0:
+     resolution: {integrity: sha512-1pTbQqH1wIwMi/eleQ5leFTTCkzFsPcgXNjwOA8YGGW/W4/kHT3dssE7Z6NH+zuqNLOzOB0uaD61yl7cAcVhgg==}
+     engines: {node: 18 || 20 || >=22}
+@@ -1793,6 +1836,10 @@ packages:
+     resolution: {integrity: sha512-qcJu88Q2IWqJsDD529JKMdwGm/dvInW4HvQnRwiH9JtihJvzGOscDtHE3x1pBKeUOTysQ8kVmLnJ2kJu7yhcGA==}
+     engines: {node: '>=12'}
+ 
++  pkce-challenge@5.0.1:
++    resolution: {integrity: sha512-wQ0b/W4Fr01qtpHlqSqspcj3EhBvimsdh0KlHhH8HRZnMsEa0ea2fTULOXOS9ccQr3om+GcGRk4e+isrZWV8qQ==}
++    engines: {node: '>=16.20.0'}
++
+   playwright-core@1.65.1:
+     resolution: {integrity: sha512-hqPpz7blSMPxWVdoeE1yiBSzXsKiVOd2k+kjCvmUywD2GPO2Dd9HfcWnq9NN0GHbNZDFgZ9JfBFr+X5/BLo0qw==}
+     engines: {node: '>=20'}
+@@ -1876,6 +1923,14 @@ packages:
+       '@types/node':
+         optional: true
+ 
++  shebang-command@2.0.0:
++    resolution: {integrity: sha512-kHxr2zZpYtdmrN1qDjrrX/Z1rR1kG8Dx+gkpK1G4eXmvXswmcE1hTWBWYUzlraYw1/yZp6YuDY77YtvbN0dmDA==}
++    engines: {node: '>=8'}
++
++  shebang-regex@3.0.0:
++    resolution: {integrity: sha512-7++dFhtcx3353uBaq8DDR4NuxBetBzC7ZQOhmTQInHEd6bSrXdiEyzCvG07Z44UYdLShWUyXt5M/yhz8ekcb1A==}
++    engines: {node: '>=8'}
++
+   side-channel-list@1.0.1:
+     resolution: {integrity: sha512-mjn/0bi/oUURjc5Xl7IaWi/OJJJumuoJFQJfDDyO46+hBWsfaVM65TBHq2eoZBhzl9EchxOijpkbRC8SVBQU0w==}
+     engines: {node: '>= 0.4'}
+@@ -2092,6 +2147,11 @@ packages:
+   when-exit@2.1.5:
+     resolution: {integrity: sha512-VGkKJ564kzt6Ms1dbgPP/yuIoQCrsFAnRbptpC5wOEsDaNsbCB2bnfnaA8i/vRs5tjUSEOtIuvl9/MyVsvQZCg==}
+ 
++  which@2.0.2:
++    resolution: {integrity: sha512-BLI3Tl1TW3Pvl70l3yq3Y64i+awpwXqsGBYWkkqMtnbXgrMD+yj7rhW0kuEDxzJaYXGjEW5ogapKNMEKNMjibA==}
++    engines: {node: '>= 8'}
++    hasBin: true
++
+   why-is-node-running@3.2.1:
+     resolution: {integrity: sha512-Tb2FUhB4vUsGQlfSquQLYkApkuPAFQXGFzxWKHHumVz2dK+X1RUm/HnID4+TfIGYJ1kTcwOaCk/buYCEJr6YjQ==}
+     engines: {node: '>=20.11'}
+@@ -2493,6 +2553,25 @@ snapshots:
+       '@jridgewell/resolve-uri': 3.1.3
+       '@jridgewell/sourcemap-codec': 1.6.0
+ 
++  '@modelcontextprotocol/client@2.4.0':
++    dependencies:
++      '@modelcontextprotocol/core': 2.4.0
++      cross-spawn: 7.0.6
++      eventsource: 3.0.7
++      eventsource-parser: 3.1.1
++      jose: 6.2.17
++      pkce-challenge: 5.0.1
++      zod: 4.6.7
++
++  '@modelcontextprotocol/core@2.4.0':
++    dependencies:
++      zod: 4.6.7
++
++  '@modelcontextprotocol/server@2.4.0':
++    dependencies:
++      '@modelcontextprotocol/core': 2.4.0
++      zod: 4.6.7
++
+   '@napi-rs/wasm-runtime@1.2.6(@emnapi/core@2.0.0-beta.2)(@emnapi/runtime@2.0.0-beta.2)':
+     dependencies:
+       '@emnapi/core': 2.0.0-beta.2
+@@ -3049,6 +3128,12 @@ snapshots:
+ 
+   cookie@1.1.1: {}
+ 
++  cross-spawn@7.0.6:
++    dependencies:
++      path-key: 3.1.1
++      shebang-command: 2.0.0
++      which: 2.0.2
++
+   csp_evaluator@1.1.8: {}
+ 
+   csstype@3.2.4: {}
+@@ -3156,6 +3241,12 @@ snapshots:
+     dependencies:
+       '@types/estree': 1.0.10
+ 
++  eventsource-parser@3.1.1: {}
++
++  eventsource@3.0.7:
++    dependencies:
++      eventsource-parser: 3.1.1
++
+   expect-type@1.4.0: {}
+ 
+   fdir@6.5.0(picomatch@4.0.7):
+@@ -3263,8 +3354,12 @@ snapshots:
+     dependencies:
+       is-inside-container: 1.0.0
+ 
++  isexe@2.0.0: {}
++
+   jiti@2.7.0: {}
+ 
++  jose@6.2.17: {}
++
+   jpeg-js@0.4.4: {}
+ 
+   js-library-detector@6.7.0: {}
+@@ -3474,6 +3569,8 @@ snapshots:
+       '@oxc-parser/binding-win32-ia32-msvc': 0.152.0
+       '@oxc-parser/binding-win32-x64-msvc': 0.152.0
+ 
++  path-key@3.1.1: {}
++
+   path-scurry@3.0.0:
+     dependencies:
+       lru-cache: 11.5.3
+@@ -3487,6 +3584,8 @@ snapshots:
+ 
+   picomatch@4.0.7: {}
+ 
++  pkce-challenge@5.0.1: {}
++
+   playwright-core@1.65.1: {}
+ 
+   playwright@1.65.1:
+@@ -3604,6 +3703,12 @@ snapshots:
+       '@img/sharp-win32-x64': 0.35.5
+       '@types/node': 26.6.6
+ 
++  shebang-command@2.0.0:
++    dependencies:
++      shebang-regex: 3.0.0
++
++  shebang-regex@3.0.0: {}
++
+   side-channel-list@1.0.1:
+     dependencies:
+       es-errors: 1.3.0
+@@ -3777,6 +3882,10 @@ snapshots:
+ 
+   when-exit@2.1.5: {}
+ 
++  which@2.0.2:
++    dependencies:
++      isexe: 2.0.0
++
+   why-is-node-running@3.2.1: {}
+ 
+   workerd@1.20261117.1:
+
+exec
+/bin/zsh -lc 'cat /Users/steve/.codex/skills/workers-best-practices/SKILL.md; cat apps/api/src/{mcp,sites,remote-image}.ts; cat packages/renderer/src/templates/service-local/skeleton.ts' in /Users/steve/Projects/daniworks-sites-platform
+ succeeded in 0ms:
+---
+name: workers-best-practices
+description: Cloudflare Workers best practices for production applications. Use when writing, reviewing, or configuring Workers.
+---
+
+Your knowledge of Cloudflare Workers APIs, types, and configuration may be outdated. **Prefer retrieval over pre-training** when writing or reviewing Workers code.
+
+Use the project's installed versions, generated types, and Wrangler compatibility settings as the baseline for existing code. Retrieve relevant Cloudflare documentation to verify API, configuration, runtime behavior, and limit claims.
+
+## References
+
+Read the sections relevant to the task:
+
+| Reference | When to use it |
+|-----------|----------------|
+| [Configuration and observability](references/configuration.md) | Compatibility dates, bindings, generated types, secrets, logs, and traces |
+| [Runtime patterns](references/runtime-patterns.md) | Streaming, promise lifetime, request state, service calls, security, and runtime tests |
+| [Platform API checks](references/platform-apis.md) | Handler signatures, platform classes, binding access, and serialization |
+
+For missing evidence, consult [Workers best practices](https://developers.cloudflare.com/workers/best-practices/workers-best-practices/index.md) or find the affected product in the [Cloudflare docs directory](https://developers.cloudflare.com/directory/index.md). Use the installed Wrangler schema for config fields. A newer type package does not supersede the project's configured target.
+
+## Keep Compatibility Dates Current
+
+Use today's date for new Workers. Encourage periodic updates for existing Workers, reviewing compatibility changes and running relevant tests. Assess existing behavior against its configured date and flags; see [compatibility guidance](references/configuration.md#keep-compatibility_date-current).
+
+## Enable Observability
+
+Enable [Workers Logs](https://developers.cloudflare.com/workers/observability/logs/workers-logs/index.md) and [Traces](https://developers.cloudflare.com/workers/observability/traces/index.md) when creating or preparing a Worker for production. Set `observability.enabled` and `observability.traces.enabled` to `true`; the top-level setting alone does not enable traces. Use structured JSON logging and configure sampling for the workload. During reviews, flag missing logs or traces. See the [configuration example](references/configuration.md#enable-workers-logs-and-traces).
+
+## Anti-Patterns to Flag
+
+| Anti-pattern | Consequence and preferred pattern |
+|-------------|-----------------------------------|
+| `await response.text()` or similar buffering on unbounded data | Can exhaust Worker memory; [stream large or unbounded bodies](references/runtime-patterns.md#stream-request-and-response-bodies). |
+| Hardcoded secrets in source or config | Leaks credentials through version control; use Wrangler secrets. |
+| `Math.random()` for security-sensitive tokens or IDs | Predictable values; use `crypto.randomUUID()` or `crypto.getRandomValues()`. |
+| Async work started without awaiting, returning, or attaching it to `ctx.waitUntil()` | Work can be dropped and errors missed; tie it to the request or background-work lifetime. |
+| Module-level mutable request state | Leaks data across requests and can cause I/O ownership errors; pass request state explicitly. |
+| Cloudflare REST API calls for operations available through Worker bindings | Adds network and authentication overhead; use the available binding. |
+| `ctx.passThroughOnException()` used as general error handling | Can conceal Worker failures by forwarding to the origin; use explicit error handling and structured error responses. |
+| Hand-written `Env` that duplicates Wrangler bindings | Can drift from configuration; generate binding types with `wrangler types`. |
+| Direct string comparison of secret values | Can expose timing differences; use the [Web Crypto comparison pattern](references/runtime-patterns.md#use-web-crypto-for-secure-token-generation). |
+| Destructuring `ctx` methods, such as `const { waitUntil } = ctx` | Loses the receiver; call `ctx.waitUntil(...)`. |
+| `any` on `Env` or handler parameters | Hides binding and handler contract errors; use the project's generated and platform types. |
+| `as unknown as T` to force a platform type match | Hides incompatibilities; fix the underlying contract. |
+| `implements` used in place of extending a platform base class | Does not inherit runtime behavior, `this.ctx`, or `this.env`; use the appropriate base class. |
+| Unbound `env.X` in a platform class method | Bindings are available through `this.env.X`; see [binding access patterns](references/platform-apis.md#binding-access--the-most-common-error). |
+| Applying one serialization rule across Queues, Workflow steps, storage, and WebSockets | Can reject valid payloads or accept unsupported ones; check the [specific API and encoding](references/platform-apis.md#serialization-boundaries). |
+
+## Validation
+
+Use the project's existing checks for affected Workers behavior: type-check binding or handler contract changes, and run relevant runtime tests for behavior changes. Preserve required repository checks; a narrow edit does not require a full Workers audit.
+
+## Scope
+
+This skill covers Workers-specific best practices and code review. For related topics:
+
+- **Durable Objects**: load the `durable-objects` skill
+- **Workflows**: see [Rules of Workflows](https://developers.cloudflare.com/workflows/build/rules-of-workflows/index.md)
+- **Wrangler CLI commands**: load the `wrangler` skill
+import { createMcpHandler, McpServer } from "@modelcontextprotocol/server";
+import {
+  parseSiteConfig,
+  presets,
+  SAMPLE_PHOTOS,
+  SiteConfigError,
+  serviceLocalGuide,
+  serviceLocalSkeleton,
+} from "@sites/renderer";
+import { z } from "zod";
+import { uploadAsset } from "./assets.js";
+import type { Env } from "./env.js";
+import { HttpError } from "./http.js";
+import { publish, rollback } from "./publish.js";
+import { addDraft, createSiteFromInput, findSite, previewUrl } from "./sites.js";
+import { listVersions } from "./store.js";
+
+type ToolResult = { content: { type: "text"; text: string }[]; structuredContent?: Record<string, unknown>; isError?: boolean };
+
+const ok = (value: Record<string, unknown>): ToolResult => ({
+  content: [{ type: "text", text: JSON.stringify(value, null, 2) }],
+  structuredContent: value,
+});
+
+/** API errors become tool errors the agent can act on (validation details keep their paths). */
+async function run(fn: () => Promise<Record<string, unknown>>): Promise<ToolResult> {
+  try {
+    return ok(await fn());
+  } catch (error) {
+    if (error instanceof HttpError || error instanceof SiteConfigError) {
+      const details = error instanceof HttpError ? error.details : error.errors;
+      return {
+        content: [{ type: "text", text: JSON.stringify({ error: error.message, details }, null, 2) }],
+        isError: true,
+      };
+    }
+    throw error;
+  }
+}
+
+const configSchema = z
+  .record(z.string(), z.unknown())
+  .describe("사이트 설정(version 2, service-local). 형식과 작성 지침은 template_get으로 먼저 확인한다.");
+const siteRef = z.string().min(1).describe("사이트 id 또는 slug");
+
+const TEMPLATES = [
+  {
+    id: "service-local",
+    name: "레슨·교육·출장 서비스",
+    presets: Object.entries(presets).map(([id, spec]) => ({ id, label: spec.label, defaultPalette: spec.defaultPalette })),
+  },
+];
+
+function createServer(env: Env) {
+  const server = new McpServer({ name: "dsites", version: "1.0.0" });
+
+  server.registerTool(
+    "template_list",
+    { description: "사용할 수 있는 업종 템플릿과 preset 목록." },
+    async () => ok({ templates: TEMPLATES, palettes: ["pine", "ocean", "clay"] }),
+  );
+
+  server.registerTool(
+    "template_get",
+    {
+      description: "업종 템플릿의 작성 지침, 샘플 사진 키, 설정 뼈대(자리표시자). 사이트를 만들기 전에 읽는다.",
+      inputSchema: z.object({ templateId: z.literal("service-local") }),
+    },
+    async () =>
+      ok({
+        templateId: "service-local",
+        guide: serviceLocalGuide,
+        samplePhotos: SAMPLE_PHOTOS.map((name) => `t:${name}`),
+        // Placeholders only: real fixtures would leak one business's copy into another's site.
+        skeleton: serviceLocalSkeleton,
+      }),
+  );
+
+  server.registerTool(
+    "site_validate",
+    {
+      description: "설정을 저장하지 않고 검증한다. 오류는 경로별로 돌려준다(예: content.services.items).",
+      inputSchema: z.object({ config: configSchema }),
+    },
+    async ({ config }) => {
+      const result = parseSiteConfig(config);
+      return ok(result.ok ? { valid: true, errors: [] } : { valid: false, errors: result.errors });
+    },
+  );
+
+  server.registerTool(
+    "site_create",
+    {
+      description: "새 사이트를 만든다(버전 1, 초안). 공개되지 않으며 프리뷰 URL을 돌려준다.",
+      inputSchema: z.object({ config: configSchema }),
+    },
+    async ({ config }) =>
+      run(async () => {
+        const created = await createSiteFromInput(env, config, "ai");
+        const versions = (await listVersions(env.DB, created.siteId)) as { preview_token: string }[];
+        return { ...created, previewUrl: previewUrl(env, versions[0]!.preview_token) };
+      }),
+  );
+
+  server.registerTool(
+    "site_get",
+    {
+      description: "사이트 상태, 버전 목록과 최신 버전의 설정.",
+      inputSchema: z.object({ site: siteRef }),
+    },
+    async ({ site: ref }) =>
+      run(async () => {
+        const site = await findSite(env, ref);
+        const versions = (await listVersions(env.DB, site.id)) as { id: string; preview_token: string }[];
+        const latest = await env.DB.prepare("SELECT config FROM site_versions WHERE site_id = ? ORDER BY number DESC LIMIT 1")
+          .bind(site.id)
+          .first<{ config: string }>();
+        return {
+          site,
+          versions: versions.map((v) => ({ ...v, previewUrl: previewUrl(env, v.preview_token) })),
+          latestConfig: latest ? JSON.parse(latest.config) : null,
+        };
+      }),
+  );
+
+  server.registerTool(
+    "site_update_draft",
+    {
+      description: "수정한 설정을 새 초안 버전으로 저장한다. 공개 사이트는 바뀌지 않는다. slug는 바꿀 수 없다.",
+      inputSchema: z.object({ site: siteRef, config: configSchema, note: z.string().max(200).optional() }),
+    },
+    async ({ site: ref, config, note }) =>
+      run(async () => {
+        const site = await findSite(env, ref);
+        const draft = await addDraft(env, site, config, "ai", note ?? null);
+        const token = await env.DB.prepare("SELECT preview_token FROM site_versions WHERE id = ?")
+          .bind(draft.versionId)
+          .first<{ preview_token: string }>();
+        return { ...draft, previewUrl: previewUrl(env, token!.preview_token) };
+      }),
+  );
+
+  server.registerTool(
+    "site_preview_url",
+    {
+      description: "버전의 프리뷰 URL(검색엔진 차단). versionId를 생략하면 최신 버전.",
+      inputSchema: z.object({ site: siteRef, versionId: z.string().optional() }),
+    },
+    async ({ site: ref, versionId }) =>
+      run(async () => {
+        const site = await findSite(env, ref);
+        const row = await env.DB.prepare(
+          versionId
+            ? "SELECT id, number, preview_token FROM site_versions WHERE site_id = ? AND id = ?"
+            : "SELECT id, number, preview_token FROM site_versions WHERE site_id = ? ORDER BY number DESC LIMIT 1",
+        )
+          .bind(...(versionId ? [site.id, versionId] : [site.id]))
+          .first<{ id: string; number: number; preview_token: string }>();
+        if (!row) throw new HttpError(404, "버전이 없습니다");
+        return { versionId: row.id, number: row.number, previewUrl: previewUrl(env, row.preview_token) };
+      }),
+  );
+
+  server.registerTool(
+    "site_publish",
+    {
+      description: "버전을 공개한다(생략하면 최신 버전). 운영자 검수를 거친 뒤에만 호출한다. 전 세계 반영까지 약 30초.",
+      inputSchema: z.object({ site: siteRef, versionId: z.string().optional() }),
+    },
+    async ({ site: ref, versionId }) => run(async () => ({ ...(await publish(env, await findSite(env, ref), versionId)) })),
+  );
+
+  server.registerTool(
+    "site_rollback",
+    {
+      description: "예전에 게시했던 버전으로 되돌린다. 다시 렌더하지 않는다.",
+      inputSchema: z.object({ site: siteRef, versionId: z.string() }),
+    },
+    async ({ site: ref, versionId }) => run(async () => ({ ...(await rollback(env, await findSite(env, ref), versionId)) })),
+  );
+
+  server.registerTool(
+    "asset_upload",
+    {
+      description:
+        "사진을 올리고 설정에 넣을 key·width·height를 돌려준다. url(https, 블로그 사진 등) 또는 base64 중 하나. 3MP 이하만 받는다.",
+      inputSchema: z.object({
+        site: siteRef,
+        url: z.string().url().optional(),
+        base64: z.string().max(8_000_000).optional(),
+        contentType: z.enum(["image/jpeg", "image/png", "image/webp"]).optional(),
+      }),
+    },
+    async ({ site: ref, url, base64, contentType }) =>
+      run(async () => {
+        const site = await findSite(env, ref);
+        if (!url === !base64) throw new HttpError(400, "url과 base64 중 하나만 주세요");
+        const request = url
+          ? new Request("https://internal/upload", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ url }),
+            })
+          : new Request("https://internal/upload", {
+              method: "POST",
+              headers: { "content-type": contentType ?? "application/octet-stream" },
+              body: Uint8Array.from(atob(base64!), (c) => c.charCodeAt(0)),
+            });
+        return { ...(await uploadAsset(env, site, request)) };
+      }),
+  );
+
+  return server;
+}
+
+/** `/mcp` endpoint. The caller has passed admin auth; a fresh server serves each request. */
+export function handleMcp(request: Request, env: Env) {
+  return createMcpHandler(() => createServer(env)).fetch(request);
+}
+import { parseSiteConfig, type SiteConfig } from "@sites/renderer";
+import type { Env } from "./env.js";
+import { HttpError } from "./http.js";
+import { syncHostRecordsNow } from "./routes.js";
+import { addVersion, createSite, getSite, type CreatedBy, type SiteRow } from "./store.js";
+
+const CREATORS: CreatedBy[] = ["ai", "operator", "customer"];
+
+/** Parsed config with defaults filled; what gets stored. Throws 422 with every problem. */
+export function validated(input: unknown): SiteConfig {
+  const result = parseSiteConfig(input);
+  if (!result.ok) throw new HttpError(422, "설정 검증 실패", result.errors);
+  return result.config;
+}
+
+export function creator(value: unknown): CreatedBy {
+  return CREATORS.includes(value as CreatedBy) ? (value as CreatedBy) : "operator";
+}
+
+/** New site with version 1 and its `<slug>.<BASE_DOMAIN>` hostname. */
+export async function createSiteFromInput(env: Env, input: unknown, createdBy: CreatedBy) {
+  const config = validated(input);
+  const hostname = `${config.slug}.${env.BASE_DOMAIN}`;
+  const { siteId, versionId } = await createSite(env.DB, config, createdBy, hostname);
+  await syncHostRecordsNow(env, siteId);
+  return { siteId, versionId, hostname };
+}
+
+/** New draft version; nothing goes public until it is published. */
+export async function addDraft(env: Env, site: SiteRow, input: unknown, createdBy: CreatedBy, note: string | null) {
+  return addVersion(env.DB, site, validated(input), createdBy, note);
+}
+
+export function previewUrl(env: Env, previewToken: string) {
+  return `${env.API_ORIGIN ?? ""}/preview/${previewToken}`;
+}
+
+/** Site by id or slug (MCP callers often know only the slug). */
+export async function findSite(env: Env, idOrSlug: string): Promise<SiteRow> {
+  const bySlug = await env.DB.prepare("SELECT id FROM sites WHERE slug = ?").bind(idOrSlug).first<{ id: string }>();
+  return getSite(env.DB, bySlug?.id ?? idOrSlug);
+}
+/**
+ * Naver blog RSS gives `blogthumb.pstatic.net/...?type=s3` thumbnails (365×365). The same path
+ * on `postfiles.pstatic.net` with `type=w966` serves the uploaded size (measured 900×675).
+ */
+export function normalizeNaverImage(url: string): string {
+  const parsed = new URL(url);
+  if (parsed.hostname !== "blogthumb.pstatic.net" && parsed.hostname !== "postfiles.pstatic.net") return url;
+  parsed.hostname = "postfiles.pstatic.net";
+  parsed.searchParams.set("type", "w966");
+  return parsed.toString();
+}
+/**
+ * Shape-only example for AI agents (MCP `template_get`). Every text is a placeholder that says
+ * what to write, so no real business's copy can leak into another customer's site.
+ */
+export const serviceLocalSkeleton = {
+  version: 2,
+  slug: "<영문 소문자·숫자·하이픈, 예: haneul-piano>",
+  templateId: "service-local",
+  preset: "<lesson | field>",
+  paletteId: "<pine | ocean | clay>",
+  meta: {
+    title: "<상호 | 지역 + 대표 서비스, 60자 이내>",
+    description: "<지역, 서비스, 강점을 담은 한두 문장, 160자 이내>",
+  },
+  business: {
+    name: "<플레이스 정식 상호>",
+    phone: "<플레이스 전화번호>",
+    kakaoUrl: "<선택: https://pf.kakao.com/... 또는 https://open.kakao.com/...>",
+    bookingUrl: "<선택: 네이버 예약 링크>",
+    address: "<선택: 주소. 출장형은 생략 가능>",
+    mapUrl: "<선택: 지도 공유 링크>",
+    hours: [{ label: "<요일>", value: "<시간 또는 시간·장소>" }],
+    serviceAreas: ["<수업 장소 또는 출장 지역>"],
+    blogUrl: "<선택: https://blog.naver.com/아이디>",
+    representative: "<대표자 이름. 모르면 '확인 필요'>",
+  },
+  content: {
+    hero: {
+      kicker: "<지역 + 업종 한 줄>",
+      heading: "<손님이 얻는 것, \\n 포함 2줄 이내>",
+      subheading: "<근거가 되는 사실 한두 문장>",
+      image: { key: "<asset_upload 결과 m:… 또는 샘플 t:…>", alt: "<사진 내용 설명>", width: 0, height: 0 },
+    },
+    services: {
+      heading: "<서비스·수업 섹션 제목>",
+      items: [{ label: "<서비스 이름>", description: "<무엇을 어떻게, 1~2문장>", icon: "<선택: 허용 아이콘>" }],
+    },
+    process: { heading: "<진행 순서 제목>", items: [{ label: "<단계>", description: "<그 단계에서 하는 일>" }] },
+    gallery: {
+      heading: "<사례·현장 제목>",
+      items: [{ label: "<사례 이름>", description: "<선택: 한 줄 설명>", image: { key: "<m:… 또는 t:…>", alt: "<사진 설명>" } }],
+    },
+    testimonials: { heading: "<후기 제목>", items: [{ quote: "<실제 후기 원문 취지, 지어내지 않음>", authorName: "<익명: 지역 고객 등>" }] },
+    faqs: [{ question: "<손님이 실제로 묻는 질문>", answer: "<짧고 사실인 답>" }],
+    cta: { heading: "<행동을 부르는 한 줄>", subheading: "<선택>" },
+    inquiry: { heading: "<문의 폼 제목>", subheading: "<무엇을 적으면 되는지>" },
+  },
+} as const;
+
+exec
+/bin/zsh -lc 'cat scripts/verify-m2-mcp.mjs; cat apps/api/test/assets.test.ts; cat apps/api/src/{assets,http,env}.ts; cat package.json; cat apps/api/wrangler.toml' in /Users/steve/Projects/daniworks-sites-platform
+ succeeded in 0ms:
+// M2 step 2-7: MCP tools over Streamable HTTP with a real MCP client. An agent's whole loop:
+// read the template → validate → create → upload a photo → draft → preview → publish → rollback.
+import { createRequire } from "node:module";
+import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
+import { API, TOKEN, evidence, routerRequest, uploadShared } from "./lib/verify.mjs";
+
+const sharp = createRequire(new URL("../packages/renderer/package.json", import.meta.url))("sharp");
+const ev = evidence("m2-mcp");
+const { check } = ev;
+const run = Date.now().toString(36);
+
+async function connect(token = TOKEN) {
+  const client = new Client({ name: "verify-m2-mcp", version: "1.0.0" });
+  const transport = new StreamableHTTPClientTransport(new URL(`${API}/mcp`), {
+    requestInit: { headers: { authorization: `Bearer ${token}` } },
+  });
+  await client.connect(transport);
+  return client;
+}
+const call = async (client, name, args = {}) => {
+  const result = await client.callTool({ name, arguments: args });
+  const text = result.content?.[0]?.text ?? "{}";
+  return { isError: Boolean(result.isError), data: result.structuredContent ?? JSON.parse(text) };
+};
+
+uploadShared();
+
+// 1. auth
+const anon = await fetch(`${API}/mcp`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+check("토큰 없는 MCP 요청은 401", anon.status === 401);
+
+const client = await connect();
+const { tools } = await client.listTools();
+const names = tools.map((t) => t.name).sort();
+const expected = [
+  "asset_upload", "site_create", "site_get", "site_preview_url", "site_publish",
+  "site_rollback", "site_update_draft", "site_validate", "template_get", "template_list",
+].sort();
+check("도구 10종 노출", JSON.stringify(names) === JSON.stringify(expected), { names });
+
+// 2. template
+const list = await call(client, "template_list");
+check("template_list: service-local과 preset 2종", list.data.templates?.[0]?.presets?.length === 2);
+const template = await call(client, "template_get", { templateId: "service-local" });
+check(
+  "template_get: 지침, 샘플 사진, 자리표시자 뼈대(실제 업체 문구 없음)",
+  template.data.guide?.includes("작성 지침") && template.data.samplePhotos?.length > 5 && template.data.skeleton?.version === 2 &&
+    !JSON.stringify(template.data).includes("제페스") && !JSON.stringify(template.data).includes("상쾌공간"),
+);
+
+// 3. validate (an agent's mistakes come back with paths)
+const { fieldFixture } = await import("../packages/renderer/src/templates/service-local/fixtures.ts");
+const draft = structuredClone(fieldFixture);
+draft.slug = `mcp-${run}`;
+const bad = structuredClone(draft);
+bad.business.phone = "02-12";
+delete bad.content.hero;
+const invalid = await call(client, "site_validate", { config: bad });
+check("site_validate: 경로별 오류", invalid.data.valid === false && invalid.data.errors.some((e) => e.startsWith("business.phone")) && invalid.data.errors.some((e) => e.startsWith("content.hero")), invalid.data);
+check("site_validate: 올바른 설정은 valid", (await call(client, "site_validate", { config: draft })).data.valid === true);
+const createBad = await call(client, "site_create", { config: bad });
+check("site_create: 잘못된 설정은 도구 오류(isError)와 세부 경로", createBad.isError && JSON.stringify(createBad.data.details).includes("business.phone"));
+
+// 4. create → preview
+const created = await call(client, "site_create", { config: draft });
+check("site_create: 사이트와 프리뷰 URL", !created.isError && created.data.siteId && created.data.previewUrl?.includes("/preview/"), created.data);
+const preview = await fetch(created.data.previewUrl.replace(/^https?:\/\/[^/]+/, API));
+check("프리뷰 URL 열림", preview.status === 200);
+
+// 5. photo upload (base64) and a draft that uses it
+const photo = await sharp({ create: { width: 1200, height: 800, channels: 3, background: "#3a7" } }).jpeg().toBuffer();
+const uploaded = await call(client, "asset_upload", { site: draft.slug, base64: photo.toString("base64"), contentType: "image/jpeg" });
+check("asset_upload(base64): key·크기", !uploaded.isError && uploaded.data.key?.startsWith("m:") && uploaded.data.width === 1200, uploaded.data);
+// Live: a Naver blog RSS thumbnail (365px) is fetched at its uploaded size. Needs internet.
+const thumb = await call(client, "asset_upload", {
+  site: draft.slug,
+  url: "https://blogthumb.pstatic.net/MjAyNjExMTBfMSAg/MDAxNzk0MzE0NzUzMDUx.g2aY3dUpdEtYHp3utLItTwaGUHclau9MLW6eU3a9eSkg.zH2Rab1Buwlc6oGfxlSVn1SknNdVve8ESmA7GFeZYCsg.JPEG/900_1788649132204.jpg?type=s3",
+});
+check("asset_upload(url, 외부): 네이버 RSS 썸네일을 원본 크기(900px)로", !thumb.isError && thumb.data.width === 900, thumb.data);
+const both = await call(client, "asset_upload", { site: draft.slug });
+check("asset_upload: url·base64 둘 다 없으면 오류", both.isError);
+const v2 = structuredClone(draft);
+v2.content.hero.image = { key: uploaded.data.key, alt: "현장 사진", width: uploaded.data.width, height: uploaded.data.height };
+v2.content.hero.heading = "MCP로 고친\n두 번째 시안";
+const updated = await call(client, "site_update_draft", { site: draft.slug, config: v2, note: "히어로 사진 교체" });
+check("site_update_draft: 버전 2와 프리뷰", !updated.isError && updated.data.number === 2 && updated.data.previewUrl);
+const slugChange = await call(client, "site_update_draft", { site: draft.slug, config: { ...v2, slug: `${draft.slug}-x` } });
+check("site_update_draft: slug 변경은 도구 오류", slugChange.isError);
+const got = await call(client, "site_get", { site: draft.slug });
+check("site_get(slug): 버전 2개, 최신 설정", got.data.versions?.length === 2 && got.data.latestConfig?.content?.hero?.heading === "MCP로 고친\n두 번째 시안");
+const latestPreview = await call(client, "site_preview_url", { site: draft.slug });
+check("site_preview_url: 최신 버전", latestPreview.data.number === 2);
+
+// 6. publish → live → rollback
+const host = `${draft.slug}.localhost`;
+const pub1 = await call(client, "site_publish", { site: draft.slug, versionId: created.data.versionId });
+const pub2 = await call(client, "site_publish", { site: draft.slug });
+const live = await routerRequest(host, "/");
+check("site_publish: 최신(v2) 공개", !pub2.isError && live.status === 200 && live.headers["x-site-version"] === "2" && live.body.includes(uploaded.data.key.slice(2)));
+const back = await call(client, "site_rollback", { site: draft.slug, versionId: pub1.data.versionId });
+const afterRollback = await routerRequest(host, "/");
+check("site_rollback: v1로", !back.isError && afterRollback.headers["x-site-version"] === "1");
+const missing = await call(client, "site_get", { site: `nobody-${run}` });
+check("없는 사이트는 도구 오류", missing.isError);
+
+await client.close();
+ev.finish({ slug: draft.slug });
+import { describe, expect, it } from "vitest";
+import { normalizeNaverImage } from "../src/remote-image.js";
+
+describe("normalizeNaverImage", () => {
+  it("swaps RSS thumbnails for the uploaded size", () => {
+    expect(normalizeNaverImage("https://blogthumb.pstatic.net/MjAy/a.JPEG/900_1.jpg?type=s3")).toBe(
+      "https://postfiles.pstatic.net/MjAy/a.JPEG/900_1.jpg?type=w966",
+    );
+  });
+  it("leaves other hosts alone", () => {
+    expect(normalizeNaverImage("https://example.com/a.jpg?type=s3")).toBe("https://example.com/a.jpg?type=s3");
+  });
+});
+import { variantUrl } from "@sites/renderer";
+import type { Env } from "./env.js";
+import { HttpError } from "./http.js";
+import { r2MediaKey } from "./keys.js";
+import { sha256Hex } from "./hash.js";
+import { MAX_INPUT_BYTES, processPhotoExclusive } from "./media.js";
+import { normalizeNaverImage } from "./remote-image.js";
+import type { SiteRow } from "./store.js";
+
+export interface AssetResult {
+  /** Use this in config photos: `{ key, alt, width, height }`. */
+  key: string;
+  width: number;
+  height: number;
+  bytes: number;
+  url: string;
+}
+
+/** Reads a body stream, aborting with 413 as soon as it passes the limit (no Content-Length trust). */
+export async function readLimited(stream: ReadableStream<Uint8Array> | null, limit = MAX_INPUT_BYTES): Promise<Uint8Array> {
+  if (!stream) return new Uint8Array();
+  const reader = stream.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > limit) {
+      await reader.cancel();
+      throw new HttpError(413, "사진이 너무 큽니다");
+    }
+    chunks.push(value);
+  }
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return out;
+}
+
+/** Reads the upload body: raw image bytes, or JSON `{ url }` to fetch an https image (MCP, blogs). */
+async function readUpload(request: Request): Promise<{ bytes: Uint8Array; name: string | null }> {
+  const type = request.headers.get("content-type") ?? "";
+  if (type.startsWith("application/json")) {
+    // Only a URL is expected; read at most 4 KB before parsing.
+    const raw = await readLimited(request.body, 4096);
+    let body: { url?: string } | null = null;
+    try {
+      body = JSON.parse(new TextDecoder().decode(raw)) as { url?: string };
+    } catch {
+      throw new HttpError(400, "요청 본문이 JSON이 아닙니다");
+    }
+    const url = body?.url;
+    if (!url || !/^https:\/\/[^\s]+$/.test(url)) throw new HttpError(400, "url은 https:// 주소여야 합니다");
+    // No Referer: Naver blog images refuse foreign referrers but serve requests without one.
+    const res = await fetch(normalizeNaverImage(url), { redirect: "follow", headers: { accept: "image/*" } });
+    if (!res.ok) throw new HttpError(422, `사진을 가져오지 못했습니다 (${res.status})`);
+    return { bytes: await readLimited(res.body), name: url };
+  }
+  return { bytes: await readLimited(request.body), name: request.headers.get("x-file-name") };
+}
+
+/**
+ * Stores an uploaded photo for a site: normalized JPEG plus WebP variants in R2, a row in
+ * `assets`. Content-addressed by the input bytes, so the same upload returns the same key.
+ */
+export async function uploadAsset(env: Env, site: SiteRow, request: Request): Promise<AssetResult> {
+  const { bytes, name } = await readUpload(request);
+  const hash = await sha256Hex(bytes);
+  const file = `${hash}.jpg`;
+  const key = `m:${site.id}/${file}`;
+  const url = `/_media/${site.id}/${file}`;
+
+  const existing = await env.DB.prepare("SELECT width, height, bytes FROM assets WHERE key = ?")
+    .bind(key)
+    .first<{ width: number; height: number; bytes: number }>();
+  if (existing) return { key, url, ...existing };
+
+  const photo = await processPhotoExclusive(bytes);
+  const meta = { httpMetadata: { contentType: "image/jpeg", cacheControl: "public, max-age=31536000, immutable" } };
+  await env.SITES.put(r2MediaKey(site.id, file), photo.main, meta);
+  for (const variant of photo.variants) {
+    await env.SITES.put(r2MediaKey(site.id, variantUrl(file, variant.width)), variant.bytes, {
+      httpMetadata: { contentType: "image/webp", cacheControl: "public, max-age=31536000, immutable" },
+    });
+  }
+  await env.DB.prepare(
+    "INSERT OR IGNORE INTO assets (key, site_id, r2_key, mime, width, height, bytes, original_name, created_at) VALUES (?, ?, ?, 'image/jpeg', ?, ?, ?, ?, ?)",
+  )
+    .bind(key, site.id, r2MediaKey(site.id, file), photo.width, photo.height, photo.main.byteLength, name, new Date().toISOString())
+    .run();
+  return { key, url, width: photo.width, height: photo.height, bytes: photo.main.byteLength };
+}
+
+export async function listAssets(env: Env, site: SiteRow) {
+  const { results } = await env.DB.prepare(
+    "SELECT key, width, height, bytes, original_name, created_at FROM assets WHERE site_id = ? ORDER BY created_at DESC",
+  )
+    .bind(site.id)
+    .all<{ key: string }>();
+  return results.map((row) => ({ ...row, url: `/_media/${row.key.slice(2)}` }));
+}
+export class HttpError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+    readonly details?: unknown,
+  ) {
+    super(message);
+  }
+}
+
+export function json(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body, null, 2), {
+    status,
+    headers: { "content-type": "application/json; charset=utf-8" },
+  });
+}
+
+export async function readJson<T>(request: Request): Promise<T> {
+  try {
+    return (await request.json()) as T;
+  } catch {
+    throw new HttpError(400, "요청 본문이 JSON이 아닙니다");
+  }
+}
+
+const encoder = new TextEncoder();
+// Workers extension; the DOM lib (needed by the renderer's JSX) does not declare it.
+const subtle = crypto.subtle as SubtleCrypto & { timingSafeEqual(a: ArrayBufferView, b: ArrayBufferView): boolean };
+
+/** Bearer token check in constant time. */
+export function requireAdmin(request: Request, token: string | undefined) {
+  if (!token) throw new HttpError(500, "ADMIN_TOKEN이 설정되지 않았습니다");
+  const given = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ?? "";
+  const a = encoder.encode(given);
+  const b = encoder.encode(token);
+  if (a.byteLength !== b.byteLength || !subtle.timingSafeEqual(a, b)) {
+    throw new HttpError(401, "인증이 필요합니다");
+  }
+}
+export interface Env {
+  DB: D1Database;
+  SITES: R2Bucket;
+  ROUTES: KVNamespace;
+  BASE_DOMAIN: string;
+  ADMIN_TOKEN: string;
+  /** `https` in deployed environments, `http` locally. Used for canonical and OG URLs. */
+  PUBLIC_SCHEME?: string;
+  /** Public origin of this API (`https://api.dsites.kr`); hosts the Turnstile frame sites embed. */
+  API_ORIGIN?: string;
+  /** Turnstile widget key (public) and secret. Without a secret the check is skipped. */
+  TURNSTILE_SITE_KEY?: string;
+  TURNSTILE_SECRET?: string;
+  /** `binding` (Cloudflare Email Service), `mailpit` (local inbox) or `off`. */
+  MAIL_MODE?: "binding" | "mailpit" | "off";
+  MAIL_FROM?: string;
+  MAIL_PIT_URL?: string;
+  EMAIL?: SendEmail;
+  /** Pepper for hashing visitor IPs (rate limiting without storing addresses). */
+  HASH_PEPPER?: string;
+}
+{
+  "name": "daniworks-sites-platform",
+  "private": true,
+  "packageManager": "pnpm@10.28.0",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "build": "pnpm --filter @sites/renderer build",
+    "test": "pnpm -r test",
+    "check-types": "pnpm -r check-types",
+    "dev:api": "pnpm --filter api dev",
+    "dev:router": "pnpm --filter router dev",
+    "upload:shared": "node scripts/upload-shared.mjs",
+    "verify:m1": "node scripts/verify-m1.mjs",
+    "deploy:staging": "pnpm build && pnpm --filter api migrate:staging && pnpm --filter api deploy:staging && pnpm --filter router deploy:staging",
+    "verify:staging": "node scripts/verify-staging.mjs"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/client": "2.4.0",
+    "chrome-launcher": "1.2.3",
+    "lighthouse": "13.6.0",
+    "playwright": "1.65.1"
+  }
+}
+# Platform API: site/version CRUD, preview, publish (render → R2 → KV), rollback.
+name = "sites-api"
+main = "src/index.ts"
+# Daniworks account (owns the dsites.kr zone). Local dev ignores it.
+account_id = "358a1b6caabcf91741109efca1ec0547"
+compatibility_date = "2026-11-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Safety net: re-sync router KV records that lag D1 (see src/routes.ts).
+[triggers]
+crons = ["*/5 * * * *", "17 * * * *"]
+
+[vars]
+# Public sites are served at <slug>.<BASE_DOMAIN>. Local dev uses *.localhost.
+BASE_DOMAIN = "localhost"
+PUBLIC_SCHEME = "http"
+API_ORIGIN = "http://127.0.0.1:8788"
+# Cloudflare's always-pass test key; the matching test secret goes in .dev.vars.
+TURNSTILE_SITE_KEY = "1x00000000000000000000AA"
+MAIL_MODE = "mailpit"
+MAIL_FROM = "noreply@dsites.kr"
+# ADMIN_TOKEN comes from .dev.vars locally and a secret in production.
+
+[[d1_databases]]
+binding = "DB"
+database_name = "daniworks-sites"
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "migrations"
+
+[[r2_buckets]]
+binding = "SITES"
+bucket_name = "daniworks-sites"
+
+[[kv_namespaces]]
+binding = "ROUTES"
+id = "00000000000000000000000000000000"
+
+# Staging on the real zone: `pnpm --filter api deploy:staging`. Until launch dsites.kr doubles as staging.
+# Bindings and vars are not inherited by environments, so every one is repeated here.
+[env.staging]
+name = "sites-api-staging"
+workers_dev = false
+preview_urls = false
+# More specific than the router's `*/*`, so it wins for this host.
+routes = [{ pattern = "api.dsites.kr/*", zone_name = "dsites.kr" }]
+
+[env.staging.triggers]
+crons = ["*/5 * * * *", "17 * * * *"]
+
+[env.staging.vars]
+BASE_DOMAIN = "dsites.kr"
+PUBLIC_SCHEME = "https"
+API_ORIGIN = "https://api.dsites.kr"
+# TURNSTILE_SITE_KEY: widget whose hostnames include api.dsites.kr (the frame host).
+# TURNSTILE_SECRET, HASH_PEPPER: `wrangler secret put ... --env staging`
+MAIL_MODE = "binding"
+MAIL_FROM = "noreply@dsites.kr"
+# ADMIN_TOKEN: `wrangler secret put ADMIN_TOKEN --env staging`
+
+# Cloudflare Email Service; dsites.kr must be onboarded for sending (wrangler email sending enable).
+[[env.staging.send_email]]
+name = "EMAIL"
+
+[[env.staging.d1_databases]]
+binding = "DB"
+database_name = "daniworks-sites-staging"
+database_id = "fc09d755-f8b2-43e1-9bcf-55a00786d15a"
+migrations_dir = "migrations"
+
+[[env.staging.r2_buckets]]
+binding = "SITES"
+bucket_name = "daniworks-sites-staging"
+
+[[env.staging.kv_namespaces]]
+binding = "ROUTES"
+id = "81f56d8264ab431ab7ca5da79add2496"
+
+exec
+/bin/zsh -lc "pnpm check-types; pnpm test; nl -ba apps/api/src/mcp.ts | tail -25; cat scripts/lib/verify.mjs | head -100; cat apps/api/src/store.ts | grep -A12 'function listVersions'" in /Users/steve/Projects/daniworks-sites-platform
+ succeeded in 2087ms:
+
+> daniworks-sites-platform@ check-types /Users/steve/Projects/daniworks-sites-platform
+> pnpm -r check-types
+
+Scope: 4 of 5 workspace projects
+apps/router check-types$ tsc -p tsconfig.json
+packages/schema check-types$ tsc -p tsconfig.json
+apps/router check-types: Done
+packages/schema check-types: Done
+packages/renderer check-types$ tsc -p tsconfig.json
+packages/renderer check-types: Done
+apps/api check-types$ tsc -p tsconfig.json
+apps/api check-types: Done
+
+> daniworks-sites-platform@ test /Users/steve/Projects/daniworks-sites-platform
+> pnpm -r test
+
+Scope: 4 of 5 workspace projects
+packages/schema test$ vitest run
+packages/schema test:  RUN  v5.1.1 /Users/steve/Projects/daniworks-sites-platform/packages/schema
+packages/schema test:  Test Files  1 passed (1)
+packages/schema test:       Tests  22 passed (22)
+packages/schema test:    Start at  04:03:45
+packages/schema test:    Duration  155ms (import 49%, transform 40%, tests 6%, worker 4%)
+packages/schema test: Done
+packages/renderer test$ vitest run
+packages/renderer test:  RUN  v5.1.1 /Users/steve/Projects/daniworks-sites-platform/packages/renderer
+packages/renderer test:  Test Files  3 passed (3)
+packages/renderer test:       Tests  28 passed (28)
+packages/renderer test:    Start at  04:03:46
+packages/renderer test:    Duration  303ms (import 44%, transform 30%, tests 24%, worker 1%)
+packages/renderer test: Done
+apps/api test$ vitest run
+apps/api test:  RUN  v5.1.1 /Users/steve/Projects/daniworks-sites-platform/apps/api
+apps/api test:  Test Files  4 passed (4)
+apps/api test:       Tests  52 passed (52)
+apps/api test:    Start at  04:03:46
+apps/api test:    Duration  184ms (import 65%, tests 19%, transform 12%, worker 3%)
+apps/api test: Done
+   195	      run(async () => {
+   196	        const site = await findSite(env, ref);
+   197	        if (!url === !base64) throw new HttpError(400, "url과 base64 중 하나만 주세요");
+   198	        const request = url
+   199	          ? new Request("https://internal/upload", {
+   200	              method: "POST",
+   201	              headers: { "content-type": "application/json" },
+   202	              body: JSON.stringify({ url }),
+   203	            })
+   204	          : new Request("https://internal/upload", {
+   205	              method: "POST",
+   206	              headers: { "content-type": contentType ?? "application/octet-stream" },
+   207	              body: Uint8Array.from(atob(base64!), (c) => c.charCodeAt(0)),
+   208	            });
+   209	        return { ...(await uploadAsset(env, site, request)) };
+   210	      }),
+   211	  );
+   212	
+   213	  return server;
+   214	}
+   215	
+   216	/** `/mcp` endpoint. The caller has passed admin auth; a fresh server serves each request. */
+   217	export function handleMcp(request: Request, env: Env) {
+   218	  return createMcpHandler(() => createServer(env)).fetch(request);
+   219	}
+// Shared helpers for scripts/verify-*.mjs. Runs on a dev machine or in the Docker `verify` service.
+import { execFileSync } from "node:child_process";
+import { mkdirSync, writeFileSync } from "node:fs";
+import http from "node:http";
+import { createRequire } from "node:module";
+
+const require = createRequire(import.meta.url);
+
+export const API = process.env.API_URL ?? "http://127.0.0.1:8788";
+export const ROUTER_PORT = process.env.ROUTER_PORT ?? "8787";
+export const TOKEN = process.env.ADMIN_TOKEN ?? "dev-admin-token";
+
+export function evidence(step) {
+  const dir = `evidence/${step}`;
+  mkdirSync(dir, { recursive: true });
+  const results = [];
+  return {
+    dir,
+    results,
+    check(name, pass, detail = {}) {
+      results.push({ name, pass: Boolean(pass), ...detail });
+      console.log(`${pass ? "PASS" : "FAIL"} ${name}${Object.keys(detail).length ? " " + JSON.stringify(detail) : ""}`);
+      return Boolean(pass);
+    },
+    finish(extra = {}) {
+      writeFileSync(`${dir}/results.json`, JSON.stringify({ ...extra, results }, null, 2));
+      const failed = results.filter((r) => !r.pass).length;
+      console.log(`\n${results.length - failed}/${results.length} passed`);
+      process.exit(failed ? 1 : 0);
+    },
+  };
+}
+
+export async function api(method, path, body, { auth = true, headers = {} } = {}) {
+  const res = await fetch(`${API}${path}`, {
+    method,
+    headers: { ...(auth ? { authorization: `Bearer ${TOKEN}` } : {}), "content-type": "application/json", ...headers },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const text = await res.text();
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    data = text;
+  }
+  return { status: res.status, data, headers: res.headers, text };
+}
+
+/** Request to the router with a Host header (Node cannot resolve *.localhost). */
+export function routerRequest(host, path = "/", { method = "GET", body, headers = {} } = {}) {
+  return new Promise((resolve, reject) => {
+    const req = http.request(
+      { host: "127.0.0.1", port: ROUTER_PORT, path, method, headers: { host: `${host}:${ROUTER_PORT}`, ...headers } },
+      (res) => {
+        let text = "";
+        res.setEncoding("utf8");
+        res.on("data", (c) => (text += c));
+        res.on("end", () => resolve({ status: res.statusCode, headers: res.headers, body: text }));
+      },
+    );
+    req.on("error", reject);
+    if (body !== undefined) req.write(typeof body === "string" ? body : JSON.stringify(body));
+    req.end();
+  });
+}
+
+export function uploadShared() {
+  execFileSync("node", ["scripts/upload-shared.mjs"], {
+    stdio: "inherit",
+    env: { ...process.env, API_URL: API, ADMIN_TOKEN: TOKEN },
+  });
+}
+
+export function chromium() {
+  return require("playwright").chromium;
+}
+
+export const viewports = { mobile: { width: 390, height: 844 }, desktop: { width: 1280, height: 800 } };
+
+/**
+ * Opens a page, scrolls it to trigger lazy images and reports hydration, console errors,
+ * failed and external requests. `allowExternal` lists URL prefixes that may be requested.
+ */
+export async function inspectPage(browser, url, viewport, { screenshot, allowExternal = [] } = {}) {
+  const page = await browser.newPage({ viewport });
+  const origin = new URL(url).origin;
+  const errors = [];
+  const failed = [];
+  const external = [];
+  page.on("console", (m) => m.type() === "error" && errors.push(m.text()));
+  page.on("pageerror", (e) => errors.push(String(e)));
+  page.on("requestfailed", (r) => failed.push(r.url()));
+  page.on("request", (r) => {
+    const u = r.url();
+    if (!u.startsWith(origin) && !u.startsWith("data:") && !allowExternal.some((p) => u.startsWith(p))) external.push(u);
+  });
+  await page.goto(url, { waitUntil: "networkidle" });
+  await page.evaluate(async () => {
+    for (let y = 0; y < document.body.scrollHeight; y += 400) {
+export async function listVersions(db: D1Database, siteId: string) {
+  const { results } = await db
+    .prepare(
+      "SELECT id, number, created_by, note, preview_token, asset_version, rendered_at, first_published_at, created_at FROM site_versions WHERE site_id = ? ORDER BY number DESC",
+    )
+    .bind(siteId)
+    .all();
+  return results;
+}
+
+export async function createSite(db: D1Database, config: SiteConfig, createdBy: CreatedBy, hostname: string) {
+  const exists = await db.prepare("SELECT id FROM sites WHERE slug = ?").bind(config.slug).first();
+  if (exists) throw new HttpError(409, `이미 쓰는 slug입니다: ${config.slug}`);
+
+exec
+/bin/zsh -lc "nl -ba apps/api/src/mcp.ts | tail -18; cat scripts/lib/verify.mjs | head -65; grep -A10 'function listVersions' apps/api/src/store.ts; git status --short" in /Users/steve/Projects/daniworks-sites-platform
+ succeeded in 0ms:
+   202	              body: JSON.stringify({ url }),
+   203	            })
+   204	          : new Request("https://internal/upload", {
+   205	              method: "POST",
+   206	              headers: { "content-type": contentType ?? "application/octet-stream" },
+   207	              body: Uint8Array.from(atob(base64!), (c) => c.charCodeAt(0)),
+   208	            });
+   209	        return { ...(await uploadAsset(env, site, request)) };
+   210	      }),
+   211	  );
+   212	
+   213	  return server;
+   214	}
+   215	
+   216	/** `/mcp` endpoint. The caller has passed admin auth; a fresh server serves each request. */
+   217	export function handleMcp(request: Request, env: Env) {
+   218	  return createMcpHandler(() => createServer(env)).fetch(request);
+   219	}
+// Shared helpers for scripts/verify-*.mjs. Runs on a dev machine or in the Docker `verify` service.
+import { execFileSync } from "node:child_process";
+import { mkdirSync, writeFileSync } from "node:fs";
+import http from "node:http";
+import { createRequire } from "node:module";
+
+const require = createRequire(import.meta.url);
+
+export const API = process.env.API_URL ?? "http://127.0.0.1:8788";
+export const ROUTER_PORT = process.env.ROUTER_PORT ?? "8787";
+export const TOKEN = process.env.ADMIN_TOKEN ?? "dev-admin-token";
+
+export function evidence(step) {
+  const dir = `evidence/${step}`;
+  mkdirSync(dir, { recursive: true });
+  const results = [];
+  return {
+    dir,
+    results,
+    check(name, pass, detail = {}) {
+      results.push({ name, pass: Boolean(pass), ...detail });
+      console.log(`${pass ? "PASS" : "FAIL"} ${name}${Object.keys(detail).length ? " " + JSON.stringify(detail) : ""}`);
+      return Boolean(pass);
+    },
+    finish(extra = {}) {
+      writeFileSync(`${dir}/results.json`, JSON.stringify({ ...extra, results }, null, 2));
+      const failed = results.filter((r) => !r.pass).length;
+      console.log(`\n${results.length - failed}/${results.length} passed`);
+      process.exit(failed ? 1 : 0);
+    },
+  };
+}
+
+export async function api(method, path, body, { auth = true, headers = {} } = {}) {
+  const res = await fetch(`${API}${path}`, {
+    method,
+    headers: { ...(auth ? { authorization: `Bearer ${TOKEN}` } : {}), "content-type": "application/json", ...headers },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const text = await res.text();
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    data = text;
+  }
+  return { status: res.status, data, headers: res.headers, text };
+}
+
+/** Request to the router with a Host header (Node cannot resolve *.localhost). */
+export function routerRequest(host, path = "/", { method = "GET", body, headers = {} } = {}) {
+  return new Promise((resolve, reject) => {
+    const req = http.request(
+      { host: "127.0.0.1", port: ROUTER_PORT, path, method, headers: { host: `${host}:${ROUTER_PORT}`, ...headers } },
+      (res) => {
+        let text = "";
+        res.setEncoding("utf8");
+        res.on("data", (c) => (text += c));
+        res.on("end", () => resolve({ status: res.statusCode, headers: res.headers, body: text }));
+      },
+    );
+    req.on("error", reject);
+    if (body !== undefined) req.write(typeof body === "string" ? body : JSON.stringify(body));
+    req.end();
+  });
+export async function listVersions(db: D1Database, siteId: string) {
+  const { results } = await db
+    .prepare(
+      "SELECT id, number, created_by, note, preview_token, asset_version, rendered_at, first_published_at, created_at FROM site_versions WHERE site_id = ? ORDER BY number DESC",
+    )
+    .bind(siteId)
+    .all();
+  return results;
+}
+
+export async function createSite(db: D1Database, config: SiteConfig, createdBy: CreatedBy, hostname: string) {
+ M apps/api/package.json
+ M apps/api/src/assets.ts
+ M apps/api/src/index.ts
+ M package.json
+ M packages/renderer/src/index.ts
+ M packages/renderer/src/templates/service-local/guide.ts
+ M pnpm-lock.yaml
+?? apps/api/src/mcp.ts
+?? apps/api/src/remote-image.ts
+?? apps/api/src/sites.ts
+?? apps/api/test/assets.test.ts
+?? packages/renderer/src/templates/service-local/skeleton.ts
+?? scripts/verify-m2-mcp.mjs
+
+codex
+The MCP implementation omits three tools required by its own integration verification and publishing workflow. Type checks and existing unit tests pass, but do not cover these missing registrations.
+
+Review comment:
+
+- [P1] Register the missing preview, publish, and rollback tools — /Users/steve/Projects/daniworks-sites-platform/apps/api/src/mcp.ts:213-213
+  The server returns with only seven tools registered; `site_preview_url`, `site_publish`, and `site_rollback` are absent. MCP agents therefore cannot complete the publishing workflow, and `scripts/verify-m2-mcp.mjs` both fails its ten-tool assertion and subsequently calls these nonexistent tools. Register these handlers before returning the server.
+The MCP implementation omits three tools required by its own integration verification and publishing workflow. Type checks and existing unit tests pass, but do not cover these missing registrations.
+
+Review comment:
+
+- [P1] Register the missing preview, publish, and rollback tools — /Users/steve/Projects/daniworks-sites-platform/apps/api/src/mcp.ts:213-213
+  The server returns with only seven tools registered; `site_preview_url`, `site_publish`, and `site_rollback` are absent. MCP agents therefore cannot complete the publishing workflow, and `scripts/verify-m2-mcp.mjs` both fails its ten-tool assertion and subsequently calls these nonexistent tools. Register these handlers before returning the server.

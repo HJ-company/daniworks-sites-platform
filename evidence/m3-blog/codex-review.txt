@@ -1,0 +1,1696 @@
+OpenAI Codex v0.167.0
+--------
+workdir: /Users/steve/Projects/daniworks-sites-platform
+model: gpt-6.1-sol
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: low
+reasoning summaries: none
+session id: 01a1f054-12c8-73c2-b059-8c4969112cbe
+--------
+user
+current changes
+exec
+/bin/zsh -lc 'git status --short; find .. -name AGENTS.md -o -name AGENTS.override.md' in /Users/steve/Projects/daniworks-sites-platform
+exec
+/bin/zsh -lc 'pwd; find . -name AGENTS.md -o -name AGENTS.override.md; git diff --stat; git diff' in /Users/steve/Projects/daniworks-sites-platform
+ succeeded in 369ms:
+/Users/steve/Projects/daniworks-sites-platform
+./node_modules/.pnpm/@dani-builder+strapi-client@2.5.0/node_modules/@dani-builder/strapi-client/AGENTS.md
+./node_modules/.pnpm/next@16.4.6_react-dom@19.3.1_react@19.3.1__react@19.3.1/node_modules/next/AGENTS.md
+./node_modules/.pnpm/next@16.4.6_@opentelemetry+api@1.10.0_@types+node@26.6.6_react-dom@19.3.1_react@19.3.1__react@19.3.1/node_modules/next/AGENTS.md
+ apps/api/src/env.ts              |  2 ++
+ apps/api/src/index.ts            |  7 +++++++
+ apps/api/src/publish.ts          |  2 ++
+ apps/router/package.json         |  3 +++
+ apps/router/src/index.ts         | 16 +++++++++++++++-
+ docker-compose.yml               |  1 +
+ docker/cf-mock.mjs               | 15 +++++++++++++++
+ docker/workers.sh                |  2 +-
+ packages/renderer/package.json   |  3 ++-
+ packages/renderer/src/preview.ts |  1 +
+ packages/renderer/src/view.tsx   | 20 ++++++++++++++++----
+ pnpm-lock.yaml                   |  4 ++++
+ 12 files changed, 69 insertions(+), 7 deletions(-)
+diff --git a/apps/api/src/env.ts b/apps/api/src/env.ts
+index d09fdf1..11cb6a4 100644
+--- a/apps/api/src/env.ts
++++ b/apps/api/src/env.ts
+@@ -22,6 +22,8 @@ export interface Env {
+   CF_API_TOKEN?: string;
+   /** CNAME target customers point their domain at (the SaaS fallback origin host). */
+   DOMAIN_CNAME_TARGET?: string;
++  /** Naver blog RSS base (`https://rss.blog.naver.com`); Docker points it at fixtures. */
++  BLOG_RSS_BASE?: string;
+   /** Pepper for hashing visitor IPs (rate limiting without storing addresses). */
+   HASH_PEPPER?: string;
+ }
+diff --git a/apps/api/src/index.ts b/apps/api/src/index.ts
+index f30493b..9cb46eb 100644
+--- a/apps/api/src/index.ts
++++ b/apps/api/src/index.ts
+@@ -1,5 +1,6 @@
+ import { parseSiteConfig, renderSite, SiteConfigError, type SiteConfig } from "@sites/renderer";
+ import { listAssets, uploadAsset } from "./assets.js";
++import { refreshBlog, refreshDueBlogs } from "./blog.js";
+ import { allInquiries, inquiriesCsv, listInquiries, requireEmail } from "./inquiries.js";
+ import { kstDay, metricsReport } from "./metrics.js";
+ import { turnstileFrame } from "./turnstile.js";
+@@ -144,6 +145,11 @@ async function handle(request: Request, env: Env): Promise<Response> {
+     if (method === "DELETE" && parts.length === 4) return json(await removeDomain(env, site.id, hostname));
+   }
+ 
++  // POST /sites/:id/blog/refresh: fetch the blog RSS now (normally every 3 hours by cron)
++  if (method === "POST" && parts[2] === "blog" && parts[3] === "refresh" && parts.length === 4) {
++    return json(await refreshBlog(env, site.id));
++  }
++
+   // GET /sites/:id/metrics?from=YYYY-MM-DD&to=YYYY-MM-DD (Korean dates, inclusive; default last 30 days)
+   if (method === "GET" && parts[2] === "metrics" && parts.length === 3) {
+     const today = kstDay(new Date());
+@@ -237,6 +243,7 @@ export default {
+           console.log("[domains] origin audit", JSON.stringify(await auditOrigins(env)));
+         }
+         console.log("[domains] maintain", JSON.stringify(await maintainDomains(env)));
++        console.log("[blog] refresh", JSON.stringify(await refreshDueBlogs(env)));
+         console.log("[routes] reconcile", JSON.stringify(await reconcileHostRecords(env)));
+       })(),
+     );
+diff --git a/apps/api/src/publish.ts b/apps/api/src/publish.ts
+index e08701f..d704e77 100644
+--- a/apps/api/src/publish.ts
++++ b/apps/api/src/publish.ts
+@@ -2,6 +2,7 @@ import { ASSET_VERSION, renderSite, type SiteConfig } from "@sites/renderer";
+ import type { Env } from "./env.js";
+ import { HttpError } from "./http.js";
+ import { kvSiteKey, r2PageKey, r2SharedKey, type PublishedPointer } from "./keys.js";
++import { syncBlogFeed } from "./blog.js";
+ import { routesOf, syncHostRecordsNow } from "./routes.js";
+ import {
+   getSite,
+@@ -70,6 +71,7 @@ async function pointTo(env: Env, site: SiteRow, version: VersionRow, pages: stri
+   const pointer: PublishedPointer = { versionId: version.id, number: version.number, publishedAt, pages, renderId };
+   await env.ROUTES.put(kvSiteKey(site.id), JSON.stringify(pointer));
+   await syncHostRecordsNow(env, site.id);
++  await syncBlogFeed(env, site.id, JSON.parse(version.config) as { business?: { blogUrl?: string } });
+   return pointer;
+ }
+ 
+diff --git a/apps/router/package.json b/apps/router/package.json
+index a65a612..dc2065b 100644
+--- a/apps/router/package.json
++++ b/apps/router/package.json
+@@ -12,5 +12,8 @@
+     "@cloudflare/workers-types": "^5.20261118.1",
+     "typescript": "^7.0.2",
+     "wrangler": "^4.164.0"
++  },
++  "dependencies": {
++    "@sites/renderer": "workspace:*"
+   }
+ }
+diff --git a/apps/router/src/index.ts b/apps/router/src/index.ts
+index eb0e2df..9d96dec 100644
+--- a/apps/router/src/index.ts
++++ b/apps/router/src/index.ts
+@@ -1,3 +1,4 @@
++import { blogCardsHtml, type BlogFeed } from "@sites/renderer/blog";
+ import {
+   kvHostKey,
+   kvSiteKey,
+@@ -187,7 +188,20 @@ export default {
+       const response = await serveObject(env, r2PageKey(host.siteId, pointer.versionId, path, pointer.renderId), "public, max-age=60");
+       if (response) {
+         response.headers.set("x-site-version", String(pointer.number));
+-        return response;
++        if (route !== "/") return response;
++        // Latest blog posts, filled at request time from the cron's KV cache. The body now
++        // changes without the object changing, so the R2 ETag no longer describes it.
++        response.headers.delete("etag");
++        const siteId = host.siteId;
++        return new HTMLRewriter()
++          .on("[data-blog-feed]", {
++            async element(element) {
++              const feed = await env.ROUTES.get<BlogFeed>(`blog:${siteId}`, { type: "json", cacheTtl: 300 });
++              const html = feed ? blogCardsHtml(feed.posts) : "";
++              if (html) element.setInnerContent(html, { html: true });
++            },
++          })
++          .transform(response);
+       }
+       return page(404, "페이지 파일을 찾지 못했습니다.");
+     }
+diff --git a/docker-compose.yml b/docker-compose.yml
+index 50ab1ab..709312e 100644
+--- a/docker-compose.yml
++++ b/docker-compose.yml
+@@ -20,6 +20,7 @@ services:
+       CF_API_BASE: http://cf-mock:8790/client/v4
+       CF_ZONE_ID: mock-zone
+       CF_API_TOKEN: mock-token
++      BLOG_RSS_BASE: http://cf-mock:8790/fixtures/naver-rss
+     ports:
+       - "8787:8787" # router: http://<slug>.localhost:8787
+       - "8788:8788" # api
+diff --git a/docker/cf-mock.mjs b/docker/cf-mock.mjs
+index 6b83d5f..378c307 100644
+--- a/docker/cf-mock.mjs
++++ b/docker/cf-mock.mjs
+@@ -52,6 +52,21 @@ http
+     }
+     if (url.pathname === "/health") return ok(res, { ok: true });
+ 
++    // Naver blog RSS fixtures: /fixtures/naver-rss/<id>.xml. "missing" answers 404.
++    const rss = url.pathname.match(/^\/fixtures\/naver-rss\/([A-Za-z0-9_-]+)\.xml$/);
++    if (rss) {
++      if (rss[1] === "missing") return send(res, 404, { error: "not found" });
++      const items = [1, 2, 3, 4]
++        .map(
++          (n) => `<item><title><![CDATA[${rss[1]} 글 ${n} & 소식]]></title><link><![CDATA[https://blog.naver.com/${rss[1]}/${100 + n}?fromRss=true]]></link>
++<description><![CDATA[<img src="https://blogthumb.pstatic.net/fixture/${rss[1]}-${n}.jpg?type=s3"> ${rss[1]} 블로그의 ${n}번째 글 요약입니다.]]></description>
++<pubDate>${new Date(Date.UTC(2026, 10, 20 - n, 1)).toUTCString()}</pubDate></item>`,
++        )
++        .join("");
++      res.writeHead(200, { "content-type": "text/xml; charset=utf-8" });
++      return res.end(`<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"><channel><title>${rss[1]}</title>${items}</channel></rss>`);
++    }
++
+     const m = url.pathname.match(/^\/client\/v4\/zones\/([^/]+)\/custom_hostnames(?:\/([^/]+))?$/);
+     if (!m) return fail(res, 404, 7000, "No route for that URI");
+     if (req.headers.authorization !== `Bearer ${TOKEN}`) return fail(res, 403, 10000, "Authentication error");
+diff --git a/docker/workers.sh b/docker/workers.sh
+index 855605a..1903255 100644
+--- a/docker/workers.sh
++++ b/docker/workers.sh
+@@ -7,7 +7,7 @@ STATE=/state
+ : "${ADMIN_TOKEN:=dev-admin-token}"
+ 
+ # wrangler reads secrets from .dev.vars; generate it from the container environment.
+-env | grep -E '^(ADMIN_TOKEN|TURNSTILE_SECRET|HASH_PEPPER|MAIL_|CF_|ACCESS_)' > apps/api/.dev.vars || true
++env | grep -E '^(ADMIN_TOKEN|TURNSTILE_SECRET|HASH_PEPPER|MAIL_|CF_|ACCESS_|BLOG_)' > apps/api/.dev.vars || true
+ 
+ (cd apps/api && pnpm exec wrangler d1 migrations apply DB --local --persist-to "$STATE")
+ 
+diff --git a/packages/renderer/package.json b/packages/renderer/package.json
+index 3f9e04a..7ecd731 100644
+--- a/packages/renderer/package.json
++++ b/packages/renderer/package.json
+@@ -4,7 +4,8 @@
+   "type": "module",
+   "exports": {
+     ".": "./src/index.ts",
+-    "./client": "./src/client.tsx"
++    "./client": "./src/client.tsx",
++    "./blog": "./src/platform/blog.ts"
+   },
+   "scripts": {
+     "build": "node scripts/build-assets.mjs",
+diff --git a/packages/renderer/src/preview.ts b/packages/renderer/src/preview.ts
+index 641e14f..8028fe5 100644
+--- a/packages/renderer/src/preview.ts
++++ b/packages/renderer/src/preview.ts
+@@ -32,6 +32,7 @@ function chrome(config: SiteConfig): SiteChrome | null {
+     mapUrl: business.mapUrl ?? null,
+     bookingUrl: business.bookingUrl ?? null,
+     inquiryLabel: presets[config.preset].inquiryCta,
++    blogUrl: business.blogUrl ?? null,
+   };
+ }
+ 
+diff --git a/packages/renderer/src/view.tsx b/packages/renderer/src/view.tsx
+index d1e742b..5711ecd 100644
+--- a/packages/renderer/src/view.tsx
++++ b/packages/renderer/src/view.tsx
+@@ -16,6 +16,7 @@ import type {
+ } from "@dani-builder/strapi-client/types";
+ import { srcSetFor } from "./images.js";
+ import { RenderContext, useSiteHref } from "./render-context.js";
++import { BlogFeed } from "./platform/blog-feed.js";
+ import { ContactBar } from "./platform/contact-bar.js";
+ import { InquiryForm } from "./platform/inquiry-form.js";
+ 
+@@ -27,6 +28,8 @@ export interface SiteChrome {
+   mapUrl: string | null;
+   bookingUrl: string | null;
+   inquiryLabel: string;
++  /** Naver blog home; the router fills the latest posts at request time. */
++  blogUrl?: string | null;
+   /** Platform-hosted Turnstile frame; null when spam checks are not configured. */
+   turnstileFrame?: string | null;
+ }
+@@ -99,6 +102,9 @@ export function SiteView({ data }: { data: PageData }) {
+   const first = page.blocks[0];
+   const route = data.route ?? "/";
+   const linkPrefix = data.linkPrefix ?? "";
++  const renderers = { "blocks.inquiry-form": site ? InquiryForm : InquiryPlaceholder };
++  const found = page.blocks.findIndex((block) => block.__component === "blocks.inquiry-form");
++  const inquiryAt = found === -1 ? page.blocks.length : found;
+   return (
+     <RenderContext.Provider
+       value={{ linkPrefix, preview: data.preview ?? false, turnstileFrame: site?.turnstileFrame ?? null }}
+@@ -114,10 +120,16 @@ export function SiteView({ data }: { data: PageData }) {
+         firstHero={first?.__component === "blocks.hero" ? first : null}
+         colors={brandColors}
+       >
+-        <BlockRenderer
+-          blocks={page.blocks}
+-          renderers={{ "blocks.inquiry-form": site ? InquiryForm : InquiryPlaceholder }}
+-        />
++        {site?.blogUrl && route === "/" ? (
++          // Latest blog posts sit just before the inquiry form.
++          <>
++            <BlockRenderer blocks={page.blocks.slice(0, inquiryAt)} renderers={renderers} />
++            <BlogFeed blogUrl={site.blogUrl} />
++            <BlockRenderer blocks={page.blocks.slice(inquiryAt)} renderers={renderers} />
++          </>
++        ) : (
++          <BlockRenderer blocks={page.blocks} renderers={renderers} />
++        )}
+       </SiteShell>
+       {site ? <ContactBar site={site} /> : null}
+     </BlocksProvider>
+diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
+index 02c9771..65a9031 100644
+--- a/pnpm-lock.yaml
++++ b/pnpm-lock.yaml
+@@ -117,6 +117,10 @@ importers:
+         version: 4.164.0(@cloudflare/workers-types@5.20261118.1)(@types/node@26.6.6)
+ 
+   apps/router:
++    dependencies:
++      '@sites/renderer':
++        specifier: workspace:*
++        version: link:../../packages/renderer
+     devDependencies:
+       '@cloudflare/workers-types':
+         specifier: ^5.20261118.1
+
+exec
+/bin/zsh -lc 'cat /Users/steve/.codex/skills/workers-best-practices/SKILL.md; for f in /AGENTS.md /Users/AGENTS.md /Users/steve/AGENTS.md /Users/steve/Projects/AGENTS.md; do test ! -f "$f" || cat "$f"; done' in /Users/steve/Projects/daniworks-sites-platform
+ succeeded in 0ms:
+---
+name: workers-best-practices
+description: Cloudflare Workers best practices for production applications. Use when writing, reviewing, or configuring Workers.
+---
+
+Your knowledge of Cloudflare Workers APIs, types, and configuration may be outdated. **Prefer retrieval over pre-training** when writing or reviewing Workers code.
+
+Use the project's installed versions, generated types, and Wrangler compatibility settings as the baseline for existing code. Retrieve relevant Cloudflare documentation to verify API, configuration, runtime behavior, and limit claims.
+
+## References
+
+Read the sections relevant to the task:
+
+| Reference | When to use it |
+|-----------|----------------|
+| [Configuration and observability](references/configuration.md) | Compatibility dates, bindings, generated types, secrets, logs, and traces |
+| [Runtime patterns](references/runtime-patterns.md) | Streaming, promise lifetime, request state, service calls, security, and runtime tests |
+| [Platform API checks](references/platform-apis.md) | Handler signatures, platform classes, binding access, and serialization |
+
+For missing evidence, consult [Workers best practices](https://developers.cloudflare.com/workers/best-practices/workers-best-practices/index.md) or find the affected product in the [Cloudflare docs directory](https://developers.cloudflare.com/directory/index.md). Use the installed Wrangler schema for config fields. A newer type package does not supersede the project's configured target.
+
+## Keep Compatibility Dates Current
+
+Use today's date for new Workers. Encourage periodic updates for existing Workers, reviewing compatibility changes and running relevant tests. Assess existing behavior against its configured date and flags; see [compatibility guidance](references/configuration.md#keep-compatibility_date-current).
+
+## Enable Observability
+
+Enable [Workers Logs](https://developers.cloudflare.com/workers/observability/logs/workers-logs/index.md) and [Traces](https://developers.cloudflare.com/workers/observability/traces/index.md) when creating or preparing a Worker for production. Set `observability.enabled` and `observability.traces.enabled` to `true`; the top-level setting alone does not enable traces. Use structured JSON logging and configure sampling for the workload. During reviews, flag missing logs or traces. See the [configuration example](references/configuration.md#enable-workers-logs-and-traces).
+
+## Anti-Patterns to Flag
+
+| Anti-pattern | Consequence and preferred pattern |
+|-------------|-----------------------------------|
+| `await response.text()` or similar buffering on unbounded data | Can exhaust Worker memory; [stream large or unbounded bodies](references/runtime-patterns.md#stream-request-and-response-bodies). |
+| Hardcoded secrets in source or config | Leaks credentials through version control; use Wrangler secrets. |
+| `Math.random()` for security-sensitive tokens or IDs | Predictable values; use `crypto.randomUUID()` or `crypto.getRandomValues()`. |
+| Async work started without awaiting, returning, or attaching it to `ctx.waitUntil()` | Work can be dropped and errors missed; tie it to the request or background-work lifetime. |
+| Module-level mutable request state | Leaks data across requests and can cause I/O ownership errors; pass request state explicitly. |
+| Cloudflare REST API calls for operations available through Worker bindings | Adds network and authentication overhead; use the available binding. |
+| `ctx.passThroughOnException()` used as general error handling | Can conceal Worker failures by forwarding to the origin; use explicit error handling and structured error responses. |
+| Hand-written `Env` that duplicates Wrangler bindings | Can drift from configuration; generate binding types with `wrangler types`. |
+| Direct string comparison of secret values | Can expose timing differences; use the [Web Crypto comparison pattern](references/runtime-patterns.md#use-web-crypto-for-secure-token-generation). |
+| Destructuring `ctx` methods, such as `const { waitUntil } = ctx` | Loses the receiver; call `ctx.waitUntil(...)`. |
+| `any` on `Env` or handler parameters | Hides binding and handler contract errors; use the project's generated and platform types. |
+| `as unknown as T` to force a platform type match | Hides incompatibilities; fix the underlying contract. |
+| `implements` used in place of extending a platform base class | Does not inherit runtime behavior, `this.ctx`, or `this.env`; use the appropriate base class. |
+| Unbound `env.X` in a platform class method | Bindings are available through `this.env.X`; see [binding access patterns](references/platform-apis.md#binding-access--the-most-common-error). |
+| Applying one serialization rule across Queues, Workflow steps, storage, and WebSockets | Can reject valid payloads or accept unsupported ones; check the [specific API and encoding](references/platform-apis.md#serialization-boundaries). |
+
+## Validation
+
+Use the project's existing checks for affected Workers behavior: type-check binding or handler contract changes, and run relevant runtime tests for behavior changes. Preserve required repository checks; a narrow edit does not require a full Workers audit.
+
+## Scope
+
+This skill covers Workers-specific best practices and code review. For related topics:
+
+- **Durable Objects**: load the `durable-objects` skill
+- **Workflows**: see [Rules of Workflows](https://developers.cloudflare.com/workflows/build/rules-of-workflows/index.md)
+- **Wrangler CLI commands**: load the `wrangler` skill
+
+exec
+/bin/zsh -lc 'cat apps/api/src/blog.ts packages/renderer/src/platform/blog.ts packages/renderer/src/platform/blog-feed.tsx apps/api/migrations/0005_blog_feeds.sql packages/renderer/test/blog.test.ts' in /Users/steve/Projects/daniworks-sites-platform
+ succeeded in 0ms:
+import { naverRssUrl, parseNaverRss, type BlogFeed } from "@sites/renderer/blog";
+import { readLimited } from "./assets.js";
+import type { Env } from "./env.js";
+import { HttpError } from "./http.js";
+
+export const kvBlogKey = (siteId: string) => `blog:${siteId}`;
+const STALE_MS = 3 * 3_600_000;
+
+/** Keeps the feed row in step with the live version: present with its blog URL, or removed. */
+export async function syncBlogFeed(env: Env, siteId: string, config: { business?: { blogUrl?: string } }) {
+  const blogUrl = config.business?.blogUrl ?? null;
+  if (!blogUrl) {
+    await env.DB.prepare("DELETE FROM blog_feeds WHERE site_id = ?").bind(siteId).run();
+    await env.ROUTES.delete(kvBlogKey(siteId));
+    return;
+  }
+  // A new or changed URL is due immediately (fetched_at NULL).
+  await env.DB.prepare(
+    `INSERT INTO blog_feeds (site_id, blog_url) VALUES (?, ?)
+     ON CONFLICT (site_id) DO UPDATE SET blog_url = excluded.blog_url,
+       fetched_at = CASE WHEN blog_feeds.blog_url = excluded.blog_url THEN blog_feeds.fetched_at ELSE NULL END`,
+  )
+    .bind(siteId, blogUrl)
+    .run();
+}
+
+/** Fetches one feed and caches its latest posts. Failures keep the previous cache. */
+export async function refreshBlog(env: Env, siteId: string) {
+  const row = await env.DB.prepare("SELECT blog_url FROM blog_feeds WHERE site_id = ?").bind(siteId).first<{ blog_url: string }>();
+  if (!row) throw new HttpError(404, "블로그가 연결된 게시 버전이 없습니다");
+  const rss = naverRssUrl(row.blog_url, env.BLOG_RSS_BASE);
+  const now = new Date().toISOString();
+  try {
+    if (!rss) throw new Error("네이버 블로그 주소가 아닙니다");
+    const res = await fetch(rss, { headers: { "user-agent": "dsites-blog-feed/1.0", accept: "application/rss+xml, text/xml" } });
+    if (!res.ok) throw new Error(`RSS ${res.status}`);
+    const xml = new TextDecoder().decode(await readLimited(res.body, 2 * 1024 * 1024));
+    const feed: BlogFeed = { fetchedAt: now, posts: parseNaverRss(xml) };
+    await env.ROUTES.put(kvBlogKey(siteId), JSON.stringify(feed));
+    await env.DB.prepare("UPDATE blog_feeds SET fetched_at = ?, status = 'ok', error = NULL, post_count = ? WHERE site_id = ?")
+      .bind(now, feed.posts.length, siteId)
+      .run();
+    return { status: "ok", posts: feed.posts.length };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    await env.DB.prepare("UPDATE blog_feeds SET fetched_at = ?, status = 'error', error = ? WHERE site_id = ?")
+      .bind(now, message.slice(0, 300), siteId)
+      .run();
+    return { status: "error", error: message };
+  }
+}
+
+/** Cron: refresh up to 20 feeds that are new or older than three hours. */
+export async function refreshDueBlogs(env: Env) {
+  const { results } = await env.DB.prepare(
+    "SELECT site_id FROM blog_feeds WHERE fetched_at IS NULL OR fetched_at < ? ORDER BY fetched_at LIMIT 20",
+  )
+    .bind(new Date(Date.now() - STALE_MS).toISOString())
+    .all<{ site_id: string }>();
+  let ok = 0;
+  for (const { site_id } of results) if ((await refreshBlog(env, site_id)).status === "ok") ok++;
+  return { due: results.length, ok };
+}
+/**
+ * Latest blog posts: RSS parsing (api cron) and card markup (router, at request time). Pure and
+ * dependency-free so the router can import it without pulling in React.
+ */
+export interface BlogPost {
+  title: string;
+  link: string;
+  /** ISO date. */
+  date: string | null;
+  summary: string;
+  image: string | null;
+}
+
+export interface BlogFeed {
+  fetchedAt: string;
+  posts: BlogPost[];
+}
+
+export const BLOG_POSTS = 3;
+
+/** `https://blog.naver.com/<id>` → `<base>/<id>.xml` (base: `https://rss.blog.naver.com`). */
+export function naverRssUrl(blogUrl: string, base = "https://rss.blog.naver.com"): string | null {
+  const id = blogUrl.match(/^https:\/\/(?:m\.)?blog\.naver\.com\/([A-Za-z0-9_-]+)\/?$/)?.[1];
+  return id ? `${base}/${id}.xml` : null;
+}
+
+const ENTITIES: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " " };
+
+function decode(value: string) {
+  return value
+    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1")
+    .replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (whole, code: string) => {
+      if (code[0] === "#") {
+        const n = code[1] === "x" || code[1] === "X" ? parseInt(code.slice(2), 16) : parseInt(code.slice(1), 10);
+        return Number.isFinite(n) ? String.fromCodePoint(n) : whole;
+      }
+      return ENTITIES[code.toLowerCase()] ?? whole;
+    });
+}
+
+const tag = (item: string, name: string) => item.match(new RegExp(`<${name}>([\\s\\S]*?)</${name}>`))?.[1] ?? "";
+const text = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+
+/** Newest posts from a Naver blog RSS document. Only https links and pstatic images survive. */
+export function parseNaverRss(xml: string, limit = BLOG_POSTS): BlogPost[] {
+  const items = xml.match(/<item>[\s\S]*?<\/item>/g) ?? [];
+  const posts: BlogPost[] = [];
+  for (const item of items) {
+    const title = text(decode(tag(item, "title")));
+    const link = decode(tag(item, "link")).trim();
+    if (!title || !/^https:\/\/(m\.)?blog\.naver\.com\//.test(link)) continue;
+    const description = decode(tag(item, "description"));
+    const image = description.match(/https:\/\/(?:blogthumb|postfiles)\.pstatic\.net\/[^"'\s<>]+/)?.[0] ?? null;
+    const pub = Date.parse(decode(tag(item, "pubDate")));
+    const summary = text(description);
+    posts.push({
+      title: title.slice(0, 120),
+      link: link.replace(/\?.*$/, ""),
+      date: Number.isFinite(pub) ? new Date(pub).toISOString() : null,
+      summary: summary.length > 110 ? `${summary.slice(0, 110)}…` : summary,
+      image,
+    });
+    if (posts.length >= limit) break;
+  }
+  return posts;
+}
+
+const escape = (value: string) =>
+  value.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
+
+const kstDate = (iso: string) => new Date(new Date(iso).getTime() + 9 * 3600_000).toISOString().slice(0, 10).replace(/-/g, ".");
+
+/**
+ * Card markup the router injects into `[data-blog-feed]`. Naver images refuse foreign
+ * referrers but serve requests without one, hence `referrerpolicy="no-referrer"`.
+ */
+export function blogCardsHtml(posts: BlogPost[]): string {
+  if (!posts.length) return "";
+  const cards = posts
+    .map(
+      (post) => `<li class="sites-blog-card overflow-hidden rounded-xl border border-black/10 bg-white">
+<a href="${escape(post.link)}" target="_blank" rel="noopener" class="block h-full">
+${post.image ? `<img src="${escape(post.image)}" alt="" referrerpolicy="no-referrer" loading="lazy" decoding="async" width="365" height="365" class="aspect-[4/3] w-full object-cover">` : ""}
+<div class="p-4">
+${post.date ? `<p class="text-xs text-[var(--color-text-muted)]">${kstDate(post.date)}</p>` : ""}
+<p class="mt-1 font-semibold leading-snug text-[var(--color-text)]">${escape(post.title)}</p>
+${post.summary ? `<p class="mt-2 line-clamp-2 text-sm text-[var(--color-text-muted)]">${escape(post.summary)}</p>` : ""}
+</div>
+</a>
+</li>`,
+    )
+    .join("");
+  return `<ul class="grid gap-4 sm:grid-cols-3">${cards}</ul>`;
+}
+/**
+ * Latest-posts section. The page is static; the router fills `[data-blog-feed]` from the KV
+ * cache at request time, so new posts appear without republishing. The inner HTML is set with
+ * dangerouslySetInnerHTML, which hydration does not compare, so the injected cards stay.
+ */
+export function BlogFeed({ blogUrl }: { blogUrl: string }) {
+  return (
+    <section id="blog" className="sites-blog px-5 py-16 md:py-20">
+      <div className="mx-auto max-w-6xl">
+        <div className="mb-6 flex items-end justify-between gap-4">
+          <h2 className="text-2xl font-bold md:text-3xl">블로그 소식</h2>
+          <a href={blogUrl} target="_blank" rel="noopener" className="shrink-0 text-sm font-semibold text-[var(--color-primary)]">
+            블로그에서 더 보기
+          </a>
+        </div>
+        <div data-blog-feed="" dangerouslySetInnerHTML={{ __html: "" }} />
+      </div>
+    </section>
+  );
+}
+-- Naver blog RSS per published site. Kept in sync on publish/rollback; the cron refreshes
+-- stale feeds and caches the latest posts in KV (blog:<siteId>) for the router.
+CREATE TABLE blog_feeds (
+  site_id TEXT PRIMARY KEY REFERENCES sites(id),
+  blog_url TEXT NOT NULL,
+  fetched_at TEXT,
+  status TEXT,
+  error TEXT,
+  post_count INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX blog_feeds_due ON blog_feeds(fetched_at);
+import { describe, expect, it } from "vitest";
+import { blogCardsHtml, naverRssUrl, parseNaverRss } from "../src/platform/blog.js";
+
+const rss = `<?xml version="1.0" encoding="UTF-8"?><rss><channel><title><![CDATA[예시 블로그]]></title>
+<item><title><![CDATA[첫 글 &amp; <b>소식</b>]]></title><link><![CDATA[https://blog.naver.com/example/111?fromRss=true]]></link>
+<description><![CDATA[<img src="https://blogthumb.pstatic.net/a/b.jpg?type=s3"> 본문 <b>요약</b> 입니다.]]></description><pubDate>Tue, 17 Nov 2026 10:00:00 +0900</pubDate></item>
+<item><title>나쁜 링크</title><link>javascript:alert(1)</link><description>x</description></item>
+<item><title><![CDATA["따옴표" <script>alert(1)</script>]]></title><link>https://blog.naver.com/example/222</link><description><![CDATA[이미지 없음]]></description><pubDate>Mon, 16 Nov 2026 09:00:00 +0900</pubDate></item>
+</channel></rss>`;
+
+describe("blog", () => {
+  it("maps blog URLs to RSS", () => {
+    expect(naverRssUrl("https://blog.naver.com/jefes_fc")).toBe("https://rss.blog.naver.com/jefes_fc.xml");
+    expect(naverRssUrl("https://m.blog.naver.com/x/", "http://mock")).toBe("http://mock/x.xml");
+    expect(naverRssUrl("https://example.com/blog")).toBeNull();
+  });
+
+  it("parses posts, skipping unsafe links and stripping markup", () => {
+    const posts = parseNaverRss(rss);
+    expect(posts).toHaveLength(2);
+    expect(posts[0]).toMatchObject({
+      title: "첫 글 & 소식",
+      link: "https://blog.naver.com/example/111",
+      image: "https://blogthumb.pstatic.net/a/b.jpg?type=s3",
+      summary: "본문 요약 입니다.",
+      date: "2026-11-17T01:00:00.000Z",
+    });
+    expect(posts[1]?.image).toBeNull();
+  });
+
+  it("escapes everything in card markup and keeps images referrer-free", () => {
+    const html = blogCardsHtml(parseNaverRss(rss));
+    expect(html).not.toContain("<script>");
+    expect(html).toContain("&quot;따옴표&quot; alert(1)");
+    expect(html).toContain('referrerpolicy="no-referrer"');
+    expect(html).toContain("2026.11.17");
+    expect(blogCardsHtml([])).toBe("");
+  });
+});
+
+exec
+/bin/zsh -lc 'cat apps/api/src/publish.ts packages/renderer/src/render.ts* packages/renderer/src/preview.ts apps/router/src/index.ts' in /Users/steve/Projects/daniworks-sites-platform
+ succeeded in 0ms:
+import { ASSET_VERSION, renderSite, type SiteConfig } from "@sites/renderer";
+import type { Env } from "./env.js";
+import { HttpError } from "./http.js";
+import { kvSiteKey, r2PageKey, r2SharedKey, type PublishedPointer } from "./keys.js";
+import { syncBlogFeed } from "./blog.js";
+import { routesOf, syncHostRecordsNow } from "./routes.js";
+import {
+  getSite,
+  getVersion,
+  latestVersion,
+  markPublished,
+  markRendered,
+  primaryHostname,
+  type SiteRow,
+  type VersionRow,
+} from "./store.js";
+
+export const assetBase = () => `/_shared/${ASSET_VERSION}`;
+
+/** Turnstile frame URL baked into published pages; null when Turnstile is not configured. */
+export const turnstileFrameUrl = (env: Env) =>
+  env.TURNSTILE_SITE_KEY && env.API_ORIGIN ? `${env.API_ORIGIN}/turnstile-frame` : null;
+
+/** Public origin a site is served from: its active custom domain, else `<slug>.<BASE_DOMAIN>`. */
+export async function siteOrigin(env: Env, site: SiteRow) {
+  const host = await primaryHostname(env.DB, site, env.BASE_DOMAIN);
+  return `${env.PUBLIC_SCHEME ?? "https"}://${host}`;
+}
+
+async function requireSharedAssets(env: Env) {
+  const head = await env.SITES.head(r2SharedKey(`${ASSET_VERSION}/_assets/site.css`));
+  if (!head) {
+    throw new HttpError(409, `공용 에셋 ${ASSET_VERSION}이 R2에 없습니다. scripts/upload-shared.mjs를 먼저 실행하세요`);
+  }
+}
+
+/**
+ * Renders every page of a version to R2 unless it is already rendered against the current
+ * shared assets and origin.
+ */
+/** Everything outside the config that changes the HTML (stored in rendered_origin). */
+export const renderKeyOf = (env: Env, origin: string) => JSON.stringify({ origin, turnstileFrame: turnstileFrameUrl(env) });
+
+async function ensureRendered(env: Env, version: VersionRow, origin: string, { keepAssets = false } = {}) {
+  const config = JSON.parse(version.config) as SiteConfig;
+  const turnstileFrame = turnstileFrameUrl(env);
+  const renderKey = renderKeyOf(env, origin);
+  // Rollback keeps the version's own shared assets; publish moves it to the current ones.
+  const assetsOk = keepAssets || version.asset_version === ASSET_VERSION;
+  if (version.rendered_at && assetsOk && version.rendered_origin === renderKey) {
+    return routesOf(config);
+  }
+  // HTML comes from the current renderer, so it must point at the current client bundle.
+  await requireSharedAssets(env);
+  const { pages } = await renderSite(config, { assetBase: assetBase(), origin, turnstileFrame });
+  // A fresh, immutable prefix per render: concurrent renders never mix pages, and the pointer
+  // switches to a complete set only after markRendered.
+  const renderId = crypto.randomUUID().replace(/-/g, "").slice(0, 16);
+  for (const page of pages) {
+    await env.SITES.put(r2PageKey(version.site_id, version.id, page.path, renderId), page.html, {
+      httpMetadata: { contentType: "text/html; charset=utf-8" },
+    });
+  }
+  await markRendered(env.DB, version.id, ASSET_VERSION, renderKey, renderId);
+  return pages.map((page) => page.route);
+}
+
+async function pointTo(env: Env, site: SiteRow, version: VersionRow, pages: string[]) {
+  const publishedAt = await markPublished(env.DB, site.id, version.id, ASSET_VERSION);
+  const renderId = (await getVersion(env.DB, site.id, version.id)).render_id;
+  const pointer: PublishedPointer = { versionId: version.id, number: version.number, publishedAt, pages, renderId };
+  await env.ROUTES.put(kvSiteKey(site.id), JSON.stringify(pointer));
+  await syncHostRecordsNow(env, site.id);
+  await syncBlogFeed(env, site.id, JSON.parse(version.config) as { business?: { blogUrl?: string } });
+  return pointer;
+}
+
+/** Publish = render (if needed) → R2 → move the KV pointer. Visible worldwide within about a minute. */
+export async function publish(env: Env, site: SiteRow, versionId?: string) {
+  await requireSharedAssets(env);
+  const version = versionId ? await getVersion(env.DB, site.id, versionId) : await latestVersion(env.DB, site.id);
+  const pages = await ensureRendered(env, version, await siteOrigin(env, site));
+  return pointTo(env, site, version, pages);
+}
+
+/**
+ * Rollback = move the pointer back to a version that was published before. No re-render, unless
+ * the site's origin changed since that version was rendered (custom domain added or removed):
+ * then only its HTML is re-rendered so canonical and OG URLs point at the current host.
+ */
+export async function rollback(env: Env, site: SiteRow, versionId: string) {
+  const version = await getVersion(env.DB, site.id, versionId);
+  if (!version.first_published_at) throw new HttpError(409, "게시된 적 없는 버전으로는 롤백할 수 없습니다");
+  const exists = await env.SITES.head(r2PageKey(site.id, version.id, "index.html", version.render_id));
+  if (!exists) throw new HttpError(409, "렌더된 파일이 R2에 없습니다. publish로 다시 게시하세요");
+  const pages = await ensureRendered(env, version, await siteOrigin(env, site), { keepAssets: true });
+  return pointTo(env, site, version, pages);
+}
+
+/**
+ * The site's origin changed (custom domain activated, failed or removed): re-render the live
+ * version's HTML in place (same R2 keys). The KV pointer is not touched, so this can never undo
+ * a concurrent publish; if the live version changes meanwhile, the new one is checked too.
+ * Returns false when it could not settle (the caller keeps origin_pending for the cron).
+ */
+export async function rerenderLive(env: Env, siteId: string): Promise<boolean> {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const site = await getSite(env.DB, siteId);
+    if (!site.published_version_id) {
+      await syncHostRecordsNow(env, siteId);
+      return true;
+    }
+    const version = await getVersion(env.DB, siteId, site.published_version_id);
+    await ensureRendered(env, version, await siteOrigin(env, site));
+    // Settled only if the live version is unchanged and its HTML matches the origin as of now
+    // (an overlapping domain change may have moved it while this render ran).
+    const after = await getSite(env.DB, siteId);
+    const rendered = await getVersion(env.DB, siteId, version.id);
+    if (after.published_version_id === version.id && rendered.rendered_origin === renderKeyOf(env, await siteOrigin(env, after))) {
+      await syncHostRecordsNow(env, siteId);
+      return true;
+    }
+  }
+  return false;
+}
+import { renderToReadableStream } from "react-dom/server";
+import { requireValidConfig, sitePagesFor, type SitePage } from "./preview.js";
+import { isServiceConfig, type SiteConfig, type SiteConfigInput } from "./site-config.js";
+import { presets } from "./templates/service-local/presets.js";
+import { SiteView } from "./view.js";
+
+export interface RenderOptions {
+  /** Base URL of shared, template-versioned assets (CSS, client JS, template images). */
+  assetBase: string;
+  /** Public origin (`https://jefes.dsites.kr`) for canonical, OG and structured data URLs. */
+  origin?: string;
+  /** Skip the client bundle to measure server-only output. */
+  hydrate?: boolean;
+  /** Preview renders: noindex, no canonical, inquiry form disabled. */
+  preview?: boolean;
+  /** Prefix for root-relative site links (previews: `/preview/<token>`). */
+  linkPrefix?: string;
+  /** Turnstile frame the inquiry form embeds (`https://api.dsites.kr/turnstile-frame`). */
+  turnstileFrame?: string | null;
+}
+
+export interface RenderedPage {
+  route: string;
+  /** Object path below the version prefix: `index.html`, `privacy/index.html`. */
+  path: string;
+  html: string;
+}
+
+export interface RenderResult {
+  /** Home page HTML. */
+  html: string;
+  pages: RenderedPage[];
+  ms: number;
+}
+
+const DATA_ID = "__SITE_DATA__";
+
+function escapeJson(value: unknown) {
+  return JSON.stringify(value).replace(/</g, "\\u003c");
+}
+
+function escapeHtml(value: string) {
+  return value.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
+}
+
+/**
+ * Preload for the LCP image, copied from the rendered `<img fetchpriority="high">` itself so
+ * src, srcset and sizes always match what the image will pick (no double download).
+ */
+export function lcpPreload(body: string): string {
+  const img = body.match(/<img\b[^>]*fetchPriority="high"[^>]*>|<img\b[^>]*fetchpriority="high"[^>]*>/i)?.[0];
+  if (!img) return "";
+  const attr = (name: string) => img.match(new RegExp(`\\s${name}="([^"]*)"`, "i"))?.[1];
+  const src = attr("src");
+  if (!src) return "";
+  const srcset = attr("srcSet") ?? attr("srcset");
+  const sizes = attr("sizes");
+  return `<link rel="preload" as="image" href="${src}"${srcset ? ` imagesrcset="${srcset}"` : ""}${sizes ? ` imagesizes="${sizes}"` : ""} fetchpriority="high">`;
+}
+
+const absolute = (origin: string | undefined, url: string | undefined | null) =>
+  !url ? undefined : /^https?:\/\//.test(url) ? url : origin ? `${origin}${url}` : undefined;
+
+/** LocalBusiness (subtype by preset) and FAQPage. AI answers and search both read these. */
+function structuredData(config: SiteConfig, origin: string | undefined, heroImage: string | undefined) {
+  if (!isServiceConfig(config)) return [];
+  const { business, content } = config;
+  const org: Record<string, unknown> = {
+    "@context": "https://schema.org",
+    "@type": business.schemaType ?? presets[config.preset].schemaType,
+    name: business.name,
+    description: config.meta.description,
+    telephone: business.phone,
+    url: origin ? `${origin}/` : undefined,
+    image: heroImage,
+    address: business.address,
+    areaServed: business.serviceAreas.length ? business.serviceAreas : undefined,
+    sameAs: [business.blogUrl, business.kakaoUrl].filter(Boolean),
+    makesOffer: content.services.items.map((item) => ({
+      "@type": "Offer",
+      itemOffered: { "@type": "Service", name: item.label, description: item.description },
+    })),
+  };
+  const result: unknown[] = [JSON.parse(JSON.stringify(org))];
+  if (content.faqs.length) {
+    result.push({
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      mainEntity: content.faqs.map((faq) => ({
+        "@type": "Question",
+        name: faq.question,
+        acceptedAnswer: { "@type": "Answer", text: faq.answer },
+      })),
+    });
+  }
+  return result;
+}
+
+async function renderPage(config: SiteConfig, sitePage: SitePage, options: RenderOptions): Promise<RenderedPage> {
+  // Serialized for hydration too, so server and client agree on every link.
+  const site = sitePage.data.site ? { ...sitePage.data.site, turnstileFrame: options.turnstileFrame ?? null } : sitePage.data.site;
+  const page = {
+    ...sitePage,
+    data: { ...sitePage.data, site, linkPrefix: options.linkPrefix, preview: options.preview },
+  };
+  const stream = await renderToReadableStream(<SiteView data={page.data} />);
+  await stream.allReady;
+  const body = await new Response(stream).text();
+  const hydrate = options.hydrate ?? true;
+  const { title, description } = config.meta;
+  const lang = ("lang" in config.meta && config.meta.lang) || "ko";
+  const home = page.route === "/";
+  const pageTitle = home ? title : `${page.title} | ${isServiceConfig(config) ? config.business.name : title}`;
+  const url = options.origin ? `${options.origin}${page.route === "/" ? "/" : `${page.route}`}` : undefined;
+  const hero = page.data.page.blocks[0];
+  const heroImage = absolute(
+    options.origin,
+    hero?.__component === "blocks.hero" ? (hero.image?.media as { url?: string } | undefined)?.url : undefined,
+  );
+  const head = [
+    `<title>${escapeHtml(pageTitle)}</title>`,
+    `<meta name="description" content="${escapeHtml(description)}">`,
+    options.preview ? `<meta name="robots" content="noindex, nofollow">` : "",
+    url && !options.preview ? `<link rel="canonical" href="${escapeHtml(url)}">` : "",
+    `<meta property="og:type" content="website">`,
+    `<meta property="og:title" content="${escapeHtml(pageTitle)}">`,
+    `<meta property="og:description" content="${escapeHtml(description)}">`,
+    url ? `<meta property="og:url" content="${escapeHtml(url)}">` : "",
+    heroImage ? `<meta property="og:image" content="${escapeHtml(heroImage)}">` : "",
+    `<meta property="og:locale" content="ko_KR">`,
+    ...(home ? structuredData(config, options.origin, heroImage) : []).map(
+      (data) => `<script type="application/ld+json">${escapeJson(data)}</script>`,
+    ),
+  ]
+    .filter(Boolean)
+    .join("\n");
+  const html = `<!doctype html>
+<html lang="${lang}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+${head}
+${lcpPreload(body)}
+<link rel="stylesheet" href="${options.assetBase}/_assets/site.css">
+</head>
+<body${page.data.site ? ' class="has-contact-bar"' : ""}>
+<div id="root">${body}</div>
+${hydrate ? `<script id="${DATA_ID}" type="application/json">${escapeJson(page.data)}</script>
+<script type="module" src="${options.assetBase}/_assets/client.js"></script>` : ""}
+</body>
+</html>`;
+  return { route: page.route, path: page.route === "/" ? "index.html" : `${page.route.slice(1)}/index.html`, html };
+}
+
+/** Config → one HTML document per page. Runs in workerd and Node. */
+export async function renderSite(input: SiteConfigInput, options: RenderOptions): Promise<RenderResult> {
+  const started = Date.now();
+  const config = requireValidConfig(input);
+  const pages: RenderedPage[] = [];
+  for (const page of sitePagesFor(config, options.assetBase)) pages.push(await renderPage(config, page, options));
+  return { html: pages[0]!.html, pages, ms: Date.now() - started };
+}
+
+export { DATA_ID };
+import { businessBasicTemplate, type TemplateSeed } from "@dani-builder/site-templates";
+import { createTemplatePreview } from "@dani-builder/site-templates/preview";
+import { isServiceConfig, type SiteConfig, type SiteConfigInput } from "./site-config.js";
+import { compileServiceSeed, telHref } from "./templates/service-local/compile.js";
+import { presets } from "./templates/service-local/presets.js";
+import { HOST_COMPOSITION, parseSiteConfig } from "./validate.js";
+import type { PageData, SiteChrome } from "./view.js";
+
+/** Builder release the blocks package targets; seeds are validated against it. */
+export const BUILDER_VERSION = "0.16.0";
+
+export class SiteConfigError extends Error {
+  constructor(readonly errors: readonly string[]) {
+    super(`Invalid site config:\n- ${errors.join("\n- ")}`);
+  }
+}
+
+export interface SitePage {
+  /** `/` or `/privacy`. */
+  route: string;
+  title: string;
+  data: PageData;
+}
+
+function chrome(config: SiteConfig): SiteChrome | null {
+  if (!isServiceConfig(config)) return null;
+  const { business } = config;
+  return {
+    name: business.name,
+    tel: telHref(business.phone),
+    kakaoUrl: business.kakaoUrl ?? null,
+    mapUrl: business.mapUrl ?? null,
+    bookingUrl: business.bookingUrl ?? null,
+    inquiryLabel: presets[config.preset].inquiryCta,
+    blogUrl: business.blogUrl ?? null,
+  };
+}
+
+/** Validates a config; throws SiteConfigError with every problem. */
+export function requireValidConfig(input: SiteConfigInput): SiteConfig {
+  const parsed = parseSiteConfig(input);
+  if (!parsed.ok) throw new SiteConfigError(parsed.errors);
+  return parsed.config;
+}
+
+/** Validates a config and projects every page into the props the view renders. */
+export function toSitePages(input: SiteConfigInput, assetBase: string): SitePage[] {
+  return sitePagesFor(requireValidConfig(input), assetBase);
+}
+
+/** Projects an already validated config into page props. */
+export function sitePagesFor(config: SiteConfig, assetBase: string): SitePage[] {
+  const manifest = businessBasicTemplate;
+  const service = isServiceConfig(config);
+  const seed: TemplateSeed | undefined = service ? compileServiceSeed(config) : config.seed;
+  const preview = createTemplatePreview({
+    manifest,
+    selection: {
+      templateId: manifest.id,
+      templateVersion: manifest.version,
+      themeId: "open-atelier",
+      compositionId: service ? HOST_COMPOSITION : config.compositionId,
+      paletteId: config.paletteId,
+    },
+    seed,
+    builderVersion: BUILDER_VERSION,
+    resolveAsset: (asset) => ({
+      url: asset.src.startsWith("/_media/")
+        ? asset.src
+        : `${assetBase}/site-templates/${asset.src.replace(/^assets\/business-basic\//, "")}`,
+    }),
+  });
+  const site = chrome(config);
+  // v1 is one page (home). v2 adds the privacy page.
+  const routes = service ? ["/", "/privacy"] : ["/"];
+  return routes.map((route) => {
+    const entry = preview.pages.find((page) => page.route === route);
+    if (!entry) throw new SiteConfigError([`composition has no ${route} route`]);
+    return {
+      route,
+      title: entry.page.title ?? "",
+      data: {
+        page: entry.page,
+        navigation: preview.navigation,
+        footer: preview.footer,
+        brandColors: preview.brandColors,
+        route,
+        site,
+      },
+    };
+  });
+}
+
+/** Home page only (M1 callers). */
+export function toPageData(config: SiteConfigInput, assetBase: string): PageData {
+  return toSitePages(config, assetBase)[0]!.data;
+}
+import { blogCardsHtml, type BlogFeed } from "@sites/renderer/blog";
+import {
+  kvHostKey,
+  kvSiteKey,
+  MEDIA_PATH,
+  r2MediaKey,
+  r2PageKey,
+  r2SharedKey,
+  type HostRecord,
+  type PublishedPointer,
+} from "./keys.js";
+
+/** RPC surface of the api Worker's `PublicApi` entrypoint (apps/api/src/public.ts). */
+interface PublicApi {
+  track(request: { siteId: string; userAgent: string | null; body: unknown }): Promise<"counted" | "ignored">;
+  submitInquiry(request: { siteId: string; hostname: string; ip: string | null; body: unknown }): Promise<{
+    status: number;
+    body: unknown;
+  }>;
+}
+
+interface Env {
+  SITES: R2Bucket;
+  ROUTES: KVNamespace;
+  BASE_DOMAIN: string;
+  API: PublicApi;
+}
+
+const MAX_FORM_BYTES = 16 * 1024;
+
+const jsonResponse = (status: number, body: unknown) =>
+  new Response(JSON.stringify(body), {
+    status,
+    headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" },
+  });
+
+/** Reads a small JSON body, refusing anything larger than the limit while streaming. */
+async function readSmallJson(request: Request, limit: number): Promise<unknown> {
+  const reader = request.body?.getReader();
+  if (!reader) return null;
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > limit) {
+      await reader.cancel();
+      throw new Error("too large");
+    }
+    chunks.push(value);
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return JSON.parse(new TextDecoder().decode(bytes));
+}
+
+// KV values are cached at the edge for this long (KV minimum); publish/rollback propagate within it.
+const KV_CACHE_TTL = 30;
+
+function page(status: number, message: string, headers: Record<string, string> = {}) {
+  return new Response(
+    `<!doctype html><html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>${message}</title><body style="font-family:system-ui;padding:48px"><p>${message}</p></body></html>`,
+    { status, headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", ...headers } },
+  );
+}
+
+async function serveObject(env: Env, key: string, cacheControl: string) {
+  const object = await env.SITES.get(key);
+  if (!object) return null;
+  const headers = new Headers();
+  object.writeHttpMetadata(headers);
+  headers.set("etag", object.httpEtag);
+  headers.set("cache-control", cacheControl);
+  return new Response(object.body, { headers });
+}
+
+/** One KV read for M2 records; M1 records (bare siteId) need a second read for the pointer. */
+async function resolveHost(env: Env, hostname: string): Promise<HostRecord | null> {
+  const raw = await env.ROUTES.get(kvHostKey(hostname), { cacheTtl: KV_CACHE_TTL });
+  if (!raw) return null;
+  if (raw.startsWith("{")) return JSON.parse(raw) as HostRecord;
+  const pointer = await env.ROUTES.get<PublishedPointer>(kvSiteKey(raw), { type: "json", cacheTtl: KV_CACHE_TTL });
+  return { siteId: raw, status: "active", pointer, redirectTo: null };
+}
+
+export default {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    const url = new URL(request.url);
+    const hostname = url.hostname.toLowerCase();
+
+    // Pageview and click beacons. Always 204: callers learn nothing, pages never wait on it.
+    if (url.pathname === "/api/track") {
+      if (request.method !== "POST") return new Response(null, { status: 405 });
+      const host = await resolveHost(env, hostname);
+      if (host && host.status === "active" && host.pointer) {
+        let body: unknown = null;
+        try {
+          body = await readSmallJson(request, 1024);
+        } catch {
+          body = null;
+        }
+        if (body) {
+          ctx.waitUntil(env.API.track({ siteId: host.siteId, userAgent: request.headers.get("user-agent"), body }));
+        }
+      }
+      return new Response(null, { status: 204, headers: { "cache-control": "no-store" } });
+    }
+
+    // Visitor inquiry: the site is identified by Host here, then handed to the api by RPC.
+    if (url.pathname === "/api/inquiry") {
+      if (request.method !== "POST") return jsonResponse(405, { ok: false, error: "method not allowed" });
+      const host = await resolveHost(env, hostname);
+      if (!host || host.status !== "active" || !host.pointer) {
+        return jsonResponse(404, { ok: false, error: "문의를 받을 수 없는 사이트입니다" });
+      }
+      if (!(request.headers.get("content-type") ?? "").startsWith("application/json")) {
+        return jsonResponse(415, { ok: false, error: "JSON으로 보내 주세요" });
+      }
+      let body: unknown;
+      try {
+        body = await readSmallJson(request, MAX_FORM_BYTES);
+      } catch {
+        return jsonResponse(400, { ok: false, error: "요청을 읽지 못했습니다" });
+      }
+      const result = await env.API.submitInquiry({
+        siteId: host.siteId,
+        hostname,
+        ip: request.headers.get("cf-connecting-ip"),
+        body,
+      });
+      return jsonResponse(result.status, result.body);
+    }
+
+    if (request.method !== "GET" && request.method !== "HEAD") {
+      return new Response("method not allowed", { status: 405 });
+    }
+
+    // Shared assets are content-addressed by version, so any host may serve them.
+    if (url.pathname.startsWith("/_shared/")) {
+      return (
+        (await serveObject(env, r2SharedKey(url.pathname.slice("/_shared/".length)), "public, max-age=31536000, immutable")) ??
+        new Response("not found", { status: 404 })
+      );
+    }
+    // Uploaded photos are public and content-addressed.
+    const media = MEDIA_PATH.exec(url.pathname);
+    if (media) {
+      return (
+        (await serveObject(env, r2MediaKey(media[1]!, media[2]!), "public, max-age=31536000, immutable")) ??
+        new Response("not found", { status: 404 })
+      );
+    }
+
+    const host = await resolveHost(env, hostname);
+    if (!host) return page(404, "연결된 사이트가 없습니다.");
+    if (host.status === "cancelled") return page(410, "운영이 종료된 사이트입니다.");
+    if (host.status === "suspended") return page(503, "잠시 운영을 멈춘 사이트입니다.", { "retry-after": "86400" });
+    if (host.redirectTo) {
+      return Response.redirect(`${url.protocol}//${host.redirectTo}${url.pathname}${url.search}`, 301);
+    }
+    const pointer = host.pointer;
+    if (!pointer) return page(404, "아직 공개되지 않은 사이트입니다.");
+
+    if (url.pathname === "/robots.txt") {
+      return new Response(`User-agent: *\nAllow: /\nSitemap: https://${hostname}/sitemap.xml\n`, {
+        headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "public, max-age=3600" },
+      });
+    }
+    const pages = pointer.pages ?? ["/"];
+    if (url.pathname === "/sitemap.xml") {
+      const lastmod = pointer.publishedAt.slice(0, 10);
+      const urls = pages
+        .map((route) => `<url><loc>https://${hostname}${route}</loc><lastmod>${lastmod}</lastmod></url>`)
+        .join("");
+      return new Response(
+        `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${urls}</urlset>\n`,
+        { headers: { "content-type": "application/xml; charset=utf-8", "cache-control": "public, max-age=3600" } },
+      );
+    }
+    const route = url.pathname === "/index.html" ? "/" : url.pathname.replace(/\/(index\.html)?$/, "") || "/";
+    if (pages.includes(route)) {
+      const path = route === "/" ? "index.html" : `${route.slice(1)}/index.html`;
+      const response = await serveObject(env, r2PageKey(host.siteId, pointer.versionId, path, pointer.renderId), "public, max-age=60");
+      if (response) {
+        response.headers.set("x-site-version", String(pointer.number));
+        if (route !== "/") return response;
+        // Latest blog posts, filled at request time from the cron's KV cache. The body now
+        // changes without the object changing, so the R2 ETag no longer describes it.
+        response.headers.delete("etag");
+        const siteId = host.siteId;
+        return new HTMLRewriter()
+          .on("[data-blog-feed]", {
+            async element(element) {
+              const feed = await env.ROUTES.get<BlogFeed>(`blog:${siteId}`, { type: "json", cacheTtl: 300 });
+              const html = feed ? blogCardsHtml(feed.posts) : "";
+              if (html) element.setInnerContent(html, { html: true });
+            },
+          })
+          .transform(response);
+      }
+      return page(404, "페이지 파일을 찾지 못했습니다.");
+    }
+    return page(404, "없는 주소입니다.");
+  },
+};
+
+exec
+/bin/zsh -lc "cat packages/renderer/scripts/build-assets.mjs packages/renderer/package.json package.json scripts/verify-m3-blog.mjs; cat apps/api/wrangler*; rg -n 'blogUrl|DELETE FROM sites|cancel' packages/renderer/src/validate.ts apps/api/src/store.ts; cat packages/renderer/src/assets*" in /Users/steve/Projects/daniworks-sites-platform
+ exited 1 in 0ms:
+// Builds the shared, template-versioned assets once: CSS, client bundle, template images.
+// Output: dist/shared/<version>/... where <version> is a content hash, so the files can be
+// cached forever. Per-site publishing only renders HTML that points at this version.
+import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { cpSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { dirname, join, relative } from "node:path";
+import { fileURLToPath } from "node:url";
+import { build } from "esbuild";
+
+const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+const staging = join(root, "dist/.staging");
+const assets = join(staging, "_assets");
+rmSync(join(root, "dist"), { recursive: true, force: true });
+mkdirSync(assets, { recursive: true });
+
+execFileSync(
+  join(root, "node_modules/.bin/tailwindcss"),
+  ["-i", "src/styles.css", "-o", join(assets, "site.css"), "--minify"],
+  { cwd: root, stdio: ["ignore", "ignore", "inherit"] },
+);
+
+// Replace whole react-icons sets with the allowlist modules (src/icons/*.ts).
+const iconSets = { "react-icons/fa6": "src/icons/fa6.ts", "react-icons/fi": "src/icons/fi.ts" };
+const iconAllowlist = {
+  name: "icon-allowlist",
+  setup(b) {
+    b.onResolve({ filter: /^react-icons\/(fa6|fi)$/ }, (args) => {
+      const target = join(root, iconSets[args.path]);
+      if (args.importer === target) return undefined; // the allowlist module itself imports the real set
+      return { path: target };
+    });
+  },
+};
+
+await build({
+  entryPoints: [join(root, "src/client.tsx")],
+  outdir: assets,
+  entryNames: "[name]",
+  chunkNames: "chunks/[name]-[hash]",
+  bundle: true,
+  splitting: true,
+  format: "esm",
+  minify: true,
+  target: "es2022",
+  jsx: "automatic",
+  define: { "process.env.NODE_ENV": '"production"' },
+  plugins: [iconAllowlist],
+  logLevel: "warning",
+});
+
+cpSync(join(root, "node_modules/@dani-builder/site-templates/assets/business-basic"), join(staging, "site-templates"), {
+  recursive: true,
+});
+
+// Responsive WebP variants next to each sample photo (src/images.ts names them).
+const { default: sharp } = await import("sharp");
+const { VARIANT_WIDTHS, VARIANT_QUALITY, variantUrl } = await import("../src/images.ts");
+for (const file of readdirSync(join(staging, "site-templates")).filter((f) => /\.(jpg|png)$/.test(f))) {
+  const src = join(staging, "site-templates", file);
+  const { width } = await sharp(src).metadata();
+  for (const w of VARIANT_WIDTHS.filter((w) => w < width)) {
+    await sharp(src).resize({ width: w }).webp({ quality: VARIANT_QUALITY }).toFile(variantUrl(src, w));
+  }
+}
+
+function walk(dir) {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
+    e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)],
+  );
+}
+const files = walk(staging).sort();
+const hash = createHash("sha256");
+for (const file of files) hash.update(relative(staging, file)).update(readFileSync(file));
+const version = hash.digest("hex").slice(0, 12);
+
+mkdirSync(join(root, "dist/shared"), { recursive: true });
+renameSync(staging, join(root, "dist/shared", version));
+mkdirSync(join(root, "src/generated"), { recursive: true });
+writeFileSync(
+  join(root, "src/generated/asset-version.ts"),
+  `// Generated by scripts/build-assets.mjs. Do not edit.\nexport const ASSET_VERSION = "${version}";\n`,
+);
+
+const kib = (f) => (statSync(join(root, "dist/shared", version, f)).size / 1024).toFixed(1);
+const chunkDir = join(root, "dist/shared", version, "_assets/chunks");
+const chunkKiB = readdirSync(chunkDir).reduce((s, f) => s + statSync(join(chunkDir, f)).size, 0) / 1024;
+console.log(`asset version ${version}: ${files.length} files`);
+console.log(`site.css ${kib("_assets/site.css")} KiB, client.js ${kib("_assets/client.js")} KiB, chunks ${chunkKiB.toFixed(1)} KiB`);
+{
+  "name": "@sites/renderer",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./client": "./src/client.tsx",
+    "./blog": "./src/platform/blog.ts"
+  },
+  "scripts": {
+    "build": "node scripts/build-assets.mjs",
+    "check-types": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@dani-builder/agent-contract": "1.1.0",
+    "@dani-builder/blocks": "2.2.0",
+    "@dani-builder/site-templates": "0.8.0",
+    "@dani-builder/strapi-client": "2.5.0",
+    "@sites/schema": "workspace:*",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "react-icons": "5.5.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.3.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "esbuild": "^0.28.2",
+    "sharp": "0.35.5",
+    "tailwindcss": "^4.3.5",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.1"
+  }
+}
+{
+  "name": "daniworks-sites-platform",
+  "private": true,
+  "packageManager": "pnpm@10.28.0",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "build": "pnpm --filter @sites/renderer build",
+    "test": "pnpm -r test",
+    "check-types": "pnpm -r check-types",
+    "dev:api": "pnpm --filter api dev",
+    "dev:router": "pnpm --filter router dev",
+    "upload:shared": "node scripts/upload-shared.mjs",
+    "verify:m1": "node scripts/verify-m1.mjs",
+    "deploy:staging": "pnpm build && pnpm --filter api migrate:staging && pnpm --filter api deploy:staging && pnpm --filter router deploy:staging",
+    "verify:staging": "node scripts/verify-staging.mjs"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/client": "2.4.0",
+    "chrome-launcher": "1.2.3",
+    "lighthouse": "13.6.0",
+    "playwright": "1.65.1"
+  }
+}
+// M3 step 3-1: latest blog posts. Publish caches nothing; the cron (or refresh) fetches the RSS
+// into KV and the router fills the section at request time, without republishing.
+import { API, ROUTER_PORT, api, chromium, evidence, localD1, routerRequest, uploadShared, viewports } from "./lib/verify.mjs";
+
+const { lessonFixture } = await import("../packages/renderer/src/templates/service-local/fixtures.ts");
+const ev = evidence("m3-blog");
+const { check } = ev;
+const run = Date.now().toString(36);
+const settle = async (predicate, tries = 40) => {
+  for (let i = 0; i < tries; i++) {
+    if (await predicate()) return true;
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  return false;
+};
+
+uploadShared();
+const config = structuredClone(lessonFixture);
+config.slug = `blog-${run}`;
+config.business.blogUrl = "https://blog.naver.com/fixtureblog";
+const host = `${config.slug}.localhost`;
+const created = await api("POST", "/sites", { config, createdBy: "operator" });
+const siteId = created.data.siteId;
+await api("POST", `/sites/${siteId}/publish`);
+
+// 1. before the first fetch: the section is there, empty
+const before = await routerRequest(host, "/");
+check("게시 직후: 블로그 섹션은 있고 글은 아직 없음", before.body.includes("data-blog-feed") && !before.body.includes("sites-blog-card"));
+check("피드 행이 생기고 수집 대기", localD1(`SELECT fetched_at FROM blog_feeds WHERE site_id = '${siteId}'`)[0]?.fetched_at === null);
+
+// 2. the cron fetches it; the router fills the section
+await fetch(`${API}/__scheduled?cron=*/5+*+*+*+*`);
+await settle(() => localD1(`SELECT status FROM blog_feeds WHERE site_id = '${siteId}'`)[0]?.status === "ok");
+let page;
+await settle(async () => (page = await routerRequest(host, "/")).body.includes("sites-blog-card"));
+const cards = (page.body.match(/sites-blog-card/g) ?? []).length;
+check("cron 수집 후 최신 글 3개가 HTML에 들어감(재게시 없이)", cards === 3 && page.headers["x-site-version"] === "1", { cards });
+check("글 링크·날짜·이스케이프(& → &amp;)", page.body.includes('href="https://blog.naver.com/fixtureblog/101"') && page.body.includes("2026.11.19") && page.body.includes("fixtureblog 글 1 &amp; 소식"));
+check("블로그 HTML이 바뀌므로 ETag 없음", !page.headers.etag);
+check("개인정보처리방침 페이지는 그대로(재작성 없음)", (await routerRequest(host, "/privacy")).body.includes("개인정보처리방침") && !(await routerRequest(host, "/privacy")).body.includes("data-blog-feed"));
+
+// 3. browser: hydration keeps the injected cards; Naver images are requested without a Referer
+const browser = await chromium().launch();
+const context = await browser.newContext({ viewport: viewports.mobile });
+const imageRequests = [];
+await context.route("https://blogthumb.pstatic.net/**", async (route) => {
+  imageRequests.push(route.request().headers()["referer"] ?? null);
+  await route.fulfill({ status: 200, contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" width="365" height="365"><rect width="100%" height="100%" fill="#8a8"/></svg>' });
+});
+const tab = await context.newPage();
+const errors = [];
+tab.on("pageerror", (e) => errors.push(String(e)));
+tab.on("console", (m) => m.type() === "error" && errors.push(m.text()));
+await tab.goto(`http://${host}:${ROUTER_PORT}/`, { waitUntil: "networkidle" });
+await tab.locator("#blog").scrollIntoViewIfNeeded();
+await tab.waitForTimeout(800);
+const visibleCards = await tab.locator(".sites-blog-card").count();
+const hydrated = await tab.evaluate(() => Object.keys(document.getElementById("root") ?? {}).some((k) => k.startsWith("__reactContainer")));
+await tab.screenshot({ path: `${ev.dir}/blog-mobile.png`, fullPage: true });
+check("하이드레이션 후에도 카드 3개 유지, 오류 없음", hydrated && visibleCards === 3 && !errors.length, { visibleCards, errors });
+check("네이버 이미지 요청에 Referer 없음", imageRequests.length >= 1 && imageRequests.every((r) => r === null), { imageRequests });
+await browser.close();
+
+// 4. failures keep the previous cache; removing the blog clears it
+localD1(`UPDATE blog_feeds SET blog_url = 'https://blog.naver.com/missing' WHERE site_id = '${siteId}'`);
+const failed = await api("POST", `/sites/${siteId}/blog/refresh`);
+const stillCards = ((await routerRequest(host, "/")).body.match(/sites-blog-card/g) ?? []).length;
+check("RSS 실패 시 오류 기록, 이전 글은 유지", failed.data.status === "error" && stillCards === 3, failed.data);
+const noBlog = structuredClone(config);
+delete noBlog.business.blogUrl;
+const v2 = await api("POST", `/sites/${siteId}/versions`, { config: noBlog });
+await api("POST", `/sites/${siteId}/publish`, { versionId: v2.data.versionId });
+const after = await routerRequest(host, "/");
+check("블로그 주소를 빼고 게시하면 섹션·피드 행·캐시 제거", !after.body.includes("data-blog-feed") && localD1(`SELECT COUNT(*) AS n FROM blog_feeds WHERE site_id = '${siteId}'`)[0].n === 0);
+check("블로그 없는 사이트는 새로고침 404", (await api("POST", `/sites/${siteId}/blog/refresh`)).status === 404);
+
+// 5. live smoke (optional): the real Naver RSS parses
+if (process.env.LIVE === "1") {
+  const { parseNaverRss } = await import("../packages/renderer/src/platform/blog.ts");
+  const xml = await (await fetch("https://rss.blog.naver.com/jefes_fc.xml")).text();
+  const posts = parseNaverRss(xml);
+  check("실제 네이버 RSS 파싱(LIVE)", posts.length === 3 && posts.every((p) => p.link.startsWith("https://blog.naver.com/")), { titles: posts.map((p) => p.title) });
+}
+
+ev.finish({ siteId });
+# Platform API: site/version CRUD, preview, publish (render → R2 → KV), rollback.
+name = "sites-api"
+main = "src/index.ts"
+# Daniworks account (owns the dsites.kr zone). Local dev ignores it.
+account_id = "358a1b6caabcf91741109efca1ec0547"
+compatibility_date = "2026-11-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Safety net: re-sync router KV records that lag D1 (see src/routes.ts).
+[triggers]
+crons = ["*/5 * * * *", "17 * * * *"]
+
+[vars]
+# Public sites are served at <slug>.<BASE_DOMAIN>. Local dev uses *.localhost.
+BASE_DOMAIN = "localhost"
+PUBLIC_SCHEME = "http"
+API_ORIGIN = "http://127.0.0.1:8788"
+# Cloudflare's always-pass test key; the matching test secret goes in .dev.vars.
+TURNSTILE_SITE_KEY = "1x00000000000000000000AA"
+MAIL_MODE = "mailpit"
+MAIL_FROM = "noreply@dsites.kr"
+DOMAIN_CNAME_TARGET = "fallback.dsites.kr"
+# Custom domains locally: CF_API_BASE / CF_ZONE_ID / CF_API_TOKEN in .dev.vars (Docker: cf-mock).
+# ADMIN_TOKEN comes from .dev.vars locally and a secret in production.
+
+[[d1_databases]]
+binding = "DB"
+database_name = "daniworks-sites"
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "migrations"
+
+[[r2_buckets]]
+binding = "SITES"
+bucket_name = "daniworks-sites"
+
+[[kv_namespaces]]
+binding = "ROUTES"
+id = "00000000000000000000000000000000"
+
+# Staging on the real zone: `pnpm --filter api deploy:staging`. Until launch dsites.kr doubles as staging.
+# Bindings and vars are not inherited by environments, so every one is repeated here.
+[env.staging]
+name = "sites-api-staging"
+workers_dev = false
+preview_urls = false
+# More specific than the router's `*/*`, so it wins for this host.
+routes = [{ pattern = "api.dsites.kr/*", zone_name = "dsites.kr" }]
+
+[env.staging.triggers]
+crons = ["*/5 * * * *", "17 * * * *"]
+
+[env.staging.vars]
+BASE_DOMAIN = "dsites.kr"
+PUBLIC_SCHEME = "https"
+API_ORIGIN = "https://api.dsites.kr"
+# TURNSTILE_SITE_KEY: widget whose hostnames include api.dsites.kr (the frame host).
+# TURNSTILE_SECRET, HASH_PEPPER: `wrangler secret put ... --env staging`
+MAIL_MODE = "binding"
+MAIL_FROM = "noreply@dsites.kr"
+CF_API_BASE = "https://api.cloudflare.com/client/v4"
+DOMAIN_CNAME_TARGET = "fallback.dsites.kr"
+# CF_ZONE_ID (dsites.kr) and CF_API_TOKEN (SSL and Certificates: Edit): wrangler secret put
+# ADMIN_TOKEN: `wrangler secret put ADMIN_TOKEN --env staging`
+
+# Cloudflare Email Service; dsites.kr must be onboarded for sending (wrangler email sending enable).
+[[env.staging.send_email]]
+name = "EMAIL"
+
+[[env.staging.d1_databases]]
+binding = "DB"
+database_name = "daniworks-sites-staging"
+database_id = "fc09d755-f8b2-43e1-9bcf-55a00786d15a"
+migrations_dir = "migrations"
+
+[[env.staging.r2_buckets]]
+binding = "SITES"
+bucket_name = "daniworks-sites-staging"
+
+[[env.staging.kv_namespaces]]
+binding = "ROUTES"
+id = "81f56d8264ab431ab7ca5da79add2496"
+apps/api/src/store.ts:13:  cancelled_at: string | null;
+apps/api/src/store.ts:234:      `SELECT s.id, s.slug, s.template_id, s.status, s.cancelled_at, s.published_version_id, s.published_at,
+zsh:1: no matches found: packages/renderer/src/assets*
+
+exec
+/bin/zsh -lc 'pnpm check-types; pnpm --filter @sites/renderer test' in /Users/steve/Projects/daniworks-sites-platform
+exec
+/bin/zsh -lc "nl -ba apps/api/src/blog.ts; cat packages/renderer/src/styles.css; rg -n 'blogUrl' packages/schema packages/renderer/src/site-config.ts; sed -n '220,265p' apps/api/src/index.ts; git diff --cached --stat" in /Users/steve/Projects/daniworks-sites-platform
+ succeeded in 0ms:
+     1	import { naverRssUrl, parseNaverRss, type BlogFeed } from "@sites/renderer/blog";
+     2	import { readLimited } from "./assets.js";
+     3	import type { Env } from "./env.js";
+     4	import { HttpError } from "./http.js";
+     5	
+     6	export const kvBlogKey = (siteId: string) => `blog:${siteId}`;
+     7	const STALE_MS = 3 * 3_600_000;
+     8	
+     9	/** Keeps the feed row in step with the live version: present with its blog URL, or removed. */
+    10	export async function syncBlogFeed(env: Env, siteId: string, config: { business?: { blogUrl?: string } }) {
+    11	  const blogUrl = config.business?.blogUrl ?? null;
+    12	  if (!blogUrl) {
+    13	    await env.DB.prepare("DELETE FROM blog_feeds WHERE site_id = ?").bind(siteId).run();
+    14	    await env.ROUTES.delete(kvBlogKey(siteId));
+    15	    return;
+    16	  }
+    17	  // A new or changed URL is due immediately (fetched_at NULL).
+    18	  await env.DB.prepare(
+    19	    `INSERT INTO blog_feeds (site_id, blog_url) VALUES (?, ?)
+    20	     ON CONFLICT (site_id) DO UPDATE SET blog_url = excluded.blog_url,
+    21	       fetched_at = CASE WHEN blog_feeds.blog_url = excluded.blog_url THEN blog_feeds.fetched_at ELSE NULL END`,
+    22	  )
+    23	    .bind(siteId, blogUrl)
+    24	    .run();
+    25	}
+    26	
+    27	/** Fetches one feed and caches its latest posts. Failures keep the previous cache. */
+    28	export async function refreshBlog(env: Env, siteId: string) {
+    29	  const row = await env.DB.prepare("SELECT blog_url FROM blog_feeds WHERE site_id = ?").bind(siteId).first<{ blog_url: string }>();
+    30	  if (!row) throw new HttpError(404, "블로그가 연결된 게시 버전이 없습니다");
+    31	  const rss = naverRssUrl(row.blog_url, env.BLOG_RSS_BASE);
+    32	  const now = new Date().toISOString();
+    33	  try {
+    34	    if (!rss) throw new Error("네이버 블로그 주소가 아닙니다");
+    35	    const res = await fetch(rss, { headers: { "user-agent": "dsites-blog-feed/1.0", accept: "application/rss+xml, text/xml" } });
+    36	    if (!res.ok) throw new Error(`RSS ${res.status}`);
+    37	    const xml = new TextDecoder().decode(await readLimited(res.body, 2 * 1024 * 1024));
+    38	    const feed: BlogFeed = { fetchedAt: now, posts: parseNaverRss(xml) };
+    39	    await env.ROUTES.put(kvBlogKey(siteId), JSON.stringify(feed));
+    40	    await env.DB.prepare("UPDATE blog_feeds SET fetched_at = ?, status = 'ok', error = NULL, post_count = ? WHERE site_id = ?")
+    41	      .bind(now, feed.posts.length, siteId)
+    42	      .run();
+    43	    return { status: "ok", posts: feed.posts.length };
+    44	  } catch (error) {
+    45	    const message = error instanceof Error ? error.message : String(error);
+    46	    await env.DB.prepare("UPDATE blog_feeds SET fetched_at = ?, status = 'error', error = ? WHERE site_id = ?")
+    47	      .bind(now, message.slice(0, 300), siteId)
+    48	      .run();
+    49	    return { status: "error", error: message };
+    50	  }
+    51	}
+    52	
+    53	/** Cron: refresh up to 20 feeds that are new or older than three hours. */
+    54	export async function refreshDueBlogs(env: Env) {
+    55	  const { results } = await env.DB.prepare(
+    56	    "SELECT site_id FROM blog_feeds WHERE fetched_at IS NULL OR fetched_at < ? ORDER BY fetched_at LIMIT 20",
+    57	  )
+    58	    .bind(new Date(Date.now() - STALE_MS).toISOString())
+    59	    .all<{ site_id: string }>();
+    60	  let ok = 0;
+    61	  for (const { site_id } of results) if ((await refreshBlog(env, site_id)).status === "ok") ok++;
+    62	  return { due: results.length, ok };
+    63	}
+@import "tailwindcss";
+@import "@dani-builder/blocks/styles.css";
+@source "../node_modules/@dani-builder/blocks/dist";
+@source "./";
+
+@theme {
+  --color-primary: #157a5c;
+  --color-primary-light: #6fcfb2;
+  --color-cta: #0e5f47;
+  --color-cta-hover: #0b4c39;
+  --color-bg: #f4f3ed;
+  --color-text: #17241f;
+  --color-text-muted: #56655d;
+}
+
+/* M0: system fonts. Webfont subsetting is a separate decision. */
+:root {
+  --font-body: "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+  --font-heading: var(--font-body);
+  --font-brand: var(--font-body);
+}
+
+.sites-inquiry-placeholder {
+  padding: 48px 24px;
+  text-align: center;
+  color: var(--color-text-muted);
+  background: var(--color-bg);
+}
+
+/* Room for the fixed mobile contact bar (platform/contact-bar.tsx). */
+@media (max-width: 767px) {
+  body.has-contact-bar {
+    padding-bottom: calc(56px + env(safe-area-inset-bottom));
+  }
+}
+packages/schema/src/site-config.ts:45:  blogUrl: httpsUrl.regex(/^https:\/\/(m\.)?blog\.naver\.com\/[A-Za-z0-9_-]+\/?$/, "네이버 블로그 주소여야 합니다").optional(),
+    await syncHostRecordsNow(env, site.id);
+    return json({ siteId: site.id, status });
+  }
+
+  // POST /sites/:id/rollback {versionId}
+  if (method === "POST" && parts[2] === "rollback") {
+    const body = await readJson<{ versionId: string }>(request);
+    if (!body.versionId) throw new HttpError(400, "versionId가 필요합니다");
+    return json(await rollback(env, site, body.versionId));
+  }
+
+  throw new HttpError(404, "없는 경로입니다");
+}
+
+export { PublicApi } from "./public.js";
+
+export default {
+  async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext) {
+    ctx.waitUntil(
+      (async () => {
+        // Audits only mark work; maintenance and reconcile then do it in the same run.
+        if (controller.cron === AUDIT_CRON) {
+          console.log("[routes] audit", JSON.stringify(await auditHostRecords(env)));
+          console.log("[domains] origin audit", JSON.stringify(await auditOrigins(env)));
+        }
+        console.log("[domains] maintain", JSON.stringify(await maintainDomains(env)));
+        console.log("[blog] refresh", JSON.stringify(await refreshDueBlogs(env)));
+        console.log("[routes] reconcile", JSON.stringify(await reconcileHostRecords(env)));
+      })(),
+    );
+  },
+
+  async fetch(request: Request, env: Env): Promise<Response> {
+    try {
+      return await handle(request, env);
+    } catch (error) {
+      if (error instanceof HttpError) return json({ error: error.message, details: error.details }, error.status);
+      if (error instanceof SiteConfigError) return json({ error: "설정 검증 실패", details: error.errors }, 422);
+      console.error(error);
+      return json({ error: "서버 오류" }, 500);
+    }
+  },
+};
+
+ succeeded in 1949ms:
+
+> daniworks-sites-platform@ check-types /Users/steve/Projects/daniworks-sites-platform
+> pnpm -r check-types
+
+Scope: 5 of 6 workspace projects
+apps/console check-types$ tsc -p tsconfig.json
+packages/schema check-types$ tsc -p tsconfig.json
+packages/schema check-types: Done
+apps/console check-types: Done
+packages/renderer check-types$ tsc -p tsconfig.json
+packages/renderer check-types: Done
+apps/api check-types$ tsc -p tsconfig.json
+apps/router check-types$ tsc -p tsconfig.json
+apps/router check-types: Done
+apps/api check-types: Done
+
+> @sites/renderer@ test /Users/steve/Projects/daniworks-sites-platform/packages/renderer
+> vitest run
+
+
+ RUN  v5.1.1 /Users/steve/Projects/daniworks-sites-platform/packages/renderer
+
+
+ Test Files  4 passed (4)
+      Tests  34 passed (34)
+   Start at  05:24:02
+   Duration  339ms (import 42%, transform 35%, tests 22%, worker 1%)
+
+
+codex
+Changing the connected blog can leave unrelated cached posts visible indefinitely. Type checks and all 34 renderer tests passed, but they do not cover this transition.
+
+Review comment:
+
+- [P2] Invalidate cached posts when the blog URL changes — /Users/steve/Projects/daniworks-sites-platform/apps/api/src/blog.ts:19-24
+  When a published site's blog changes from A to B, this upsert resets the fetch timestamp but leaves `blog:<siteId>` containing A's posts. The router therefore displays A's content beneath B's blog link until a successful refresh; if B's RSS fails, the unrelated posts remain indefinitely because refresh failures preserve the cache. Clear or source-key the cached feed when the URL changes, while retaining previous posts only for failures fetching the same blog.
+Changing the connected blog can leave unrelated cached posts visible indefinitely. Type checks and all 34 renderer tests passed, but they do not cover this transition.
+
+Review comment:
+
+- [P2] Invalidate cached posts when the blog URL changes — /Users/steve/Projects/daniworks-sites-platform/apps/api/src/blog.ts:19-24
+  When a published site's blog changes from A to B, this upsert resets the fetch timestamp but leaves `blog:<siteId>` containing A's posts. The router therefore displays A's content beneath B's blog link until a successful refresh; if B's RSS fails, the unrelated posts remain indefinitely because refresh failures preserve the cache. Clear or source-key the cached feed when the URL changes, while retaining previous posts only for failures fetching the same blog.

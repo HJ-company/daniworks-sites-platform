@@ -12,6 +12,7 @@ const PhotosTab = lazy(() => import("./site/PhotosTab.js").then((m) => ({ defaul
 const DomainsTab = lazy(() => import("./site/DomainsTab.js").then((m) => ({ default: m.DomainsTab })));
 const InquiriesTab = lazy(() => import("./site/InquiriesTab.js").then((m) => ({ default: m.InquiriesTab })));
 const StatsTab = lazy(() => import("./site/StatsTab.js").then((m) => ({ default: m.StatsTab })));
+const ActivityTab = lazy(() => import("./site/ActivityCard.js").then((m) => ({ default: m.ActivityCard })));
 
 const TABS = [
   { id: "", label: "개요·버전" },
@@ -20,6 +21,7 @@ const TABS = [
   { id: "domains", label: "도메인" },
   { id: "inquiries", label: "문의" },
   { id: "stats", label: "통계·리포트" },
+  { id: "activity", label: "작업 기록" },
 ] as const;
 
 export function useSite(siteId: string) {
@@ -42,15 +44,20 @@ export function SitePage() {
     domains.data?.domains.find((d) => d.kind === "subdomain")?.hostname;
 
   if (site.error) return <ErrorAlert error={site.error} />;
-  if (!site.data) return null;
+  if (!site.data) return <LinearProgress />;
   const { site: row } = site.data;
   return (
     <Stack spacing={2}>
       <Stack direction="row" spacing={1.5} sx={{ alignItems: "center", flexWrap: "wrap" }}>
         <Typography variant="h5" sx={{ fontWeight: 700 }} data-testid="site-title">
-          {row.slug}
+          {row.business_name ?? row.slug}
         </Typography>
-        <StatusChip status={row.status} cancelled={row.cancelled_at} />
+        {row.business_name ? (
+          <Typography variant="body2" color="text.secondary">
+            {row.slug}
+          </Typography>
+        ) : null}
+        <StatusChip status={row.status} cancelled={row.cancelled_at} unpublished={!row.published_version_id} />
         {primary ? (
           <Link href={`https://${primary}`} target="_blank" rel="noopener" variant="body2">
             {primary}
@@ -71,6 +78,7 @@ export function SitePage() {
         {tab === "domains" && <DomainsTab siteId={siteId} />}
         {tab === "inquiries" && <InquiriesTab siteId={siteId} />}
         {tab === "stats" && <StatsTab siteId={siteId} />}
+        {tab === "activity" && <ActivityTab siteId={siteId} />}
       </Suspense>
     </Stack>
   );

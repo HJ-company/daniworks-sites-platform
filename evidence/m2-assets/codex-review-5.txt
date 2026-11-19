@@ -1,0 +1,1496 @@
+OpenAI Codex v0.167.0
+--------
+workdir: /Users/steve/Projects/daniworks-sites-platform
+model: gpt-6.1-sol
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: low
+reasoning summaries: none
+session id: 01a1efd8-2b4d-7140-9e08-4b9b066e9b41
+--------
+user
+current changes
+exec
+/bin/zsh -lc 'pwd; git status --short; find .. -name AGENTS.md -o -name AGENTS.override.md' in /Users/steve/Projects/daniworks-sites-platform
+exec
+/bin/zsh -lc 'ls -a; for p in /AGENTS.md /Users/AGENTS.md /Users/steve/AGENTS.md /Users/steve/Projects/AGENTS.md; do test ! -f "$p" || cat "$p"; done; find . -name AGENTS.md -o -name AGENTS.override.md; git diff --stat; git diff -- apps/api/src/index.ts packages/renderer/src/index.ts apps/api/package.json' in /Users/steve/Projects/daniworks-sites-platform
+ succeeded in 436ms:
+.
+..
+.dockerignore
+.git
+.gitignore
+README.md
+apps
+docker
+docker-compose.yml
+docs
+evidence
+node_modules
+package.json
+packages
+pnpm-lock.yaml
+pnpm-workspace.yaml
+scripts
+tsconfig.base.json
+./node_modules/.pnpm/@dani-builder+strapi-client@2.5.0/node_modules/@dani-builder/strapi-client/AGENTS.md
+./node_modules/.pnpm/next@16.4.6_react-dom@19.3.1_react@19.3.1__react@19.3.1/node_modules/next/AGENTS.md
+./node_modules/.pnpm/next@16.4.6_@opentelemetry+api@1.10.0_@types+node@26.6.6_react-dom@19.3.1_react@19.3.1__react@19.3.1/node_modules/next/AGENTS.md
+ apps/api/package.json          |  7 +++++--
+ apps/api/src/index.ts          |  7 +++++++
+ packages/renderer/src/index.ts |  1 +
+ pnpm-lock.yaml                 | 28 +++++++++++++++++++++++-----
+ 4 files changed, 36 insertions(+), 7 deletions(-)
+diff --git a/apps/api/package.json b/apps/api/package.json
+index cb8cdf6..d272c1e 100644
+--- a/apps/api/package.json
++++ b/apps/api/package.json
+@@ -6,15 +6,18 @@
+     "dev": "wrangler d1 migrations apply DB --local --persist-to ../../.wrangler/state && wrangler dev --port 8788 --ip 127.0.0.1 --persist-to ../../.wrangler/state",
+     "check-types": "tsc -p tsconfig.json",
+     "deploy:staging": "wrangler deploy --env staging",
+-    "migrate:staging": "wrangler d1 migrations apply DB --env staging --remote"
++    "migrate:staging": "wrangler d1 migrations apply DB --env staging --remote",
++    "test": "vitest run"
+   },
+   "dependencies": {
++    "@cf-wasm/photon": "0.4.0",
+     "@sites/renderer": "workspace:*",
+     "@sites/schema": "workspace:*"
+   },
+   "devDependencies": {
+     "@cloudflare/workers-types": "^5.20261118.1",
+     "typescript": "^7.0.2",
+-    "wrangler": "^4.164.0"
++    "wrangler": "^4.164.0",
++    "vitest": "^5.1.1"
+   }
+ }
+diff --git a/apps/api/src/index.ts b/apps/api/src/index.ts
+index c2caac1..426fc5e 100644
+--- a/apps/api/src/index.ts
++++ b/apps/api/src/index.ts
+@@ -1,4 +1,5 @@
+ import { parseSiteConfig, renderSite, SiteConfigError, type SiteConfig } from "@sites/renderer";
++import { listAssets, uploadAsset } from "./assets.js";
+ import type { Env } from "./env.js";
+ import { HttpError, json, readJson, requireAdmin } from "./http.js";
+ import { kvHostKey, MEDIA_PATH, r2MediaKey, r2SharedKey } from "./keys.js";
+@@ -106,6 +107,12 @@ async function handle(request: Request, env: Env): Promise<Response> {
+     return json(result, 201);
+   }
+ 
++  // POST /sites/:id/assets: raw image body, or JSON {url}. GET lists them.
++  if (parts[2] === "assets" && parts.length === 3) {
++    if (method === "POST") return json(await uploadAsset(env, site, request), 201);
++    if (method === "GET") return json({ assets: await listAssets(env, site) });
++  }
++
+   // POST /sites/:id/publish {versionId?}: latest version when omitted
+   if (method === "POST" && parts[2] === "publish") {
+     const body = await readJson<{ versionId?: string }>(request).catch(() => ({}) as { versionId?: string });
+diff --git a/packages/renderer/src/index.ts b/packages/renderer/src/index.ts
+index 28c7197..6b29d59 100644
+--- a/packages/renderer/src/index.ts
++++ b/packages/renderer/src/index.ts
+@@ -10,3 +10,4 @@ export { compileServiceSeed, SAMPLE_PHOTOS, mediaPath } from "./templates/servic
+ export { presets } from "./templates/service-local/presets.js";
+ export { lessonFixture, fieldFixture } from "./templates/service-local/fixtures.js";
+ export { serviceLocalGuide } from "./templates/service-local/guide.js";
++export { VARIANT_WIDTHS, variantUrl, srcSetFor } from "./images.js";
+
+exec
+/bin/zsh -lc 'cat /Users/steve/.codex/skills/workers-best-practices/SKILL.md; cat apps/api/src/{assets,image-header,media}.ts' in /Users/steve/Projects/daniworks-sites-platform
+ succeeded in 0ms:
+---
+name: workers-best-practices
+description: Cloudflare Workers best practices for production applications. Use when writing, reviewing, or configuring Workers.
+---
+
+Your knowledge of Cloudflare Workers APIs, types, and configuration may be outdated. **Prefer retrieval over pre-training** when writing or reviewing Workers code.
+
+Use the project's installed versions, generated types, and Wrangler compatibility settings as the baseline for existing code. Retrieve relevant Cloudflare documentation to verify API, configuration, runtime behavior, and limit claims.
+
+## References
+
+Read the sections relevant to the task:
+
+| Reference | When to use it |
+|-----------|----------------|
+| [Configuration and observability](references/configuration.md) | Compatibility dates, bindings, generated types, secrets, logs, and traces |
+| [Runtime patterns](references/runtime-patterns.md) | Streaming, promise lifetime, request state, service calls, security, and runtime tests |
+| [Platform API checks](references/platform-apis.md) | Handler signatures, platform classes, binding access, and serialization |
+
+For missing evidence, consult [Workers best practices](https://developers.cloudflare.com/workers/best-practices/workers-best-practices/index.md) or find the affected product in the [Cloudflare docs directory](https://developers.cloudflare.com/directory/index.md). Use the installed Wrangler schema for config fields. A newer type package does not supersede the project's configured target.
+
+## Keep Compatibility Dates Current
+
+Use today's date for new Workers. Encourage periodic updates for existing Workers, reviewing compatibility changes and running relevant tests. Assess existing behavior against its configured date and flags; see [compatibility guidance](references/configuration.md#keep-compatibility_date-current).
+
+## Enable Observability
+
+Enable [Workers Logs](https://developers.cloudflare.com/workers/observability/logs/workers-logs/index.md) and [Traces](https://developers.cloudflare.com/workers/observability/traces/index.md) when creating or preparing a Worker for production. Set `observability.enabled` and `observability.traces.enabled` to `true`; the top-level setting alone does not enable traces. Use structured JSON logging and configure sampling for the workload. During reviews, flag missing logs or traces. See the [configuration example](references/configuration.md#enable-workers-logs-and-traces).
+
+## Anti-Patterns to Flag
+
+| Anti-pattern | Consequence and preferred pattern |
+|-------------|-----------------------------------|
+| `await response.text()` or similar buffering on unbounded data | Can exhaust Worker memory; [stream large or unbounded bodies](references/runtime-patterns.md#stream-request-and-response-bodies). |
+| Hardcoded secrets in source or config | Leaks credentials through version control; use Wrangler secrets. |
+| `Math.random()` for security-sensitive tokens or IDs | Predictable values; use `crypto.randomUUID()` or `crypto.getRandomValues()`. |
+| Async work started without awaiting, returning, or attaching it to `ctx.waitUntil()` | Work can be dropped and errors missed; tie it to the request or background-work lifetime. |
+| Module-level mutable request state | Leaks data across requests and can cause I/O ownership errors; pass request state explicitly. |
+| Cloudflare REST API calls for operations available through Worker bindings | Adds network and authentication overhead; use the available binding. |
+| `ctx.passThroughOnException()` used as general error handling | Can conceal Worker failures by forwarding to the origin; use explicit error handling and structured error responses. |
+| Hand-written `Env` that duplicates Wrangler bindings | Can drift from configuration; generate binding types with `wrangler types`. |
+| Direct string comparison of secret values | Can expose timing differences; use the [Web Crypto comparison pattern](references/runtime-patterns.md#use-web-crypto-for-secure-token-generation). |
+| Destructuring `ctx` methods, such as `const { waitUntil } = ctx` | Loses the receiver; call `ctx.waitUntil(...)`. |
+| `any` on `Env` or handler parameters | Hides binding and handler contract errors; use the project's generated and platform types. |
+| `as unknown as T` to force a platform type match | Hides incompatibilities; fix the underlying contract. |
+| `implements` used in place of extending a platform base class | Does not inherit runtime behavior, `this.ctx`, or `this.env`; use the appropriate base class. |
+| Unbound `env.X` in a platform class method | Bindings are available through `this.env.X`; see [binding access patterns](references/platform-apis.md#binding-access--the-most-common-error). |
+| Applying one serialization rule across Queues, Workflow steps, storage, and WebSockets | Can reject valid payloads or accept unsupported ones; check the [specific API and encoding](references/platform-apis.md#serialization-boundaries). |
+
+## Validation
+
+Use the project's existing checks for affected Workers behavior: type-check binding or handler contract changes, and run relevant runtime tests for behavior changes. Preserve required repository checks; a narrow edit does not require a full Workers audit.
+
+## Scope
+
+This skill covers Workers-specific best practices and code review. For related topics:
+
+- **Durable Objects**: load the `durable-objects` skill
+- **Workflows**: see [Rules of Workflows](https://developers.cloudflare.com/workflows/build/rules-of-workflows/index.md)
+- **Wrangler CLI commands**: load the `wrangler` skill
+import { variantUrl } from "@sites/renderer";
+import type { Env } from "./env.js";
+import { HttpError } from "./http.js";
+import { r2MediaKey } from "./keys.js";
+import { MAX_INPUT_BYTES, processPhotoExclusive, sha256Hex } from "./media.js";
+import type { SiteRow } from "./store.js";
+
+export interface AssetResult {
+  /** Use this in config photos: `{ key, alt, width, height }`. */
+  key: string;
+  width: number;
+  height: number;
+  bytes: number;
+  url: string;
+}
+
+/** Reads a body stream, aborting with 413 as soon as it passes the limit (no Content-Length trust). */
+export async function readLimited(stream: ReadableStream<Uint8Array> | null, limit = MAX_INPUT_BYTES): Promise<Uint8Array> {
+  if (!stream) return new Uint8Array();
+  const reader = stream.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > limit) {
+      await reader.cancel();
+      throw new HttpError(413, "사진이 너무 큽니다");
+    }
+    chunks.push(value);
+  }
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return out;
+}
+
+/** Reads the upload body: raw image bytes, or JSON `{ url }` to fetch an https image (MCP, blogs). */
+async function readUpload(request: Request): Promise<{ bytes: Uint8Array; name: string | null }> {
+  const type = request.headers.get("content-type") ?? "";
+  if (type.startsWith("application/json")) {
+    // Only a URL is expected; read at most 4 KB before parsing.
+    const raw = await readLimited(request.body, 4096);
+    let body: { url?: string } | null = null;
+    try {
+      body = JSON.parse(new TextDecoder().decode(raw)) as { url?: string };
+    } catch {
+      throw new HttpError(400, "요청 본문이 JSON이 아닙니다");
+    }
+    const url = body?.url;
+    if (!url || !/^https:\/\/[^\s]+$/.test(url)) throw new HttpError(400, "url은 https:// 주소여야 합니다");
+    // No Referer: Naver blog images refuse foreign referrers but serve requests without one.
+    const res = await fetch(url, { redirect: "follow", headers: { accept: "image/*" } });
+    if (!res.ok) throw new HttpError(422, `사진을 가져오지 못했습니다 (${res.status})`);
+    return { bytes: await readLimited(res.body), name: url };
+  }
+  return { bytes: await readLimited(request.body), name: request.headers.get("x-file-name") };
+}
+
+/**
+ * Stores an uploaded photo for a site: normalized JPEG plus WebP variants in R2, a row in
+ * `assets`. Content-addressed by the input bytes, so the same upload returns the same key.
+ */
+export async function uploadAsset(env: Env, site: SiteRow, request: Request): Promise<AssetResult> {
+  const { bytes, name } = await readUpload(request);
+  const hash = await sha256Hex(bytes);
+  const file = `${hash}.jpg`;
+  const key = `m:${site.id}/${file}`;
+  const url = `/_media/${site.id}/${file}`;
+
+  const existing = await env.DB.prepare("SELECT width, height, bytes FROM assets WHERE key = ?")
+    .bind(key)
+    .first<{ width: number; height: number; bytes: number }>();
+  if (existing) return { key, url, ...existing };
+
+  const photo = await processPhotoExclusive(bytes);
+  const meta = { httpMetadata: { contentType: "image/jpeg", cacheControl: "public, max-age=31536000, immutable" } };
+  await env.SITES.put(r2MediaKey(site.id, file), photo.main, meta);
+  for (const variant of photo.variants) {
+    await env.SITES.put(r2MediaKey(site.id, variantUrl(file, variant.width)), variant.bytes, {
+      httpMetadata: { contentType: "image/webp", cacheControl: "public, max-age=31536000, immutable" },
+    });
+  }
+  await env.DB.prepare(
+    "INSERT OR IGNORE INTO assets (key, site_id, r2_key, mime, width, height, bytes, original_name, created_at) VALUES (?, ?, ?, 'image/jpeg', ?, ?, ?, ?, ?)",
+  )
+    .bind(key, site.id, r2MediaKey(site.id, file), photo.width, photo.height, photo.main.byteLength, name, new Date().toISOString())
+    .run();
+  return { key, url, width: photo.width, height: photo.height, bytes: photo.main.byteLength };
+}
+
+export async function listAssets(env: Env, site: SiteRow) {
+  const { results } = await env.DB.prepare(
+    "SELECT key, width, height, bytes, original_name, created_at FROM assets WHERE site_id = ? ORDER BY created_at DESC",
+  )
+    .bind(site.id)
+    .all<{ key: string }>();
+  return results.map((row) => ({ ...row, url: `/_media/${row.key.slice(2)}` }));
+}
+// Pure image helpers (no WASM): format sniffing, header dimensions, EXIF orientation, pixel moves.
+
+export type Format = "jpeg" | "png" | "webp";
+
+const u16 = (b: Uint8Array, o: number, le = false) => (le ? b[o]! | (b[o + 1]! << 8) : (b[o]! << 8) | b[o + 1]!);
+const u32 = (b: Uint8Array, o: number, le = false) =>
+  le
+    ? (b[o]! | (b[o + 1]! << 8) | (b[o + 2]! << 16) | (b[o + 3]! << 24)) >>> 0
+    : ((b[o]! << 24) | (b[o + 1]! << 16) | (b[o + 2]! << 8) | b[o + 3]!) >>> 0;
+const ascii = (b: Uint8Array, o: number, n: number) => String.fromCharCode(...b.subarray(o, o + n));
+
+export function detectFormat(b: Uint8Array): Format | null {
+  if (b[0] === 0xff && b[1] === 0xd8) return "jpeg";
+  if (ascii(b, 1, 3) === "PNG") return "png";
+  if (ascii(b, 0, 4) === "RIFF" && ascii(b, 8, 4) === "WEBP") return "webp";
+  return null;
+}
+
+/** Dimensions from the file header, without decoding. */
+export function imageSize(b: Uint8Array, format: Format): { width: number; height: number } | null {
+  if (format === "png") return { width: u32(b, 16), height: u32(b, 20) };
+  if (format === "webp") {
+    const chunk = ascii(b, 12, 4);
+    if (chunk === "VP8 ") return { width: u16(b, 26, true) & 0x3fff, height: u16(b, 28, true) & 0x3fff };
+    if (chunk === "VP8L") {
+      const bits = u32(b, 21, true);
+      return { width: (bits & 0x3fff) + 1, height: ((bits >> 14) & 0x3fff) + 1 };
+    }
+    if (chunk === "VP8X") {
+      const w = 1 + (b[24]! | (b[25]! << 8) | (b[26]! << 16));
+      const h = 1 + (b[27]! | (b[28]! << 8) | (b[29]! << 16));
+      return { width: w, height: h };
+    }
+    return null;
+  }
+  // JPEG: walk segments to the first SOF marker.
+  let o = 2;
+  while (o + 9 < b.length) {
+    if (b[o] !== 0xff) return null;
+    const marker = b[o + 1]!;
+    if (marker === 0xd8 || (marker >= 0xd0 && marker <= 0xd7)) {
+      o += 2;
+      continue;
+    }
+    const isSof = marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc;
+    if (isSof) return { height: u16(b, o + 5), width: u16(b, o + 7) };
+    o += 2 + u16(b, o + 2);
+  }
+  return null;
+}
+
+/** EXIF orientation (1–8) of a JPEG; 1 when absent. Phone photos are usually stored sideways. */
+export function jpegOrientation(b: Uint8Array): number {
+  let o = 2;
+  while (o + 4 < b.length && b[o] === 0xff) {
+    const marker = b[o + 1]!;
+    const size = u16(b, o + 2);
+    if (marker === 0xe1 && ascii(b, o + 4, 6) === "Exif\0\0") {
+      const tiff = o + 10;
+      const le = ascii(b, tiff, 2) === "II";
+      const ifd = tiff + u32(b, tiff + 4, le);
+      const count = u16(b, ifd, le);
+      for (let i = 0; i < count; i++) {
+        const entry = ifd + 2 + i * 12;
+        if (entry + 12 > b.length) break;
+        if (u16(b, entry, le) === 0x0112) {
+          const value = u16(b, entry + 8, le);
+          return value >= 1 && value <= 8 ? value : 1;
+        }
+      }
+      return 1;
+    }
+    if (marker === 0xda) break; // image data starts; no EXIF after this
+    o += 2 + size;
+  }
+  return 1;
+}
+
+/**
+ * Applies an EXIF orientation by moving raw RGBA pixels. Photon's `rotate` blends interior
+ * pixels (verified: solid red turns pink), so 90° steps and flips are done here exactly.
+ */
+export function orientPixels(src: Uint32Array, w: number, h: number, orientation: number) {
+  const swap = orientation >= 5;
+  const dw = swap ? h : w;
+  const dh = swap ? w : h;
+  const dst = new Uint32Array(dw * dh);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      let dx = x;
+      let dy = y;
+      switch (orientation) {
+        case 2: dx = w - 1 - x; break;
+        case 3: dx = w - 1 - x; dy = h - 1 - y; break;
+        case 4: dy = h - 1 - y; break;
+        case 5: dx = y; dy = x; break;
+        case 6: dx = h - 1 - y; dy = x; break;
+        case 7: dx = h - 1 - y; dy = w - 1 - x; break;
+        case 8: dx = y; dy = w - 1 - x; break;
+      }
+      dst[dy * dw + dx] = src[y * w + x]!;
+    }
+  }
+  return { pixels: dst, width: dw, height: dh };
+}
+
+
+/** Composites RGBA pixels onto white in place, so JPEG and WebP outputs look the same. Returns whether any pixel changed. */
+export function flattenOnWhite(rgba: Uint8Array): boolean {
+  let changed = false;
+  for (let i = 0; i < rgba.length; i += 4) {
+    const a = rgba[i + 3]!;
+    if (a === 255) continue;
+    changed = true;
+    const k = a / 255;
+    rgba[i] = Math.round(rgba[i]! * k + 255 * (1 - k));
+    rgba[i + 1] = Math.round(rgba[i + 1]! * k + 255 * (1 - k));
+    rgba[i + 2] = Math.round(rgba[i + 2]! * k + 255 * (1 - k));
+    rgba[i + 3] = 255;
+  }
+  return changed;
+}
+import { PhotonImage, resize, SamplingFilter } from "@cf-wasm/photon/workerd";
+import { VARIANT_WIDTHS } from "@sites/renderer";
+import { HttpError } from "./http.js";
+import { detectFormat, flattenOnWhite, imageSize, jpegOrientation, orientPixels } from "./image-header.js";
+
+/**
+ * Upload limits. Photon decodes into WASM memory inside a 128 MB isolate: measured about
+ * 18 MiB per megapixel (12 MP phone photos exceed the limit). Pixels are capped from the
+ * header before decoding; the console downsizes larger photos in the browser before upload.
+ */
+export const MAX_INPUT_BYTES = 15 * 1024 * 1024;
+export const MAX_PIXELS = 3_000_000;
+export const MAX_EDGE = 1600;
+export const JPEG_QUALITY = 82;
+
+export interface ProcessedPhoto {
+  /** Normalized JPEG: EXIF orientation applied, longest edge at most MAX_EDGE. */
+  main: Uint8Array;
+  width: number;
+  height: number;
+  variants: { width: number; bytes: Uint8Array }[];
+}
+
+function orient(image: PhotonImage, orientation: number): PhotonImage {
+  if (orientation === 1) return image;
+  const raw = image.get_raw_pixels();
+  const src = new Uint32Array(raw.buffer, raw.byteOffset, raw.byteLength / 4);
+  const { pixels, width, height } = orientPixels(src, image.get_width(), image.get_height(), orientation);
+  image.free();
+  return new PhotonImage(new Uint8Array(pixels.buffer), width, height);
+}
+
+function scaled(image: PhotonImage, maxWidth: number): PhotonImage {
+  const w = image.get_width();
+  const h = image.get_height();
+  const width = Math.max(1, Math.min(maxWidth, w));
+  return resize(image, width, Math.max(1, Math.round((h * width) / w)), SamplingFilter.Lanczos3);
+}
+
+/**
+ * Validates, orients and downsizes an uploaded photo; produces the WebP variants the renderer's
+ * srcset expects (`<file>.w<width>.webp`). Throws HttpError 413/415/422 for unusable input.
+ */
+export function processPhoto(input: Uint8Array): ProcessedPhoto {
+  if (input.byteLength > MAX_INPUT_BYTES) throw new HttpError(413, `사진은 ${MAX_INPUT_BYTES / 1024 / 1024}MB 이하만 올릴 수 있습니다`);
+  const format = detectFormat(input);
+  if (!format) throw new HttpError(415, "JPEG, PNG, WebP 사진만 올릴 수 있습니다");
+  const size = imageSize(input, format);
+  if (!size || !size.width || !size.height) throw new HttpError(422, "사진 크기를 읽지 못했습니다");
+  if (size.width * size.height > MAX_PIXELS) {
+    throw new HttpError(
+      413,
+      `사진 해상도가 너무 큽니다 (${size.width}×${size.height}). 긴 변 ${MAX_EDGE}px 정도로 줄여서 올려주세요 (최대 ${MAX_PIXELS / 1_000_000}MP)`,
+    );
+  }
+
+  let image: PhotonImage;
+  try {
+    image = PhotonImage.new_from_byteslice(input);
+  } catch {
+    throw new HttpError(422, "사진을 읽지 못했습니다");
+  }
+  // Longest edge at most MAX_EDGE (orientation does not change it), then orient the smaller image.
+  const longest = Math.max(image.get_width(), image.get_height());
+  if (longest > MAX_EDGE) {
+    const ratio = MAX_EDGE / longest;
+    const width = Math.max(1, Math.round(image.get_width() * ratio));
+    const height = Math.max(1, Math.round(image.get_height() * ratio));
+    const next = resize(image, width, height, SamplingFilter.Lanczos3);
+    image.free();
+    image = next;
+  }
+  image = orient(image, format === "jpeg" ? jpegOrientation(input) : 1);
+  if (format !== "jpeg") {
+    // Transparent PNG/WebP: JPEG would turn alpha black while WebP keeps it. Flatten once on white.
+    const raw = image.get_raw_pixels();
+    if (flattenOnWhite(raw)) {
+      const next = new PhotonImage(raw, image.get_width(), image.get_height());
+      image.free();
+      image = next;
+    }
+  }
+  const width = image.get_width();
+  const height = image.get_height();
+  const main = image.get_bytes_jpeg(JPEG_QUALITY);
+  // Every advertised variant exists, even for small photos (then it is the original size),
+  // because srcset may list all of them when a config omits the photo width.
+  const variants = VARIANT_WIDTHS.map((w) => {
+    const variant = scaled(image, Math.min(w, width));
+    const bytes = variant.get_bytes_webp();
+    variant.free();
+    return { width: w, bytes };
+  });
+  image.free();
+  return { main, width, height, variants };
+}
+
+let queue: Promise<unknown> = Promise.resolve();
+
+/** Runs photo processing one at a time per isolate so concurrent uploads never double WASM memory. */
+export function processPhotoExclusive(input: Uint8Array): Promise<ProcessedPhoto> {
+  const run = queue.then(() => processPhoto(input));
+  queue = run.catch(() => undefined);
+  return run;
+}
+
+export async function sha256Hex(bytes: Uint8Array, length = 20) {
+  const digest = await crypto.subtle.digest("SHA-256", bytes as Uint8Array<ArrayBuffer>);
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("").slice(0, length);
+}
+
+exec
+/bin/zsh -lc 'cat apps/api/src/index.ts apps/api/src/keys.ts packages/renderer/src/images.ts; cat apps/api/test/*; cat scripts/verify-m2-assets.mjs' in /Users/steve/Projects/daniworks-sites-platform
+ succeeded in 0ms:
+import { parseSiteConfig, renderSite, SiteConfigError, type SiteConfig } from "@sites/renderer";
+import { listAssets, uploadAsset } from "./assets.js";
+import type { Env } from "./env.js";
+import { HttpError, json, readJson, requireAdmin } from "./http.js";
+import { kvHostKey, MEDIA_PATH, r2MediaKey, r2SharedKey } from "./keys.js";
+import { assetBase, publish, rollback, siteOrigin } from "./publish.js";
+import {
+  addVersion,
+  createSite,
+  getSite,
+  listVersions,
+  versionByPreviewToken,
+  type CreatedBy,
+} from "./store.js";
+
+const CREATORS: CreatedBy[] = ["ai", "operator", "customer"];
+
+/** Parsed config with defaults filled; what gets stored. */
+function validated(input: unknown): SiteConfig {
+  const result = parseSiteConfig(input);
+  if (!result.ok) throw new HttpError(422, "설정 검증 실패", result.errors);
+  return result.config;
+}
+
+function creator(value: unknown): CreatedBy {
+  return CREATORS.includes(value as CreatedBy) ? (value as CreatedBy) : "operator";
+}
+
+async function serveImmutable(env: Env, key: string) {
+  const object = await env.SITES.get(key);
+  if (!object) return new Response("not found", { status: 404 });
+  const headers = new Headers();
+  object.writeHttpMetadata(headers);
+  headers.set("cache-control", "public, max-age=31536000, immutable");
+  return new Response(object.body, { headers });
+}
+
+async function handle(request: Request, env: Env): Promise<Response> {
+  const url = new URL(request.url);
+  const parts = url.pathname.split("/").filter(Boolean);
+  const method = request.method;
+
+  if (method === "GET" && url.pathname === "/health") return json({ ok: true });
+
+  // Shared assets are public and immutable; previews load them from here.
+  if (method === "GET" && parts[0] === "_shared") return serveImmutable(env, r2SharedKey(parts.slice(1).join("/")));
+  // Uploaded photos (public, content-addressed) so previews show them before publishing.
+  const media = method === "GET" ? MEDIA_PATH.exec(url.pathname) : null;
+  if (media) return serveImmutable(env, r2MediaKey(media[1]!, media[2]!));
+
+  // Preview: anyone with the token can view a version. Never indexed. /preview/<token>[/privacy]
+  if (method === "GET" && parts[0] === "preview" && (parts.length === 2 || parts.length === 3)) {
+    const version = await versionByPreviewToken(env.DB, parts[1]!);
+    const site = await getSite(env.DB, version.site_id);
+    const { pages } = await renderSite(JSON.parse(version.config) as SiteConfig, {
+      assetBase: assetBase(),
+      origin: await siteOrigin(env, site),
+      preview: true,
+      // Site links are root-relative (`/#inquiry`, `/privacy`); keep them inside this preview.
+      linkPrefix: `/preview/${parts[1]}`,
+    });
+    const route = parts[2] ? `/${parts[2]}` : "/";
+    const page = pages.find((entry) => entry.route === route);
+    if (!page) throw new HttpError(404, "없는 페이지입니다");
+    return new Response(page.html, {
+      headers: {
+        "content-type": "text/html; charset=utf-8",
+        "x-robots-tag": "noindex, nofollow",
+        "cache-control": "no-store",
+      },
+    });
+  }
+
+  requireAdmin(request, env.ADMIN_TOKEN);
+
+  // PUT /admin/shared/<version>/<path>: upload one shared asset file.
+  if (method === "PUT" && parts[0] === "admin" && parts[1] === "shared" && parts.length > 3) {
+    const key = r2SharedKey(parts.slice(2).join("/"));
+    await env.SITES.put(key, request.body, {
+      httpMetadata: { contentType: request.headers.get("content-type") ?? "application/octet-stream" },
+    });
+    return json({ key }, 201);
+  }
+
+  if (parts[0] !== "sites") throw new HttpError(404, "없는 경로입니다");
+
+  // POST /sites {config, createdBy}
+  if (method === "POST" && parts.length === 1) {
+    const body = await readJson<{ config: unknown; createdBy?: CreatedBy }>(request);
+    const config = validated(body.config);
+    const hostname = `${config.slug}.${env.BASE_DOMAIN}`;
+    const { siteId, versionId } = await createSite(env.DB, config, creator(body.createdBy), hostname);
+    await env.ROUTES.put(kvHostKey(hostname), siteId);
+    return json({ siteId, versionId, hostname }, 201);
+  }
+
+  const site = await getSite(env.DB, parts[1]!);
+
+  if (method === "GET" && parts.length === 2) {
+    return json({ site, versions: await listVersions(env.DB, site.id) });
+  }
+
+  // POST /sites/:id/versions {config, createdBy, note}: new draft version
+  if (method === "POST" && parts[2] === "versions") {
+    const body = await readJson<{ config: unknown; createdBy?: CreatedBy; note?: string }>(request);
+    const result = await addVersion(env.DB, site, validated(body.config), creator(body.createdBy), body.note ?? null);
+    return json(result, 201);
+  }
+
+  // POST /sites/:id/assets: raw image body, or JSON {url}. GET lists them.
+  if (parts[2] === "assets" && parts.length === 3) {
+    if (method === "POST") return json(await uploadAsset(env, site, request), 201);
+    if (method === "GET") return json({ assets: await listAssets(env, site) });
+  }
+
+  // POST /sites/:id/publish {versionId?}: latest version when omitted
+  if (method === "POST" && parts[2] === "publish") {
+    const body = await readJson<{ versionId?: string }>(request).catch(() => ({}) as { versionId?: string });
+    return json(await publish(env, site, body.versionId));
+  }
+
+  // POST /sites/:id/rollback {versionId}
+  if (method === "POST" && parts[2] === "rollback") {
+    const body = await readJson<{ versionId: string }>(request);
+    if (!body.versionId) throw new HttpError(400, "versionId가 필요합니다");
+    return json(await rollback(env, site, body.versionId));
+  }
+
+  throw new HttpError(404, "없는 경로입니다");
+}
+
+export default {
+  async fetch(request: Request, env: Env): Promise<Response> {
+    try {
+      return await handle(request, env);
+    } catch (error) {
+      if (error instanceof HttpError) return json({ error: error.message, details: error.details }, error.status);
+      if (error instanceof SiteConfigError) return json({ error: "설정 검증 실패", details: error.errors }, 422);
+      console.error(error);
+      return json({ error: "서버 오류" }, 500);
+    }
+  },
+};
+// Storage layout shared by api (writer) and router (reader). Keep in sync with apps/router/src/keys.ts.
+export const kvHostKey = (hostname: string) => `host:${hostname.toLowerCase()}`;
+export const kvSiteKey = (siteId: string) => `site:${siteId}`;
+/** `path` is `index.html` or `privacy/index.html`. */
+export const r2PageKey = (siteId: string, versionId: string, path = "index.html") => `sites/${siteId}/${versionId}/${path}`;
+export const r2SharedKey = (path: string) => `shared/${path}`;
+/** Uploaded photos, content-addressed: `sites/<siteId>/media/<sha>.jpg`. Served at `/_media/<siteId>/<file>`. */
+export const r2MediaKey = (siteId: string, file: string) => `sites/${siteId}/media/${file}`;
+export const MEDIA_PATH = /^\/_media\/([A-Za-z0-9_-]+)\/([A-Za-z0-9_-]+(?:\.w\d{3,4})?\.(?:jpg|png|webp))$/;
+
+/** Value of kvSiteKey: the version the router serves. */
+export interface PublishedPointer {
+  versionId: string;
+  number: number;
+  publishedAt: string;
+  /** Routes rendered for this version. Missing on M1 pointers, which only had `/`. */
+  pages?: string[];
+}
+/**
+ * Responsive image variants. Every packaged sample (`/_shared/<v>/site-templates/x.jpg`) and
+ * uploaded photo (`/_media/<site>/<sha>.jpg`) has WebP variants next to it named
+ * `x.w<width>.webp`, created at asset build time and at upload time respectively.
+ */
+export const VARIANT_WIDTHS = [480, 800, 1200] as const;
+export const VARIANT_QUALITY = 72;
+
+export const variantUrl = (src: string, width: number) => src.replace(/\.(jpg|png)$/, `.w${width}.webp`);
+
+const hasVariants = (src: string) =>
+  /\.(jpg|png)$/.test(src) && (src.includes("/site-templates/") || src.startsWith("/_media/"));
+
+/** `srcset` for a source with variants; the original is the largest candidate when its width is known. */
+export function srcSetFor(src: string, width?: number): string | undefined {
+  if (!hasVariants(src)) return undefined;
+  const widths = VARIANT_WIDTHS.filter((w) => !width || w < width);
+  if (!widths.length) return undefined;
+  const candidates = widths.map((w) => `${variantUrl(src, w)} ${w}w`);
+  if (width) candidates.push(`${src} ${width}w`);
+  return candidates.join(", ");
+}
+import { createRequire } from "node:module";
+import { describe, expect, it } from "vitest";
+import { detectFormat, flattenOnWhite, imageSize, jpegOrientation, orientPixels } from "../src/image-header.js";
+
+const sharp = createRequire(new URL("../../../packages/renderer/package.json", import.meta.url))("sharp");
+const solid = (width: number, height: number) =>
+  sharp({ create: { width, height, channels: 3, background: "#c33" } });
+
+describe("image headers", () => {
+  it.each([
+    ["jpeg", (s: any) => s.jpeg()],
+    ["png", (s: any) => s.png()],
+    ["webp", (s: any) => s.webp()],
+    ["webp", (s: any) => s.webp({ lossless: true })],
+  ])("reads %s dimensions without decoding", async (format, encode) => {
+    const bytes = new Uint8Array(await encode(solid(321, 123)).toBuffer());
+    expect(detectFormat(bytes)).toBe(format);
+    expect(imageSize(bytes, format as never)).toEqual({ width: 321, height: 123 });
+  });
+
+  it("rejects non-images", () => {
+    expect(detectFormat(new TextEncoder().encode("hello world"))).toBeNull();
+  });
+
+  it.each([1, 3, 6, 8])("reads EXIF orientation %i", async (orientation) => {
+    const bytes = new Uint8Array(await solid(40, 20).jpeg().withMetadata({ orientation }).toBuffer());
+    expect(jpegOrientation(bytes)).toBe(orientation);
+  });
+
+  it("defaults to 1 without EXIF", async () => {
+    expect(jpegOrientation(new Uint8Array(await solid(4, 4).jpeg().toBuffer()))).toBe(1);
+  });
+});
+
+describe("orientPixels", () => {
+  // 3×2 source:  a b c
+  //              d e f
+  const src = Uint32Array.from([1, 2, 3, 4, 5, 6]);
+  const grid = (o: number) => {
+    const { pixels, width, height } = orientPixels(src, 3, 2, o);
+    return { rows: Array.from({ length: height }, (_, y) => Array.from(pixels.slice(y * width, y * width + width))), width, height };
+  };
+
+  it.each([
+    [1, [[1, 2, 3], [4, 5, 6]]],
+    [2, [[3, 2, 1], [6, 5, 4]]],
+    [3, [[6, 5, 4], [3, 2, 1]]],
+    [4, [[4, 5, 6], [1, 2, 3]]],
+    [5, [[1, 4], [2, 5], [3, 6]]],
+    [6, [[4, 1], [5, 2], [6, 3]]],
+    [7, [[6, 3], [5, 2], [4, 1]]],
+    [8, [[3, 6], [2, 5], [1, 4]]],
+  ])("orientation %i", (orientation, rows) => {
+    expect(grid(orientation).rows).toEqual(rows);
+  });
+});
+
+describe("flattenOnWhite", () => {
+  it("composites transparency onto white and reports changes", () => {
+    const px = Uint8Array.from([0, 0, 0, 0, 255, 0, 0, 255, 0, 0, 255, 128]);
+    expect(flattenOnWhite(px)).toBe(true);
+    expect(Array.from(px)).toEqual([255, 255, 255, 255, 255, 0, 0, 255, 127, 127, 255, 255]);
+  });
+
+  it("leaves opaque images untouched", () => {
+    const px = Uint8Array.from([10, 20, 30, 255]);
+    expect(flattenOnWhite(px)).toBe(false);
+    expect(Array.from(px)).toEqual([10, 20, 30, 255]);
+  });
+});
+// M2 step 2-3: photo upload. Orientation, downsizing, WebP variants, limits, idempotency,
+// serving from API (preview) and router (published), and use inside a published v2 site.
+import { createRequire } from "node:module";
+import { API, ROUTER_PORT, TOKEN, api, chromium, evidence, inspectPage, routerRequest, uploadShared, viewports } from "./lib/verify.mjs";
+
+const sharp = createRequire(new URL("../packages/renderer/package.json", import.meta.url))("sharp");
+const { lessonFixture } = await import("../packages/renderer/src/templates/service-local/fixtures.ts");
+
+const ev = evidence("m2-assets");
+const { check } = ev;
+const run = Date.now().toString(36);
+
+async function upload(siteId, body, type, { auth = true } = {}) {
+  const res = await fetch(`${API}/sites/${siteId}/assets`, {
+    method: "POST",
+    headers: { ...(auth ? { authorization: `Bearer ${TOKEN}` } : {}), "content-type": type },
+    body,
+  });
+  return { status: res.status, data: await res.json().catch(() => null) };
+}
+
+/** Solid two-tone image: top half red, bottom half blue. */
+async function twoTone(width, height) {
+  const half = Buffer.alloc(width * Math.floor(height / 2) * 3);
+  const top = Buffer.from(half.map((_, i) => (i % 3 === 0 ? 220 : 20)));
+  const bottom = Buffer.from(Buffer.alloc(width * (height - Math.floor(height / 2)) * 3).map((_, i) => (i % 3 === 2 ? 220 : 20)));
+  return sharp(Buffer.concat([top, bottom]), { raw: { width, height, channels: 3 } });
+}
+
+async function pixel(buffer, xr, yr) {
+  const img = sharp(buffer);
+  const { width, height } = await img.metadata();
+  const { data, info } = await img.raw().toBuffer({ resolveWithObject: true });
+  const x = Math.floor(width * xr);
+  const y = Math.floor(height * yr);
+  const i = (y * info.width + x) * info.channels;
+  return { r: data[i], g: data[i + 1], b: data[i + 2] };
+}
+const isRed = (p) => p.r > 150 && p.b < 100;
+const isBlue = (p) => p.b > 150 && p.r < 100;
+
+uploadShared();
+const config = { ...structuredClone(lessonFixture), slug: `assets-${run}` };
+const created = await api("POST", "/sites", { config, createdBy: "operator" });
+const siteId = created.data.siteId;
+check("사이트 생성", created.status === 201);
+
+// 1. sideways photo (downsized by the console): 2000×1500 stored landscape, EXIF orientation 6
+const phone = await (await twoTone(2000, 1500)).jpeg({ quality: 90 }).withMetadata({ orientation: 6 }).toBuffer();
+const up1 = await upload(siteId, phone, "image/jpeg");
+check("EXIF 회전 사진: 201, 세로 1200×1600으로 줄임", up1.status === 201 && up1.data.width === 1200 && up1.data.height === 1600, up1.data);
+const main = Buffer.from(await (await fetch(`${API}${up1.data.url}`)).arrayBuffer());
+const right = await pixel(main, 0.9, 0.5);
+const left = await pixel(main, 0.1, 0.5);
+check("EXIF 방향 적용: 원래 위쪽(빨강)이 오른쪽", isRed(right) && isBlue(left), { right, left });
+check("결과물에 EXIF 방향 없음", ((await sharp(main).metadata()).orientation ?? 1) === 1);
+
+// 2. variants and caching via API and router
+const host = `${config.slug}.localhost`;
+for (const w of [480, 800]) {
+  const path = up1.data.url.replace(/\.jpg$/, `.w${w}.webp`);
+  const viaApi = await fetch(`${API}${path}`);
+  const buf = Buffer.from(await viaApi.arrayBuffer());
+  const meta = await sharp(buf).metadata();
+  check(`변형 w${w}: WebP, 폭 ${w}, 영구 캐시`, viaApi.status === 200 && meta.format === "webp" && meta.width === w &&
+    viaApi.headers.get("cache-control")?.includes("immutable"));
+}
+const viaRouter = await routerRequest(host, up1.data.url);
+check("라우터도 /_media 서빙", viaRouter.status === 200 && viaRouter.headers["content-type"] === "image/jpeg");
+check("없는 미디어 404", (await routerRequest(host, `/_media/${siteId}/nope.jpg`)).status === 404);
+
+// 3. idempotent: same bytes → same key
+const again = await upload(siteId, phone, "image/jpeg");
+check("같은 사진 재업로드는 같은 키", again.status === 201 && again.data.key === up1.data.key);
+
+// 4. PNG and WebP input
+const png = await (await twoTone(800, 600)).png().toBuffer();
+const up2 = await upload(siteId, png, "image/png");
+check("PNG 입력 → JPEG 800×600", up2.status === 201 && up2.data.width === 800 && up2.data.key.endsWith(".jpg"), up2.data);
+for (const w of [480, 800, 1200]) {
+  const res = await fetch(`${API}${up2.data.url.replace(/\.jpg$/, `.w${w}.webp`)}`);
+  const meta = res.ok ? await sharp(Buffer.from(await res.arrayBuffer())).metadata() : null;
+  check(`작은 사진도 광고한 변형 w${w}이 있음 (폭 ${Math.min(w, 800)})`, meta?.width === Math.min(w, 800));
+}
+const webp = await (await twoTone(1000, 500)).webp().toBuffer();
+const up3 = await upload(siteId, webp, "image/webp");
+check("WebP 입력 → 1000×500", up3.status === 201 && up3.data.width === 1000 && up3.data.height === 500, up3.data);
+
+// Transparent PNG: main JPEG and WebP variant must both show white where it was transparent.
+const transparent = await sharp({ create: { width: 600, height: 400, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } }).png().toBuffer();
+const upT = await upload(siteId, transparent, "image/png");
+const tMain = Buffer.from(await (await fetch(`${API}${upT.data.url}`)).arrayBuffer());
+const tVar = Buffer.from(await (await fetch(`${API}${upT.data.url.replace(/\.jpg$/, ".w480.webp")}`)).arrayBuffer());
+const [pm, pv] = [await pixel(tMain, 0.5, 0.5), await pixel(tVar, 0.5, 0.5)];
+check("투명 PNG: JPEG와 WebP 모두 흰 배경", pm.r > 240 && pm.g > 240 && pv.r > 240 && pv.g > 240 && pv.b > 240, { pm, pv });
+
+// 5. limits and errors
+// A 12 MP phone original would exceed the 128 MB isolate when decoded: refused from the header.
+const giant = await (await twoTone(4000, 3000)).jpeg().toBuffer();
+const tooMany = await upload(siteId, giant, "image/jpeg");
+check("3MP 넘는 해상도는 413 (디코딩 전 거부, 줄이라는 안내)", tooMany.status === 413 && tooMany.data.error.includes("줄여서"), tooMany.data);
+const tooBig = await upload(siteId, Buffer.alloc(16 * 1024 * 1024, 1), "image/jpeg");
+check("15MB 넘는 파일은 413", tooBig.status === 413);
+// Chunked body without Content-Length: the limit must hold while streaming.
+const chunked = new ReadableStream({
+  start(controller) {
+    for (let i = 0; i < 17; i++) controller.enqueue(new Uint8Array(1024 * 1024).fill(1));
+    controller.close();
+  },
+});
+const streamed = await fetch(`${API}/sites/${siteId}/assets`, {
+  method: "POST",
+  headers: { authorization: `Bearer ${TOKEN}`, "content-type": "image/jpeg" },
+  body: chunked,
+  duplex: "half",
+});
+check("Content-Length 없는 스트림도 15MB 넘으면 413", streamed.status === 413);
+const narrow = await sharp({ create: { width: 1, height: 4000, channels: 3, background: "#123" } }).png().toBuffer();
+const upNarrow = await upload(siteId, narrow, "image/png");
+check("1×4000 같은 좁은 사진도 처리(폭 최소 1px)", upNarrow.status === 201 && upNarrow.data.width === 1 && upNarrow.data.height === 1600, upNarrow.data);
+check("이미지가 아니면 415", (await upload(siteId, Buffer.from("hello"), "text/plain")).status === 415);
+check("큰 JSON 본문은 파싱 전에 413", (await upload(siteId, JSON.stringify({ url: "https://x/" + "a".repeat(10000) }), "application/json")).status === 413);
+check("http URL 가져오기는 400", (await upload(siteId, JSON.stringify({ url: "http://example.com/a.jpg" }), "application/json")).status === 400);
+check("인증 없으면 401", (await upload(siteId, png, "image/png", { auth: false })).status === 401);
+const list = await api("GET", `/sites/${siteId}/assets`);
+check("목록에 5장", list.status === 200 && list.data.assets.length === 5, { count: list.data.assets?.length });
+
+// 6. use the upload in a published site
+const v2 = structuredClone(config);
+v2.content.hero.image = { key: up1.data.key, alt: "현장 사진", width: up1.data.width, height: up1.data.height };
+v2.content.gallery.items[0].image = { key: up2.data.key, alt: "작업 사진", width: up2.data.width, height: up2.data.height };
+const version = await api("POST", `/sites/${siteId}/versions`, { config: v2, createdBy: "operator" });
+const published = await api("POST", `/sites/${siteId}/publish`, { versionId: version.data.versionId });
+const page = await routerRequest(host, "/");
+check(
+  "게시 페이지에 업로드 사진과 srcset 변형",
+  published.status === 200 && page.body.includes(up1.data.url) && page.body.includes(up1.data.url.replace(".jpg", ".w800.webp 800w")),
+);
+const browser = await chromium().launch();
+const r = await inspectPage(browser, `http://${host}:${ROUTER_PORT}/`, viewports.mobile, {
+  screenshot: `${ev.dir}/site-mobile.png`,
+  allowExternal: ["https://pf.kakao.com/"],
+});
+const heroSrc = await r.page.locator("main img").first().evaluate((img) => img.currentSrc);
+check("브라우저: 이미지 모두 로드, 히어로는 WebP 변형", !r.failed.length && !r.unloadedImages.length && !r.errors.length && heroSrc.endsWith(".webp"), {
+  heroSrc,
+  failed: r.failed,
+  errors: r.errors,
+});
+await browser.close();
+
+ev.finish({ siteId });
+
+exec
+/bin/zsh -lc 'cat apps/api/wrangler*; cat package.json; cat node_modules/.pnpm/@cf-wasm+photon@0.4.0/node_modules/@cf-wasm/photon/package.json; cat apps/api/migrations/*; pnpm --filter ./apps/api test; pnpm --filter ./apps/api check-types' in /Users/steve/Projects/daniworks-sites-platform
+ succeeded in 752ms:
+# Platform API: site/version CRUD, preview, publish (render → R2 → KV), rollback.
+name = "sites-api"
+main = "src/index.ts"
+# Daniworks account (owns the dsites.kr zone). Local dev ignores it.
+account_id = "358a1b6caabcf91741109efca1ec0547"
+compatibility_date = "2026-11-01"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+# Public sites are served at <slug>.<BASE_DOMAIN>. Local dev uses *.localhost.
+BASE_DOMAIN = "localhost"
+PUBLIC_SCHEME = "http"
+# ADMIN_TOKEN comes from .dev.vars locally and a secret in production.
+
+[[d1_databases]]
+binding = "DB"
+database_name = "daniworks-sites"
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "migrations"
+
+[[r2_buckets]]
+binding = "SITES"
+bucket_name = "daniworks-sites"
+
+[[kv_namespaces]]
+binding = "ROUTES"
+id = "00000000000000000000000000000000"
+
+# Staging on the real zone: `pnpm --filter api deploy:staging`. Until launch dsites.kr doubles as staging.
+# Bindings and vars are not inherited by environments, so every one is repeated here.
+[env.staging]
+name = "sites-api-staging"
+workers_dev = false
+preview_urls = false
+# More specific than the router's `*/*`, so it wins for this host.
+routes = [{ pattern = "api.dsites.kr/*", zone_name = "dsites.kr" }]
+
+[env.staging.vars]
+BASE_DOMAIN = "dsites.kr"
+PUBLIC_SCHEME = "https"
+# ADMIN_TOKEN: `wrangler secret put ADMIN_TOKEN --env staging`
+
+[[env.staging.d1_databases]]
+binding = "DB"
+database_name = "daniworks-sites-staging"
+database_id = "fc09d755-f8b2-43e1-9bcf-55a00786d15a"
+migrations_dir = "migrations"
+
+[[env.staging.r2_buckets]]
+binding = "SITES"
+bucket_name = "daniworks-sites-staging"
+
+[[env.staging.kv_namespaces]]
+binding = "ROUTES"
+id = "81f56d8264ab431ab7ca5da79add2496"
+{
+  "name": "daniworks-sites-platform",
+  "private": true,
+  "packageManager": "pnpm@10.28.0",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "build": "pnpm --filter @sites/renderer build",
+    "test": "pnpm -r test",
+    "check-types": "pnpm -r check-types",
+    "dev:api": "pnpm --filter api dev",
+    "dev:router": "pnpm --filter router dev",
+    "upload:shared": "node scripts/upload-shared.mjs",
+    "verify:m1": "node scripts/verify-m1.mjs",
+    "deploy:staging": "pnpm build && pnpm --filter api migrate:staging && pnpm --filter api deploy:staging && pnpm --filter router deploy:staging",
+    "verify:staging": "node scripts/verify-staging.mjs"
+  },
+  "devDependencies": {
+    "chrome-launcher": "1.2.3",
+    "lighthouse": "13.6.0",
+    "playwright": "1.65.1"
+  }
+}
+{
+  "name": "@cf-wasm/photon",
+  "version": "0.4.0",
+  "description": "Photon library for Cloudflare workers, Next.js and Node.js.",
+  "keywords": [
+    "image-processing",
+    "image-manipulation",
+    "image-resizing",
+    "rust",
+    "rust-library",
+    "webassembly",
+    "wasm",
+    "cloudflare-workers"
+  ],
+  "license": "Apache-2.0",
+  "collaborators": [
+    "Silvia O'Dwyer <silviaodwyerdev@gmail.com>"
+  ],
+  "homepage": "https://github.com/fineshopdesign/cf-wasm/tree/main/packages/photon#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/fineshopdesign/cf-wasm",
+    "directory": "packages/photon"
+  },
+  "bugs": {
+    "url": "https://github.com/fineshopdesign/cf-wasm/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "files": [
+    "dist"
+  ],
+  "sideEffects": [
+    "./dist/edge-light.js",
+    "./dist/node.js",
+    "./dist/photon.js",
+    "./dist/workerd.js"
+  ],
+  "type": "module",
+  "main": "./dist/workerd.js",
+  "module": "./dist/workerd.js",
+  "types": "./dist/workerd.d.ts",
+  "exports": {
+    "./package.json": "./package.json",
+    "./photon.wasm": "./dist/lib/photon_rs_bg.wasm",
+    ".": {
+      "node": {
+        "types": "./dist/node.d.ts",
+        "default": "./dist/node.js"
+      },
+      "edge-light": {
+        "types": "./dist/edge-light.d.ts",
+        "default": "./dist/edge-light.js"
+      },
+      "workerd": {
+        "types": "./dist/workerd.d.ts",
+        "default": "./dist/workerd.js"
+      },
+      "default": {
+        "types": "./dist/workerd.d.ts",
+        "default": "./dist/workerd.js"
+      }
+    },
+    "./workerd": {
+      "types": "./dist/workerd.d.ts",
+      "default": "./dist/workerd.js"
+    },
+    "./edge-light": {
+      "types": "./dist/edge-light.d.ts",
+      "default": "./dist/edge-light.js"
+    },
+    "./node": {
+      "types": "./dist/node.d.ts",
+      "default": "./dist/node.js"
+    },
+    "./others": {
+      "types": "./dist/others.d.ts",
+      "default": "./dist/others.js"
+    }
+  },
+  "dependencies": {
+    "@cf-wasm/internals": "^0.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.2",
+    "github-files-fetcher": "^1.6.0",
+    "tsdown": "^0.22.14",
+    "wasm-pack": "^0.15.0"
+  },
+  "scripts": {
+    "lint": "biome lint ./src",
+    "check": "biome check ./src",
+    "check:types": "tsc --noEmit",
+    "crate:download": "rm -r crate && fetcher --url=https://github.com/silvia-odwyer/photon/tree/master/crate --out=./ && sed -E -i.old '/\\[package.metadata.wasm-pack.profile.release\\]/,/^\\[/ s/wasm-opt[[:space:]]*=[[:space:]]*(false|\\[[^]]*\\])/wasm-opt = [\"-O3\", \"--enable-mutable-globals\"]/g' crate/Cargo.toml",
+    "build": "NODE_ENV=production tsdown",
+    "dev": "NODE_ENV=development tsdown --watch"
+  }
+}-- Sites, their append-only versions, and the hostnames that route to them.
+CREATE TABLE sites (
+  id TEXT PRIMARY KEY,
+  slug TEXT NOT NULL UNIQUE,
+  template_id TEXT NOT NULL,
+  published_version_id TEXT,
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'suspended')),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE site_versions (
+  id TEXT PRIMARY KEY,
+  site_id TEXT NOT NULL REFERENCES sites(id),
+  number INTEGER NOT NULL,
+  config TEXT NOT NULL,
+  created_by TEXT NOT NULL CHECK (created_by IN ('ai', 'operator', 'customer')),
+  note TEXT,
+  preview_token TEXT NOT NULL UNIQUE,
+  asset_version TEXT,
+  rendered_at TEXT,
+  first_published_at TEXT,
+  created_at TEXT NOT NULL,
+  UNIQUE (site_id, number)
+);
+
+CREATE TABLE domains (
+  hostname TEXT PRIMARY KEY,
+  site_id TEXT NOT NULL REFERENCES sites(id),
+  kind TEXT NOT NULL CHECK (kind IN ('subdomain', 'custom')),
+  status TEXT NOT NULL DEFAULT 'active',
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX site_versions_site ON site_versions(site_id, number DESC);
+CREATE INDEX domains_site ON domains(site_id);
+-- M2: customers, custom domains, uploaded photos, inquiries and daily metrics.
+
+CREATE TABLE customers (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  contact_name TEXT,
+  phone TEXT,
+  email TEXT,
+  billing_cycle TEXT CHECK (billing_cycle IN ('monthly', 'yearly')),
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'cancelled')),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+-- Cancellation keeps sites.status = 'suspended' (public serving stops) and records when.
+ALTER TABLE sites ADD COLUMN customer_id TEXT REFERENCES customers(id);
+ALTER TABLE sites ADD COLUMN notify_email TEXT;
+ALTER TABLE sites ADD COLUMN template_version TEXT;
+ALTER TABLE sites ADD COLUMN cancelled_at TEXT;
+CREATE INDEX sites_customer ON sites(customer_id);
+
+-- Custom hostnames (Cloudflare for SaaS). Subdomain rows keep status 'active' and no cf fields.
+ALTER TABLE domains ADD COLUMN cf_hostname_id TEXT;
+ALTER TABLE domains ADD COLUMN ssl_status TEXT;
+ALTER TABLE domains ADD COLUMN verification_records TEXT;
+ALTER TABLE domains ADD COLUMN last_error TEXT;
+ALTER TABLE domains ADD COLUMN checked_at TEXT;
+
+CREATE TABLE assets (
+  key TEXT PRIMARY KEY,
+  site_id TEXT NOT NULL REFERENCES sites(id),
+  r2_key TEXT NOT NULL,
+  mime TEXT NOT NULL,
+  width INTEGER NOT NULL,
+  height INTEGER NOT NULL,
+  bytes INTEGER NOT NULL,
+  original_name TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX assets_site ON assets(site_id, created_at DESC);
+
+CREATE TABLE inquiries (
+  id TEXT PRIMARY KEY,
+  site_id TEXT NOT NULL REFERENCES sites(id),
+  name TEXT NOT NULL,
+  phone TEXT NOT NULL,
+  message TEXT NOT NULL,
+  page TEXT,
+  -- SHA-256 of IP + daily salt: rate limiting without storing the address.
+  client_hash TEXT,
+  notify_status TEXT NOT NULL DEFAULT 'pending' CHECK (notify_status IN ('pending', 'sent', 'failed', 'skipped')),
+  notify_error TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX inquiries_site ON inquiries(site_id, created_at DESC);
+CREATE INDEX inquiries_client ON inquiries(client_hash, created_at);
+
+CREATE TABLE metrics_daily (
+  site_id TEXT NOT NULL REFERENCES sites(id),
+  date TEXT NOT NULL,
+  event TEXT NOT NULL CHECK (event IN ('pageview', 'tel', 'kakao', 'map', 'booking', 'inquiry_cta', 'inquiry')),
+  count INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (site_id, date, event)
+);
+
+-- Origin the HTML was rendered for (canonical, OG). A domain change re-renders on publish.
+ALTER TABLE site_versions ADD COLUMN rendered_origin TEXT;
+
+> api@ test /Users/steve/Projects/daniworks-sites-platform/apps/api
+> vitest run
+
+
+ RUN  v5.1.1 /Users/steve/Projects/daniworks-sites-platform/apps/api
+
+
+ Test Files  1 passed (1)
+      Tests  20 passed (20)
+   Start at  03:08:35
+   Duration  209ms (import 82%, tests 15%, transform 2%, worker 1%)
+
+
+> api@ check-types /Users/steve/Projects/daniworks-sites-platform/apps/api
+> tsc -p tsconfig.json
+
+
+exec
+/bin/zsh -lc 'cat packages/renderer/package.json; cat scripts/lib/verify.mjs | head -80; git diff -- pnpm-lock.yaml; cat /Users/steve/.codex/skills/workers-best-practices/references/runtime-patterns.md | head -65; git status --short' in /Users/steve/Projects/daniworks-sites-platform
+ succeeded in 0ms:
+{
+  "name": "@sites/renderer",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./client": "./src/client.tsx"
+  },
+  "scripts": {
+    "build": "node scripts/build-assets.mjs",
+    "check-types": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@dani-builder/agent-contract": "1.1.0",
+    "@dani-builder/blocks": "2.2.0",
+    "@dani-builder/site-templates": "0.8.0",
+    "@dani-builder/strapi-client": "2.5.0",
+    "@sites/schema": "workspace:*",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "react-icons": "5.5.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.3.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "esbuild": "^0.28.2",
+    "sharp": "0.35.5",
+    "tailwindcss": "^4.3.5",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.1"
+  }
+}
+// Shared helpers for scripts/verify-*.mjs. Runs on a dev machine or in the Docker `verify` service.
+import { execFileSync } from "node:child_process";
+import { mkdirSync, writeFileSync } from "node:fs";
+import http from "node:http";
+import { createRequire } from "node:module";
+
+const require = createRequire(import.meta.url);
+
+export const API = process.env.API_URL ?? "http://127.0.0.1:8788";
+export const ROUTER_PORT = process.env.ROUTER_PORT ?? "8787";
+export const TOKEN = process.env.ADMIN_TOKEN ?? "dev-admin-token";
+
+export function evidence(step) {
+  const dir = `evidence/${step}`;
+  mkdirSync(dir, { recursive: true });
+  const results = [];
+  return {
+    dir,
+    results,
+    check(name, pass, detail = {}) {
+      results.push({ name, pass: Boolean(pass), ...detail });
+      console.log(`${pass ? "PASS" : "FAIL"} ${name}${Object.keys(detail).length ? " " + JSON.stringify(detail) : ""}`);
+      return Boolean(pass);
+    },
+    finish(extra = {}) {
+      writeFileSync(`${dir}/results.json`, JSON.stringify({ ...extra, results }, null, 2));
+      const failed = results.filter((r) => !r.pass).length;
+      console.log(`\n${results.length - failed}/${results.length} passed`);
+      process.exit(failed ? 1 : 0);
+    },
+  };
+}
+
+export async function api(method, path, body, { auth = true, headers = {} } = {}) {
+  const res = await fetch(`${API}${path}`, {
+    method,
+    headers: { ...(auth ? { authorization: `Bearer ${TOKEN}` } : {}), "content-type": "application/json", ...headers },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const text = await res.text();
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    data = text;
+  }
+  return { status: res.status, data, headers: res.headers, text };
+}
+
+/** Request to the router with a Host header (Node cannot resolve *.localhost). */
+export function routerRequest(host, path = "/", { method = "GET", body, headers = {} } = {}) {
+  return new Promise((resolve, reject) => {
+    const req = http.request(
+      { host: "127.0.0.1", port: ROUTER_PORT, path, method, headers: { host: `${host}:${ROUTER_PORT}`, ...headers } },
+      (res) => {
+        let text = "";
+        res.setEncoding("utf8");
+        res.on("data", (c) => (text += c));
+        res.on("end", () => resolve({ status: res.statusCode, headers: res.headers, body: text }));
+      },
+    );
+    req.on("error", reject);
+    if (body !== undefined) req.write(typeof body === "string" ? body : JSON.stringify(body));
+    req.end();
+  });
+}
+
+export function uploadShared() {
+  execFileSync("node", ["scripts/upload-shared.mjs"], {
+    stdio: "inherit",
+    env: { ...process.env, API_URL: API, ADMIN_TOKEN: TOKEN },
+  });
+}
+
+export function chromium() {
+  return require("playwright").chromium;
+}
+
+export const viewports = { mobile: { width: 390, height: 844 }, desktop: { width: 1280, height: 800 } };
+
+diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
+index 61d254a..c4e2d7c 100644
+--- a/pnpm-lock.yaml
++++ b/pnpm-lock.yaml
+@@ -20,6 +20,9 @@ importers:
+ 
+   apps/api:
+     dependencies:
++      '@cf-wasm/photon':
++        specifier: 0.4.0
++        version: 0.4.0
+       '@sites/renderer':
+         specifier: workspace:*
+         version: link:../../packages/renderer
+@@ -33,9 +36,12 @@ importers:
+       typescript:
+         specifier: ^7.0.2
+         version: 7.0.2
++      vitest:
++        specifier: ^5.1.1
++        version: 5.1.1(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0))
+       wrangler:
+         specifier: ^4.164.0
+-        version: 4.164.0(@cloudflare/workers-types@5.20261118.1)
++        version: 4.164.0(@cloudflare/workers-types@5.20261118.1)(@types/node@26.6.6)
+ 
+   apps/router:
+     devDependencies:
+@@ -47,7 +53,7 @@ importers:
+         version: 7.0.2
+       wrangler:
+         specifier: ^4.164.0
+-        version: 4.164.0(@cloudflare/workers-types@5.20261118.1)
++        version: 4.164.0(@cloudflare/workers-types@5.20261118.1)(@types/node@26.6.6)
+ 
+   packages/renderer:
+     dependencies:
+@@ -116,6 +122,12 @@ importers:
+ 
+ packages:
+ 
++  '@cf-wasm/internals@0.2.0':
++    resolution: {integrity: sha512-QwMNETkTCtrx0uCzjJPRCTyok0OZNvOry9alfG8a8TpHo7oPJ17htPMDG4ptudpwe9F0VtJHy9+nOzJmupteiQ==}
++
++  '@cf-wasm/photon@0.4.0':
++    resolution: {integrity: sha512-PQcN6sThZAR/V6SH2MQmeFndDDhGfOxvra6UStyaBbkDHrgTPKvB+WapAhh0/TA9LsRAUaX/rEEw6hvY9uphbQ==}
++
+   '@cloudflare/kv-asset-handler@0.5.0':
+     resolution: {integrity: sha512-jxQYkj8dSIzc0cD6cMMNdOc1UVjqSqu8BZdor5s8cGjW2I8BjODt/kWPVdY+u9zj3ms75Q5qaZgnxUad83+eAg==}
+     engines: {node: '>=22.0.0'}
+@@ -2159,6 +2171,12 @@ packages:
+ 
+ snapshots:
+ 
++  '@cf-wasm/internals@0.2.0': {}
++
++  '@cf-wasm/photon@0.4.0':
++    dependencies:
++      '@cf-wasm/internals': 0.2.0
++
+   '@cloudflare/kv-asset-handler@0.5.0': {}
+ 
+   '@cloudflare/unenv-preset@2.16.2(unenv@2.0.0-rc.24)(workerd@1.20261117.1)':
+@@ -3361,7 +3379,7 @@ snapshots:
+     dependencies:
+       mime-db: 1.52.0
+ 
+-  miniflare@5.20261117.0-beta:
++  miniflare@5.20261117.0-beta(@types/node@26.6.6):
+     dependencies:
+       '@cspotcode/source-map-support': 0.8.1
+       sharp: 0.35.5(@types/node@26.6.6)
+@@ -3769,14 +3787,14 @@ snapshots:
+       '@cloudflare/workerd-linux-arm64': 1.20261117.1
+       '@cloudflare/workerd-windows-64': 1.20261117.1
+ 
+-  wrangler@4.164.0(@cloudflare/workers-types@5.20261118.1):
++  wrangler@4.164.0(@cloudflare/workers-types@5.20261118.1)(@types/node@26.6.6):
+     dependencies:
+       '@cloudflare/kv-asset-handler': 0.5.0
+       '@cloudflare/unenv-preset': 2.16.2(unenv@2.0.0-rc.24)(workerd@1.20261117.1)
+       '@cspotcode/source-map-support': 0.8.1
+       blake3-wasm: 2.1.5
+       esbuild: 0.28.2
+-      miniflare: 5.20261117.0-beta
++      miniflare: 5.20261117.0-beta(@types/node@26.6.6)
+       path-to-regexp: 6.3.0
+       unenv: 2.0.0-rc.24
+       workerd: 1.20261117.1
+# Workers Runtime Patterns
+
+Consult the sections relevant to the affected behavior. Examples show preferred patterns and common mistakes; **Retrieve** links identify documentation to check when an API, behavior, or limit is uncertain. Doc paths are relative to `https://developers.cloudflare.com`.
+
+- [Request and response handling](#request--response-handling): streaming, memory use, and post-response work
+- [Architecture](#architecture): bindings, Queues, Workflows, and database connections
+- [Code patterns](#code-patterns): request state, promise lifetime, and platform limits
+- [Security](#security): Web Crypto and error handling
+- [Development and testing](#development--testing): tests in the Workers runtime
+
+## Request & Response Handling
+
+### Stream request and response bodies
+
+Workers have a 128 MB memory limit. Buffering entire bodies with `await response.text()` or `await request.arrayBuffer()` crashes on large payloads. Stream data through using `TransformStream` or pass `response.body` directly.
+
+**Check**: any `await response.text()`, `await response.json()`, or `await response.arrayBuffer()` on data that could be large or unbounded. Small, bounded payloads (known-size JSON, config files) are fine to buffer.
+
+Correct — stream through:
+```ts
+async fetch(request: Request, env: Env): Promise<Response> {
+  const response = await fetch("https://api.example.com/large-dataset");
+  return new Response(response.body, response);
+}
+```
+
+Correct — concatenate multiple streams:
+```ts
+async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+  const urls = ["https://api.example.com/part-1", "https://api.example.com/part-2"];
+  const { readable, writable } = new TransformStream();
+
+  // Track the pipeline promise — don't let it float
+  ctx.waitUntil((async () => {
+    for (const url of urls) {
+      const response = await fetch(url);
+      if (response.body) {
+        await response.body.pipeTo(writable, { preventClose: true });
+      }
+    }
+    await writable.close();
+  })());
+
+  return new Response(readable, {
+    headers: { "Content-Type": "application/octet-stream" },
+  });
+}
+```
+
+Anti-pattern:
+```ts
+// Buffers entire body — crashes on large payloads
+const response = await fetch("https://api.example.com/large-dataset");
+const text = await response.text();
+return new Response(text);
+```
+
+**Retrieve**: streaming APIs at `/workers/runtime-apis/streams/`.
+
+### Use Zod 4.5.0 or later
+
+**Check**: Workers using Zod for runtime validation depend on [Zod 4.5.0 or later](https://github.com/colinhacks/zod/releases/tag/v4.5.0); older versions retain substantially more heap per schema, so check the installed version when investigating high memory usage or OOMs.
+
+### Use waitUntil for work after the response
+
+ M apps/api/package.json
+ M apps/api/src/index.ts
+ M packages/renderer/src/index.ts
+ M pnpm-lock.yaml
+?? apps/api/src/assets.ts
+?? apps/api/src/image-header.ts
+?? apps/api/src/media.ts
+?? apps/api/test/
+?? scripts/verify-m2-assets.mjs
+
+codex
+No actionable regressions were identified in the staged, unstaged, or untracked changes. The API's 20 unit tests and TypeScript check pass; deployed-runtime image processing and the end-to-end verification script were not exercised.
+No actionable regressions were identified in the staged, unstaged, or untracked changes. The API's 20 unit tests and TypeScript check pass; deployed-runtime image processing and the end-to-end verification script were not exercised.

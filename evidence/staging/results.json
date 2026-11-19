@@ -1,0 +1,149 @@
+{
+  "at": "2026-11-18T16:30:24.214Z",
+  "api": "https://api.dsites.kr",
+  "slug": "stg-mwmc46r2",
+  "siteId": "d380bb03-cbaf-4f3b-9703-e18326e09a5c",
+  "previewUrl": "https://api.dsites.kr/preview/5fe10639666149a5ab9792e2d09a3dd5",
+  "timings": {
+    "createMs": 865,
+    "publish1Ms": 1905,
+    "publish1PropagationMs": 52219,
+    "publish2Ms": 2033,
+    "publish2PropagationMs": 4124,
+    "publish2Regions": {
+      "Seoul": {
+        "ms": 7608,
+        "colo": "ICN"
+      },
+      "Tokyo": {
+        "ms": 7608,
+        "colo": "NRT"
+      },
+      "Singapore": {
+        "ms": 7608,
+        "colo": "SIN"
+      },
+      "Frankfurt": {
+        "ms": 7608,
+        "colo": "FRA"
+      },
+      "Virginia": {
+        "ms": 7608,
+        "colo": "CDG"
+      }
+    },
+    "rollbackMs": 1754,
+    "rollbackPropagationMs": 784,
+    "rollbackRegions": {
+      "Seoul": {
+        "ms": 25282,
+        "colo": "BOS"
+      },
+      "Tokyo": {
+        "ms": 53138,
+        "colo": "NRT"
+      },
+      "Singapore": {
+        "ms": 60233,
+        "colo": "SIN"
+      },
+      "Frankfurt": {
+        "ms": 60233,
+        "colo": "CDG"
+      },
+      "Virginia": {
+        "ms": 16765,
+        "colo": "DFW"
+      }
+    }
+  },
+  "results": [
+    {
+      "name": "API health",
+      "pass": true,
+      "api": "https://api.dsites.kr"
+    },
+    {
+      "name": "인증 없는 요청은 401",
+      "pass": true
+    },
+    {
+      "name": "사이트 생성 201",
+      "pass": true,
+      "hostname": "stg-mwmc46r2.dsites.kr",
+      "ms": 865
+    },
+    {
+      "name": "프리뷰 200 + noindex",
+      "pass": true
+    },
+    {
+      "name": "게시 전 공개 주소는 404",
+      "pass": true,
+      "colo": "DFW"
+    },
+    {
+      "name": "v1 게시 후 공개",
+      "pass": true,
+      "publishMs": 1905,
+      "propagationMs": 52219,
+      "colo": "DFW"
+    },
+    {
+      "name": "v2 초안 생성 201",
+      "pass": true
+    },
+    {
+      "name": "초안은 공개 주소에 반영되지 않음",
+      "pass": true
+    },
+    {
+      "name": "v2 게시 후 공개",
+      "pass": true,
+      "publishMs": 2033,
+      "propagationMs": 4124,
+      "colo": "LAX"
+    },
+    {
+      "name": "v1로 롤백",
+      "pass": true,
+      "rollbackMs": 1754,
+      "propagationMs": 784,
+      "colo": "LAX"
+    },
+    {
+      "name": "게시된 적 없는 버전으로 롤백은 409",
+      "pass": true
+    },
+    {
+      "name": "허용 목록 밖 아이콘은 422",
+      "pass": true
+    },
+    {
+      "name": "slug 변경은 422",
+      "pass": true
+    },
+    {
+      "name": "검증 실패는 버전을 만들지 않음",
+      "pass": true,
+      "versions": 3
+    },
+    {
+      "name": "중복 slug는 409",
+      "pass": true
+    },
+    {
+      "name": "연결 안 된 호스트는 404",
+      "pass": true
+    },
+    {
+      "name": "robots.txt·sitemap.xml 200",
+      "pass": true
+    },
+    {
+      "name": "공용 CSS 200 + immutable",
+      "pass": true,
+      "css": "/_shared/05edbb72e6d5/_assets/site.css"
+    }
+  ]
+}

@@ -1,0 +1,59 @@
+{
+  "at": "2026-11-18T16:44:49.199Z",
+  "rows": [
+    {
+      "city": "Chuncheon",
+      "net": "Oracle",
+      "colo": "ICN",
+      "coldTtfb": 609,
+      "warmTtfb": 172,
+      "warm2Ttfb": 147,
+      "warmColo": "ICN"
+    },
+    {
+      "city": "Seoul",
+      "net": "Korea Telecom",
+      "colo": "LAX",
+      "coldTtfb": 675,
+      "warmTtfb": 501,
+      "warm2Ttfb": 401,
+      "warmColo": "LAX"
+    },
+    {
+      "city": "Seoul",
+      "net": "Oracle",
+      "colo": "ICN",
+      "coldTtfb": 674,
+      "warmTtfb": 141,
+      "warm2Ttfb": 134,
+      "warmColo": "ICN"
+    },
+    {
+      "city": "Seoul",
+      "net": "The Constant Company",
+      "colo": "ICN",
+      "coldTtfb": 631,
+      "warmTtfb": 446,
+      "warm2Ttfb": 166,
+      "warmColo": "ICN"
+    },
+    {
+      "city": "Seoul",
+      "net": "Microsoft",
+      "colo": "ICN",
+      "coldTtfb": 662,
+      "warmTtfb": 152,
+      "warm2Ttfb": 155,
+      "warmColo": "ICN"
+    },
+    {
+      "city": "Seoul",
+      "net": "HostHatch Korea",
+      "colo": "ICN",
+      "coldTtfb": 571,
+      "warmTtfb": 146,
+      "warm2Ttfb": 148,
+      "warmColo": "ICN"
+    }
+  ]
+}

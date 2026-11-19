@@ -1,0 +1,41 @@
+{
+  "assetVersion": "75701628af5d",
+  "threshold": 0.0001,
+  "apply": true,
+  "report": [
+    {
+      "slug": "rp-changed-mwmlf70d",
+      "siteId": "3c0cffa3-f7ca-41c6-854f-a01ff57afa9c",
+      "from": "old-assets",
+      "to": "75701628af5d",
+      "renderId": "3d3ff30894ca45bf",
+      "diffs": {
+        "mobile": {
+          "ratio": 0.00257485585034392
+        },
+        "desktop": {
+          "ratio": 0.0020036604020979023
+        }
+      },
+      "same": false,
+      "result": "review"
+    },
+    {
+      "slug": "rp-same-mwmlf70d",
+      "siteId": "55a5ec31-3076-47aa-aa9a-0a6323b50d7d",
+      "from": "old-assets",
+      "to": "75701628af5d",
+      "renderId": "0301f5a8f3174fea",
+      "diffs": {
+        "mobile": {
+          "ratio": 0
+        },
+        "desktop": {
+          "ratio": 0
+        }
+      },
+      "same": true,
+      "result": "applied"
+    }
+  ]
+}

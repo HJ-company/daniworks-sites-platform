@@ -5,7 +5,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFil
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
-import { API, TOKEN, api, evidence, uploadShared } from "./lib/verify.mjs";
+import { API, TOKEN, api, evidence, uploadShared, paySite } from "./lib/verify.mjs";
 
 const sharp = createRequire(new URL("../packages/renderer/package.json", import.meta.url))("sharp");
 const { fieldFixture } = await import("../packages/renderer/src/templates/service-local/fixtures.ts");
@@ -20,6 +20,7 @@ uploadShared();
 const config = { ...structuredClone(fieldFixture), slug: `handoff-${run}` };
 const created = await api("POST", "/sites", { config, createdBy: "operator" });
 const siteId = created.data.siteId;
+await paySite(siteId);
 check("게시 전에는 versionId 없이 409", (await api("GET", `/sites/${siteId}/template-seed`)).status === 409);
 const photo = await sharp({ create: { width: 1000, height: 700, channels: 3, background: "#369" } }).jpeg().toBuffer();
 const up = await fetch(`${API}/sites/${siteId}/assets`, { method: "POST", headers: { authorization: `Bearer ${TOKEN}`, "content-type": "image/jpeg" }, body: photo }).then((r) => r.json());

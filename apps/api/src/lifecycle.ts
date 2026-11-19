@@ -4,13 +4,14 @@ import type { Env } from "./env.js";
 import { HttpError } from "./http.js";
 import { inquiriesCsv, listInquiries } from "./inquiries.js";
 import { kvHostKey, kvSiteKey, r2PageKey } from "./keys.js";
+import { bumpRevision, refreshBilling } from "./billing.js";
 import { removeDomain } from "./domains.js";
 import { routesOf, syncHostRecordsNow } from "./routes.js";
 import { acquireRoutesLease, getSite, releaseRoutesLease, type SiteRow } from "./store.js";
 export { ensureNotPurged } from "./purge-guard.js";
 
 const now = () => new Date().toISOString();
-export const retentionDays = (env: Env) => Number(env.RETENTION_DAYS ?? 90);
+export const retentionDays = (env: Env) => Number(env.RETENTION_DAYS ?? 365);
 
 /**
  * Cancellation: public serving stops (410), custom hostnames are deleted at Cloudflare so
@@ -33,6 +34,7 @@ export async function cancelSite(env: Env, site: SiteRow) {
     ),
     env.DB.prepare("UPDATE domains SET status = 'removing' WHERE site_id = ? AND kind = 'custom'").bind(site.id),
     env.DB.prepare("DELETE FROM blog_feeds WHERE site_id = ?").bind(site.id),
+    env.DB.prepare("UPDATE subscriptions SET status = 'cancelled', billing_rev = billing_rev + 1, updated_at = ? WHERE site_id = ?").bind(at, site.id),
   ]);
   await syncHostRecordsNow(env, site.id);
   const domains: { hostname: string; removed: boolean; error?: string }[] = [];
@@ -53,12 +55,16 @@ export async function cancelSite(env: Env, site: SiteRow) {
 /** Undo a cancellation within the retention period. Custom domains must be connected again. */
 export async function reactivateSite(env: Env, site: SiteRow) {
   if (!site.cancelled_at) throw new HttpError(409, "해지된 사이트가 아닙니다");
-  const resumed = await env.DB.prepare(
-    "UPDATE sites SET cancelled_at = NULL, status = 'active', updated_at = ?, routes_synced_at = NULL WHERE id = ? AND purging_at IS NULL",
-  )
-    .bind(now(), site.id)
-    .run();
-  if (resumed.meta.changes !== 1) throw new HttpError(409, "삭제가 진행 중인 사이트입니다");
+  const [resumed] = await env.DB.batch([
+    env.DB.prepare(
+      "UPDATE sites SET cancelled_at = NULL, status = 'active', suspend_reason = NULL, updated_at = ?, routes_synced_at = NULL WHERE id = ? AND purging_at IS NULL",
+    ).bind(now(), site.id),
+    bumpRevision(env.DB, site.id),
+  ]);
+  if (resumed?.meta.changes !== 1) throw new HttpError(409, "삭제가 진행 중인 사이트입니다");
+  // Billing picks up where the payments left off: unpaid past the grace period means the
+  // site goes straight back to the preparing page.
+  await refreshBilling(env, site.id);
   await syncHostRecordsNow(env, site.id);
   // Cancellation stopped the blog feed; the live version decides whether it comes back.
   if (site.published_version_id) {
@@ -127,7 +133,8 @@ export async function purgeSite(env: Env, site: SiteRow, confirmSlug: unknown) {
     for (const domain of domains) await env.ROUTES.delete(kvHostKey(domain.hostname));
     await env.ROUTES.delete(kvSiteKey(site.id));
     await env.ROUTES.delete(kvBlogKey(site.id));
-    const tables = ["inquiries", "metrics_daily", "assets", "blog_feeds", "staged_renders", "domains", "site_versions"];
+    // Payments stay: they are accounting records (no foreign key to the site).
+    const tables = ["inquiries", "metrics_daily", "assets", "blog_feeds", "staged_renders", "domains", "site_versions", "subscriptions"];
     await env.DB.batch(tables.map((table) => env.DB.prepare(`DELETE FROM ${table} WHERE site_id = ?`).bind(site.id)));
     // Writers that started before the cancellation clean up after themselves (they re-check
     // the site after writing); a last sweep catches anything written in between.

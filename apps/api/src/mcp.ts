@@ -9,6 +9,8 @@ import {
 } from "@sites/renderer";
 import { z } from "zod";
 import { uploadAsset } from "./assets.js";
+import { draftLink, issueDraftLink } from "./draft-links.js";
+import { actorName, audit, type Actor } from "./auth.js";
 import type { Env } from "./env.js";
 import { HttpError } from "./http.js";
 import { publish, rollback } from "./publish.js";
@@ -51,7 +53,7 @@ const TEMPLATES = [
   },
 ];
 
-function createServer(env: Env) {
+function createServer(env: Env, actor: Actor) {
   const server = new McpServer({ name: "dsites", version: "1.0.0" });
 
   server.registerTool(
@@ -96,7 +98,7 @@ function createServer(env: Env) {
     },
     async ({ config }) =>
       run(async () => {
-        const created = await createSiteFromInput(env, config, "ai");
+        const created = await createSiteFromInput(env, config, "ai", undefined, actorName(actor));
         const versions = (await listVersions(env.DB, created.siteId)) as { preview_token: string }[];
         return { ...created, previewUrl: previewUrl(env, versions[0]!.preview_token) };
       }),
@@ -132,7 +134,7 @@ function createServer(env: Env) {
     async ({ site: ref, config, note }) =>
       run(async () => {
         const site = await findSite(env, ref);
-        const draft = await addDraft(env, site, config, "ai", note ?? null);
+        const draft = await addDraft(env, site, config, "ai", note ?? null, actorName(actor));
         const token = await env.DB.prepare("SELECT preview_token FROM site_versions WHERE id = ?")
           .bind(draft.versionId)
           .first<{ preview_token: string }>();
@@ -158,6 +160,23 @@ function createServer(env: Env) {
           .first<{ id: string; number: number; preview_token: string }>();
         if (!row) throw new HttpError(404, "버전이 없습니다");
         return { versionId: row.id, number: row.number, previewUrl: previewUrl(env, row.preview_token) };
+      }),
+  );
+
+  server.registerTool(
+    "site_preview_link",
+    {
+      description:
+        "사장님께 카톡으로 보낼 시안 링크. 사이트당 하나이고 항상 최신 버전을 보여주므로 시안을 고쳐도 링크는 그대로다. 30일 동안 열린다. " +
+        "링크가 없거나 만료됐으면 새로 만든다. reissue=true면 새 링크로 바꾸고 예전 링크는 막는다. site_preview_url은 운영자 검수용 버전 링크다.",
+      inputSchema: z.object({ site: siteRef, reissue: z.boolean().optional() }),
+    },
+    async ({ site: ref, reissue }) =>
+      run(async () => {
+        const site = await findSite(env, ref);
+        const current = draftLink(env, site);
+        const link = !reissue && current && !current.expired ? current : await issueDraftLink(env, site);
+        return { url: link.url, expiresAt: link.expiresAt, reissued: link !== current };
       }),
   );
 
@@ -213,7 +232,76 @@ function createServer(env: Env) {
   return server;
 }
 
-/** `/mcp` endpoint. The caller has passed admin auth; a fresh server serves each request. */
-export function handleMcp(request: Request, env: Env) {
-  return createMcpHandler(() => createServer(env)).fetch(request);
+/** Tools that only read: not worth an audit row. */
+const READ_ONLY = new Set(["template_list", "template_get", "site_get", "site_validate", "site_preview_url"]);
+
+/** JSON-RPC messages in an MCP HTTP response: a JSON body, or server-sent events. */
+type RpcMessage = { id?: unknown; error?: unknown; result?: { isError?: boolean; structuredContent?: { siteId?: unknown }; content?: { text?: string }[] } };
+
+/** The site a successful site_create made, from its result. */
+function createdSite(answer: RpcMessage | undefined): string | null {
+  const structured = answer?.result?.structuredContent?.siteId;
+  if (typeof structured === "string") return structured;
+  try {
+    const parsed = JSON.parse(answer?.result?.content?.[0]?.text ?? "{}") as { siteId?: unknown };
+    return typeof parsed.siteId === "string" ? parsed.siteId : null;
+  } catch {
+    return null;
+  }
+}
+
+function rpcMessages(contentType: string, body: string): RpcMessage[] {
+  const texts = contentType.includes("text/event-stream")
+    ? body.split("\n").filter((line) => line.startsWith("data:")).map((line) => line.slice(5).trim())
+    : [body];
+  return texts.flatMap((text) => {
+    try {
+      const parsed = JSON.parse(text) as unknown;
+      return (Array.isArray(parsed) ? parsed : [parsed]) as RpcMessage[];
+    } catch {
+      return [];
+    }
+  });
+}
+
+/**
+ * `/mcp` endpoint. The caller is authenticated (Authentik operator or script); a fresh server
+ * serves each request. Changing tool calls are audited with the person behind them and their
+ * real outcome: a call is refused unless its JSON-RPC answer is a result without `isError`
+ * (tool refusals, input validation and unknown tools all arrive over HTTP 200).
+ */
+export async function handleMcp(request: Request, env: Env, actor: Actor) {
+  const calls: { id: unknown; name: string; site: string | null }[] = [];
+  if (request.method === "POST") {
+    try {
+      const body = (await request.clone().json()) as unknown;
+      for (const message of Array.isArray(body) ? body : [body]) {
+        const m = message as { id?: unknown; method?: string; params?: { name?: string; arguments?: { site?: unknown } } };
+        if (m?.method === "tools/call" && m.params?.name && !READ_ONLY.has(m.params.name)) {
+          calls.push({ id: m.id, name: m.params.name, site: typeof m.params.arguments?.site === "string" ? m.params.arguments.site : null });
+        }
+      }
+    } catch {
+      // Not JSON: the MCP handler answers with the protocol error.
+    }
+  }
+  const streamed = await createMcpHandler(() => createServer(env, actor)).fetch(request);
+  if (!calls.length) return streamed;
+  // The body may still be streaming while the tool runs: read it to the end before auditing.
+  const body = await streamed.text();
+  const answers = rpcMessages(streamed.headers.get("content-type") ?? "", body);
+  for (const call of calls) {
+    const answer = answers.find((m) => m.id === call.id);
+    const succeeded = streamed.ok && answer !== undefined && !answer.error && answer.result?.isError !== true;
+    // Tools take a slug or an id; the audit keys on the id so the site's history shows the call.
+    // A new site's id comes from the creation result.
+    const siteId =
+      call.name === "site_create" && succeeded
+        ? createdSite(answer)
+        : call.site
+          ? ((await env.DB.prepare("SELECT id FROM sites WHERE slug = ?1 OR id = ?1").bind(call.site).first<{ id: string }>())?.id ?? null)
+          : null;
+    await audit(env, actor, { action: `MCP ${call.name}`, siteId, target: call.site, status: streamed.ok ? (succeeded ? 200 : 422) : streamed.status });
+  }
+  return new Response(body, streamed);
 }

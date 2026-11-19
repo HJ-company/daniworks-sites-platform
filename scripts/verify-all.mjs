@@ -18,6 +18,11 @@ const steps = [
   ["m3-republish", "verify-m3-republish.mjs"],
   ["m3-lifecycle", "verify-m3-lifecycle.mjs"],
   ["m3-handoff", "verify-m3-handoff.mjs"],
+  ["m4-alignment", "verify-m4-alignment.mjs"],
+  ["m4-billing", "verify-m4-billing.mjs"],
+  ["m4-billing-console", "verify-m4-billing-console.mjs"],
+  ["m4-draft-links", "verify-m4-draft-links.mjs"],
+  ["m4-auth", "verify-m4-auth.mjs"],
 ];
 const only = process.argv.slice(2);
 const summary = [];

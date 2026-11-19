@@ -1,9 +1,8 @@
 // M3 step 3-2: quarterly reports. Seeded daily counters across two quarters → site report
 // (totals, previous quarter, monthly), CSV, all-sites overview, and the console screens.
-import { API, TOKEN, api, chromium, evidence, localD1, uploadShared } from "./lib/verify.mjs";
+import { API, TOKEN, api, chromium, evidence, localD1, uploadShared, paySite, consoleLogin, CONSOLE } from "./lib/verify.mjs";
 
 const { fieldFixture } = await import("../packages/renderer/src/templates/service-local/fixtures.ts");
-const CONSOLE = process.env.CONSOLE_URL ?? "http://127.0.0.1:8789";
 const ev = evidence("m3-reports");
 const { check } = ev;
 const run = Date.now().toString(36);
@@ -11,6 +10,7 @@ const run = Date.now().toString(36);
 uploadShared();
 const created = await api("POST", "/sites", { config: { ...structuredClone(fieldFixture), slug: `rep-${run}` }, createdBy: "operator" });
 const siteId = created.data.siteId;
+await paySite(siteId);
 
 // Q3 2026: 10 visits + 2 calls; Q4 2026: Oct 30 visits + 3 calls + 1 kakao, Dec 20 visits + 2 inquiries
 const seed = [
@@ -43,6 +43,7 @@ check("전체 사이트 개요에 이 사이트 합계", mine?.totals.pageview =
 // console
 const browser = await chromium().launch();
 const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+await consoleLogin(page);
 await page.goto(`${CONSOLE}/sites/${siteId}/stats`, { waitUntil: "networkidle" });
 await page.getByTestId("quarter").click().catch(() => undefined);
 await page.getByRole("option", { name: "2026-Q4" }).click().catch(() => undefined);

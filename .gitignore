@@ -7,3 +7,4 @@ evidence/
 packages/*/src/generated/
 .dev.vars.*
 !.dev.vars.example
+.playwright-mcp/

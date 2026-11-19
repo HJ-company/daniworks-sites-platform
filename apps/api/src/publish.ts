@@ -2,6 +2,7 @@ import { ASSET_VERSION, RENDER_VERSION, renderSite, type SiteConfig } from "@sit
 import type { Env } from "./env.js";
 import { HttpError } from "./http.js";
 import { kvSiteKey, r2PageKey, r2SharedKey, type PublishedPointer } from "./keys.js";
+import { refreshBilling, requirePublishable } from "./billing.js";
 import { syncBlogFeed } from "./blog.js";
 import { ensureNotPurged } from "./purge-guard.js";
 import { routesOf, syncHostRecordsNow } from "./routes.js";
@@ -89,10 +90,14 @@ async function pointTo(env: Env, site: SiteRow, version: VersionRow, pages: stri
 /** Publish = render (if needed) → R2 → move the KV pointer. Visible worldwide within about a minute. */
 export async function publish(env: Env, site: SiteRow, versionId?: string) {
   if (site.cancelled_at) throw new HttpError(409, "해지된 사이트입니다. 먼저 해지를 취소하세요");
+  await requirePublishable(env.DB, site.id);
   await requireSharedAssets(env);
   const version = versionId ? await getVersion(env.DB, site.id, versionId) : await latestVersion(env.DB, site.id);
   const pages = await ensureRendered(env, version, await siteOrigin(env, site));
-  return pointTo(env, site, version, pages);
+  const pointer = await pointTo(env, site, version, pages);
+  // Payments may have changed while rendering; serving follows billing as of now.
+  await refreshBilling(env, site.id);
+  return pointer;
 }
 
 /**
@@ -102,12 +107,15 @@ export async function publish(env: Env, site: SiteRow, versionId?: string) {
  */
 export async function rollback(env: Env, site: SiteRow, versionId: string) {
   if (site.cancelled_at) throw new HttpError(409, "해지된 사이트입니다. 먼저 해지를 취소하세요");
+  await requirePublishable(env.DB, site.id);
   const version = await getVersion(env.DB, site.id, versionId);
   if (!version.first_published_at) throw new HttpError(409, "게시된 적 없는 버전으로는 롤백할 수 없습니다");
   const exists = await env.SITES.head(r2PageKey(site.id, version.id, "index.html", version.render_id));
   if (!exists) throw new HttpError(409, "렌더된 파일이 R2에 없습니다. publish로 다시 게시하세요");
   const pages = await ensureRendered(env, version, await siteOrigin(env, site), { keepAssets: true });
-  return pointTo(env, site, version, pages);
+  const pointer = await pointTo(env, site, version, pages);
+  await refreshBilling(env, site.id);
+  return pointer;
 }
 
 /**

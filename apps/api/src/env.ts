@@ -6,6 +6,13 @@ export interface Env {
   ADMIN_TOKEN: string;
   /** `https` in deployed environments, `http` locally. Used for canonical and OG URLs. */
   PUBLIC_SCHEME?: string;
+  /** Authentik applications (each has its own issuer): the console login and the MCP connector. */
+  CONSOLE_OIDC_ISSUER?: string;
+  CONSOLE_OIDC_CLIENT_ID?: string;
+  MCP_OIDC_ISSUER?: string;
+  MCP_OIDC_CLIENT_ID?: string;
+  /** Origin of customer draft links (`https://dsites.kr`; locally the router). */
+  PREVIEW_ORIGIN?: string;
   /** Public origin of this API (`https://api.dsites.kr`); hosts the Turnstile frame sites embed. */
   API_ORIGIN?: string;
   /** Turnstile widget key (public) and secret. Without a secret the check is skipped. */
@@ -24,7 +31,7 @@ export interface Env {
   DOMAIN_CNAME_TARGET?: string;
   /** Naver blog RSS base (`https://rss.blog.naver.com`); Docker points it at fixtures. */
   BLOG_RSS_BASE?: string;
-  /** Days a cancelled site's data is kept before an operator may purge it (default 90). */
+  /** Days a cancelled site's data is kept before an operator may purge it (default 365: one year). */
   RETENTION_DAYS?: string;
   /** Pepper for hashing visitor IPs (rate limiting without storing addresses). */
   HASH_PEPPER?: string;

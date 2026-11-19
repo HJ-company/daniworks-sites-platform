@@ -114,7 +114,8 @@ export function SiteView({ data }: { data: PageData }) {
         navigation={navigation}
         footer={footer}
         organization={footer.organization ?? ""}
-        homeHref={`${linkPrefix}/`}
+        // The link adapter (A) adds linkPrefix to every root-relative href, this one included.
+        homeHref="/"
         currentPath={route}
         headerMode={page.headerMode}
         firstHero={first?.__component === "blocks.hero" ? first : null}

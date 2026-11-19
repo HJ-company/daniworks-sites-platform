@@ -1,0 +1,827 @@
+OpenAI Codex v0.167.0
+--------
+workdir: /Users/steve/Projects/daniworks-sites-platform
+model: gpt-6.1-sol
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: low
+reasoning summaries: none
+session id: 01a1efb4-a72d-7283-98cd-67c6186800d5
+--------
+user
+current changes
+exec
+/bin/zsh -lc 'pwd; git status --short; find .. -name AGENTS.md -o -name AGENTS.override.md' in /Users/steve/Projects/daniworks-sites-platform
+exec
+/bin/zsh -lc 'for p in /AGENTS.md /Users/AGENTS.md /Users/steve/AGENTS.md /Users/steve/Projects/AGENTS.md; do test ! -f "$p" || cat "$p"; done; find . -name AGENTS.md -o -name AGENTS.override.md; git diff -- README.md docs/prd.md package.json; cat .dockerignore docker-compose.yml; find docker -type f' in /Users/steve/Projects/daniworks-sites-platform
+ succeeded in 94ms:
+./node_modules/.pnpm/@dani-builder+strapi-client@2.5.0/node_modules/@dani-builder/strapi-client/AGENTS.md
+./node_modules/.pnpm/next@16.4.6_react-dom@19.3.1_react@19.3.1__react@19.3.1/node_modules/next/AGENTS.md
+diff --git a/README.md b/README.md
+index 29e4754..37f1709 100644
+--- a/README.md
++++ b/README.md
+@@ -15,6 +15,18 @@ pnpm verify:m1                                    # 전체 시나리오 검증
+ pnpm test && pnpm check-types
+ ```
+ 
++### Docker 로컬 검증
++
++호스트 node_modules와 무관하게 Linux 컨테이너에서 Workers·브라우저 검증을 돌린다. 단계마다 이 경로로 확인한다.
++
++```bash
++docker compose up -d --build                      # workers(api :8788, router :8787), mailpit(:8025)
++docker compose run --rm verify node scripts/verify-m1.mjs   # 결과는 evidence/<단계>/
++docker compose down -v                            # 로컬 D1·R2·KV 상태까지 지움
++```
++
++`verify`는 workers 컨테이너의 네트워크를 함께 써서, 스크립트가 `127.0.0.1`·`*.localhost`로 Workers에 닿는다.
++
+ 스테이징(`*.dsites.kr`, `api.dsites.kr`)은 [docs/staging-deploy.md](docs/staging-deploy.md)를 따른다.
+ 
+ ```bash
+diff --git a/docs/prd.md b/docs/prd.md
+index 73191ff..9b16879 100644
+--- a/docs/prd.md
++++ b/docs/prd.md
+@@ -1,7 +1,7 @@
+ ---
+ type: prd
+ status: draft
+-date: 2026-11-18
++date: 2026-11-19
+ product: 스타터 홈페이지
+ policy: https://app.notion.com/p/41cecd5a3ac28107820effaeb6cb4fc8
+ ---
+@@ -40,7 +40,7 @@ policy: https://app.notion.com/p/41cecd5a3ac28107820effaeb6cb4fc8
+ 
+ | 사용자 | 하는 일 | 접점 |
+ | --- | --- | --- |
+-| 운영자(다니웍스) | 시안 검수, 게시, 수정 요청 처리, 도메인 문제 대응 | 내부 어드민 API, AI 도구 |
++| 운영자(다니웍스) | 시안 검수, 게시, 수정 요청 처리, 도메인 문제 대응 | 운영자 콘솔, AI 도구(MCP) |
+ | AI 에이전트 | 자료 수집 결과로 설정 초안 작성, 수정 요청 반영 | MCP 도구(플랫폼 API) |
+ | 고객(사장님) | 시안 확인, 도메인 연결, 문의 확인, 리포트 열람, 수정 요청 | 시안 링크, 고객 콘솔 |
+ | 방문자 | 사이트 열람, 전화·카톡·지도·문의 | 공개 사이트 |
+@@ -61,7 +61,9 @@ policy: https://app.notion.com/p/41cecd5a3ac28107820effaeb6cb4fc8
+ 
+ - 형식: `@dani-builder/site-templates`의 `TemplateSeed` + 플랫폼 메타(연락처, 업종, 도메인, RSS URL 등).
+ - 저장 전 `collectSeedValidationErrors`와 플랫폼 스키마로 검증한다. 검증 실패는 저장하지 않는다.
+-- 업종 템플릿 4종: 음식점, 시공·설비, 뷰티·서비스, 1인·소규모 B2B.
++- 업종 템플릿: 업종별 원페이지 구조(섹션 순서, 전화·카톡·지도 CTA 배치, 필수 정보, AI 작성 지침)다. 블록 디자인(빌더 소유)과 별개로 이 플랫폼이 소유한다. 빌더 ADR 0008이 블록 배치·카피를 소비자 소유로 정했다. 필요한 블록이나 계약이 빌더에 없을 때만 빌더에 요청한다.
++- 1번 템플릿: 레슨·교육·출장 서비스(공사·하수도·청소 등). 실제 리드(지역 레슨 아카데미)를 기준으로 만든다.
++- 나머지 템플릿은 가설이다. 운영 자가진단 리드의 업종 분포를 보고 정한다. 초기 가설은 음식점, 뷰티·서비스, 1인·소규모 B2B였다.
+ - 사진은 R2에 업로드하고 설정에는 키만 저장한다.
+ 
+ ### 4-2. 버전과 게시
+@@ -97,17 +99,26 @@ policy: https://app.notion.com/p/41cecd5a3ac28107820effaeb6cb4fc8
+ 
+ ### 4-6. 측정
+ 
+-- 방문: Cloudflare Web Analytics 또는 라우터 Worker 집계.
+-- 클릭: 전화·카톡·지도·네이버 예약·문의 버튼 클릭을 `POST /api/track`으로 수집(Workers Analytics Engine).
++- 방문·클릭: 페이지 조회와 전화·카톡·지도·네이버 예약·문의 클릭을 `POST /api/track` 비콘으로 수집한다. 봇 UA를 걸러내고 D1 일별 집계 테이블에 upsert한다.
++- D1을 쓰는 이유: 300곳 규모의 트래픽이면 쓰기 한도 안에 들어간다. 로컬에서 끝까지 검증할 수 있고 경로가 하나다. Analytics Engine은 로컬에서 조회할 수 없다. 트래픽이 한도에 가까워지면 다시 검토한다.
+ - 분기 리포트용 사이트별·기간별 집계 API.
+ 
+ ### 4-7. 블로그 최신 글
+ 
+ - 네이버 블로그 RSS를 Worker cron이 수집해 KV에 캐시하고, 페이지는 런타임에 읽어 표시한다. 글이 올라와도 재게시하지 않는다.
+-- 네이버 이미지 외부 표시가 막힐 수 있다. 텍스트 카드 또는 Worker 프록시 중 PoC에서 정한다.
++- 네이버 이미지: 외부 도메인 Referer가 붙으면 403, Referer가 없으면 200이다(2026-11-19 실측). `<img referrerpolicy="no-referrer">`로 표시하고 프록시는 두지 않는다.
+ - 인스타 최신 게시물: 1차 범위 제외. Graph API는 비즈니스 계정·페이스북 페이지 연결·고객별 토큰 갱신이 필요하다.
+ 
+-### 4-8. 고객 콘솔
++### 4-8. 운영자 콘솔
++
++- 다니웍스 운영자 전용. Vite + React CSR + MUI.
++- 기능: 사이트 목록·생성, 버전·프리뷰·검증 오류 확인, 업체 정보 수정, 게시·롤백, 사진, 커스텀 도메인 등록·상태, 문의 열람·내보내기, 방문·클릭 통계, 분기 리포트, 전체 재게시, 해지.
++- 인증: 운영 환경은 Cloudflare Access를 앞에 둔다. MCP와 스크립트는 Bearer 토큰을 쓴다.
++
++### 4-9. 고객 콘솔 (보류)
++
++이번 구현 범위에서 뺐다. 범위와 시점은 따로 정한다.
++
+ 
+ - 로그인: 이메일 매직링크(카카오 로그인은 후순위).
+ - 기능: 사이트 상태, 커스텀 도메인 연결, 문의 목록, 분기 리포트 열람, 수정 요청 접수, 정적 파일 다운로드(게시 버전 zip).
+@@ -115,18 +126,18 @@ policy: https://app.notion.com/p/41cecd5a3ac28107820effaeb6cb4fc8
+ - 수정 요청(향후): 고객이 콘솔에서 AI 에이전트에게 말로 요청하면, 에이전트가 `draft` 버전을 만들고 프리뷰 링크를 보여준다. 사용량은 크레딧으로 제한한다.
+ - 상품 경계: 스타터의 AI는 고객이 사이트를 고치는 운영 도구다. AI 홈페이지의 AI는 홈페이지에 들어가 방문자가 쓰는 기능(AI 상담 등)이다. 스타터 공개 사이트에는 방문자용 AI 기능을 넣지 않는다.
+ 
+-### 4-9. 운영·AI 도구
++### 4-10. 운영·AI 도구
+ 
+-- 플랫폼 API를 MCP 도구로도 노출: `site_create`, `site_get`, `site_update_draft`, `site_validate`, `site_preview_url`, `site_publish`, `site_rollback`, `asset_upload`.
++- 플랫폼 API를 MCP 도구로도 노출: `site_create`, `site_get`, `site_update_draft`, `site_validate`, `site_preview_url`, `site_publish`, `site_rollback`, `asset_upload`, `template_list`, `template_get`(작성 지침 포함).
+ - 해지: 공개 중단(라우터에서 차단), 데이터·정적 파일은 보관 후 인출 가능.
+ - AI 홈페이지 전환: 사이트 설정(TemplateSeed)을 Strapi로 가져오는 스크립트. `create-daniworks-app` importer를 고객 seed를 받도록 확장하는 방향.
+ 
+ ## 5. 아키텍처
+ 
+ ```
+-[내부 어드민·AI(MCP)] ─┐
+-                       ├→ apps/api (Worker) ─→ D1: customers, sites, site_versions, domains, inquiries
+-[고객 콘솔] ────────────┘        │
++[운영자 콘솔·AI(MCP)] ─┐
++                       ├→ apps/api (Worker) ─→ D1: customers, sites, site_versions, domains, inquiries, metrics_daily
++[고객 콘솔(보류)] ──────┘        │
+                                 └→ 게시: 검증 → packages/renderer → R2 sites/<id>/<ver>/ → KV 포인터
+                                                                               ↓
+ 방문자 → <slug>.dsites.kr | 커스텀 도메인 → apps/router (Worker) → R2
+@@ -139,16 +150,16 @@ policy: https://app.notion.com/p/41cecd5a3ac28107820effaeb6cb4fc8
+ apps/
+   api/        플랫폼 API + MCP 도구 + 게시 파이프라인
+   router/     공개 사이트 서빙, 문의·클릭 수집, RSS cron
+-  console/    고객 콘솔 (후순위)
++  console/    운영자 콘솔 (Vite React CSR, MUI)
+ packages/
+-  renderer/   템플릿 4종, 사이트 설정 스키마, renderToString, 클라이언트 번들 빌드
+-  schema/     DB 스키마·사이트 설정 타입 공유
++  renderer/   업종 템플릿, 사이트 설정 검증, renderToString, 클라이언트 번들 빌드
++  schema/     API DTO·플랫폼 메타 스키마(zod) 공유
+ ```
+ 
+ ### 주요 의존성
+ 
+ - `@dani-builder/blocks`, `@dani-builder/site-templates`, `@dani-builder/strapi-client` (npm 공개 패키지, 버전 고정)
+-- Cloudflare: Workers, D1, KV, R2, Cloudflare for SaaS, Turnstile, Analytics Engine
++- Cloudflare: Workers, D1, KV, R2, Cloudflare for SaaS, Turnstile, Access(운영자 콘솔), Email Sending
+ 
+ ### 데이터 모델 (초안)
+ 
+@@ -159,6 +170,8 @@ packages/
+ | `site_versions` | id, site_id, config(JSON), status, created_by(ai/operator), created_at, published_at |
+ | `domains` | id, site_id, hostname, cf_hostname_id, 검증 상태, 인증서 상태 |
+ | `inquiries` | id, site_id, 항목(JSON), created_at, 알림 결과 |
++| `metrics_daily` | site_id, date, event(pageview·tel·kakao·map·booking·inquiry), count |
++| `assets` | id, site_id, R2 키, 형식, 크기, created_at |
+ | `change_requests` | id, site_id, 요청 경로(카톡·콘솔 AI), 요청 내용, 처리 버전, 차감 크레딧 |
+ | `credit_ledger` | id, customer_id, 증감량, 사유(구독 지급·충전·수정 차감), change_request_id, created_at |
+ 
+@@ -174,7 +187,7 @@ packages/
+ 
+ | 항목 | 100곳 | 300곳 |
+ | --- | --- | --- |
+-| Workers Paid (D1·KV·Analytics Engine 포함) | $5 | $5 |
++| Workers Paid (D1·KV 포함) | $5 | $5 |
+ | Cloudflare for SaaS (100개 무료, 이후 개당 $0.10) | $0 | $20 |
+ | R2 (무료 10GB) | $0 | $0 |
+ | 메일 발송 | $0 | $0~20 |
+@@ -192,7 +205,7 @@ packages/
+ | 구축 3시간 초과 | 사이트 없는 리드 3곳으로 AI 초안 유무별 실측 |
+ | 국내 등록업체 도메인 연결 실패 | 가비아·후이즈·카페24 등에서 www CNAME 연결 실측, 업체별 안내 문서 작성 |
+ | 등록업체 루트 포워딩이 https를 지원하지 않음 (`https://customer.kr` 접속 시 인증서 오류) | 같은 업체들에서 http·https 포워딩 각각 실측. 미지원 업체는 네임서버 Cloudflare 이전 안내 또는 도메인 대행 옵션으로 처리 |
+-| 네이버 블로그 이미지 외부 표시 차단 | RSS 수집 PoC에서 확인 |
++| 네이버 블로그 이미지 외부 표시 차단 | 해소: 외부 Referer는 403, Referer 없으면 200. `no-referrer`로 표시 |
+ | 클라이언트 JS(gzip 94 KiB)로 성능 목표 미달 | 아이콘은 허용 목록으로 해소(M1, fa6 청크 7.9 KiB). react-dom 비중은 부분 하이드레이션 검토 |
+ | 템플릿 업데이트로 기존 사이트 깨짐 | 템플릿 버전을 사이트별로 기록, 재게시 전 시각 회귀 확인 |
+ | 게시·롤백 반영이 1분을 넘음 | 스테이징 실측(2026-11-19): 최대 60.2초. 직전에 읽은 콜로는 KV `cacheTtl` 60초 동안 이전 값을 준다. 목표 경계라 `cacheTtl`을 KV 최솟값 30초로 낮추는 안을 M2에서 결정([결과](staging-deploy.md)) |
+@@ -205,14 +218,21 @@ packages/
+ | --- | --- | --- |
+ | M0 렌더 PoC (완료, [결과](m0-render-poc.md)) | `packages/renderer`: 샘플 설정 → HTML(Worker 실행) | 샘플 사이트가 Worker 렌더 결과로 브라우저에서 정상 표시 |
+ | M1 게시 PoC (완료, [로컬](m1-publish-poc.md)·[스테이징](staging-deploy.md)) | `apps/api` 사이트·버전 CRUD, 게시·롤백, `apps/router` 서브도메인 서빙 | `<slug>.dsites.kr`에서 게시·롤백 동작 |
+-| M2 첫 고객 | 템플릿 1~2종, 문의, 클릭 수집, MCP 도구, 커스텀 도메인(내부 등록) | 실제 리드 1곳 오픈 |
+-| M3 운영 | 템플릿 4종, RSS, 분기 리포트 집계, 전체 재게시 | 10곳 운영 |
+-| M4 고객 콘솔 | 도메인 셀프 연결, 문의, 리포트, 수정 요청, zip 다운로드 | 고객이 도움 없이 도메인 연결 |
++| M2 첫 고객 | 업종 템플릿 1번(레슨·교육·출장), 문의, 측정, MCP 도구, 사진, 커스텀 도메인(내부 등록), 운영자 콘솔 v1 | 실제 리드 1곳 오픈 |
++| M3 운영 | 나머지 업종 템플릿, RSS, 분기 리포트 집계, 전체 재게시, 해지·인출 | 10곳 운영 |
++| M4 고객 콘솔(보류) | 도메인 셀프 연결, 문의, 리포트, 수정 요청, zip 다운로드 | 고객이 도움 없이 도메인 연결 |
+ 
+ ## 10. 미결 사항
+ 
+-- DB: D1로 충분한지, 콘솔·리포트 요구로 Postgres가 필요한지 (M1에서 결정)
+-- 고객 콘솔 인증 방식과 계정 모델(고객 1 : 사이트 N 허용 여부)
++- 업종 템플릿 2~4번: 운영 자가진단 리드 업종 분포로 결정
++- 고객 콘솔 범위와 시점, 인증 방식·계정 모델
+ - 분기 AI 노출 재측정(geo-prove)과 리포트 생성의 위치: 이 플랫폼 안인지 별도 시스템인지
+-- 해지 후 데이터 보관 기간
++- 해지 후 데이터 보관 기간 (구현은 설정값, 기본 90일)
+ - 콘솔 AI 수정: 크레딧 수량·충전, 크레딧 차감 단위(요청 1건·게시 1건 등), 게시 전 운영자 검수 여부. 정책서의 '연 4건 수정'과의 관계도 정책서에 반영 필요
++
++## 11. 결정 기록
++
++- 2026-11-19: DB는 D1을 유지한다. 측정도 D1 일별 집계로 한다. 메일은 Cloudflare Email Sending, 로컬은 Mailpit.
++- 2026-11-19: 라우터 KV `cacheTtl`을 30초로 낮추고, 호스트 키에 게시 포인터를 함께 둬 조회를 1회로 줄인다.
++- 2026-11-19: 콘솔은 운영자 전용으로 먼저 만들고 고객 콘솔은 보류한다.
++- 2026-11-19: 로컬 검증은 Docker(`docker-compose.yml`)에서 한다. 단계마다 `codex review`를 거친다.
+diff --git a/package.json b/package.json
+index d1c8780..f933c7a 100644
+--- a/package.json
++++ b/package.json
+@@ -15,5 +15,8 @@
+     "verify:m1": "node scripts/verify-m1.mjs",
+     "deploy:staging": "pnpm build && pnpm --filter api migrate:staging && pnpm --filter api deploy:staging && pnpm --filter router deploy:staging",
+     "verify:staging": "node scripts/verify-staging.mjs"
++  },
++  "devDependencies": {
++    "playwright": "1.65.1"
+   }
+ }
+**/node_modules
+**/dist
+.wrangler
+evidence
+.git
+**/.dev.vars
+**/.dev.vars.*
+*.log
+# Local verification stack. `docker compose up -d --build`, then
+# `docker compose run --rm verify node scripts/verify-<step>.mjs`.
+name: dsites
+
+x-app: &app
+  build:
+    context: .
+    dockerfile: docker/Dockerfile
+  image: dsites-app:local
+
+services:
+  workers:
+    <<: *app
+    command: ["bash", "docker/workers.sh"]
+    environment:
+      ADMIN_TOKEN: dev-admin-token
+    ports:
+      - "8787:8787" # router: http://<slug>.localhost:8787
+      - "8788:8788" # api
+    volumes:
+      - state:/state
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "Promise.all([fetch('http://127.0.0.1:8788/health'),fetch('http://127.0.0.1:8787/')]).then(r=>process.exit(r[0].ok?0:1)).catch(()=>process.exit(1))"
+      interval: 3s
+      timeout: 3s
+      retries: 60
+
+  mailpit:
+    image: axllent/mailpit:v1.27
+    ports:
+      - "8025:8025" # inbox UI and HTTP API
+
+  # Runs verification scripts inside the workers' network namespace, so 127.0.0.1 and
+  # *.localhost reach the Workers exactly as they do on a developer machine.
+  verify:
+    <<: *app
+    profiles: [tools]
+    network_mode: "service:workers"
+    depends_on:
+      workers:
+        condition: service_healthy
+    environment:
+      API_URL: http://127.0.0.1:8788
+      ADMIN_TOKEN: dev-admin-token
+      MAILPIT_URL: http://mailpit:8025
+    volumes:
+      - ./evidence:/app/evidence
+
+volumes:
+  state:
+docker/Dockerfile
+docker/workers.sh
+
+exec
+/bin/zsh -lc 'cat docker/*; cat package.json; cat apps/{api,router}/wrangler*; cat scripts/verify-m1.mjs; git diff -- pnpm-lock.yaml' in /Users/steve/Projects/daniworks-sites-platform
+ succeeded in 0ms:
+# One image for every local service: Workers (wrangler/workerd), verification (Playwright, Lighthouse)
+# and small Node helpers. Dependencies are installed inside Linux so platform binaries
+# (workerd, esbuild) match the container, never the host's node_modules.
+FROM mcr.microsoft.com/playwright:v1.65.1-noble
+
+ENV PNPM_HOME=/pnpm \
+    PATH=/pnpm:$PATH \
+    CI=1 \
+    WRANGLER_SEND_METRICS=false \
+    WRANGLER_LOG_PATH=/tmp/wrangler-logs
+RUN npm install -g pnpm@10.28.0
+
+WORKDIR /app
+COPY . .
+RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
+    pnpm config set store-dir /pnpm/store && pnpm install --frozen-lockfile
+RUN pnpm build
+#!/usr/bin/env bash
+# Starts the api and router Workers with shared local state (D1, R2, KV) for Docker verification.
+set -euo pipefail
+cd /app
+
+STATE=/state
+: "${ADMIN_TOKEN:=dev-admin-token}"
+
+# wrangler reads secrets from .dev.vars; generate it from the container environment.
+env | grep -E '^(ADMIN_TOKEN|TURNSTILE_SECRET|MAIL_|CF_|ACCESS_)' > apps/api/.dev.vars || true
+
+(cd apps/api && pnpm exec wrangler d1 migrations apply DB --local --persist-to "$STATE")
+
+(cd apps/api && exec pnpm exec wrangler dev --port 8788 --inspector-port 9230 --ip 0.0.0.0 --persist-to "$STATE" --show-interactive-dev-session=false) &
+(cd apps/router && exec pnpm exec wrangler dev --port 8787 --inspector-port 9231 --ip 0.0.0.0 --persist-to "$STATE" --show-interactive-dev-session=false) &
+
+wait -n
+echo "a worker exited" >&2
+exit 1
+{
+  "name": "daniworks-sites-platform",
+  "private": true,
+  "packageManager": "pnpm@10.28.0",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "build": "pnpm --filter @sites/renderer build",
+    "test": "pnpm -r test",
+    "check-types": "pnpm -r check-types",
+    "dev:api": "pnpm --filter api dev",
+    "dev:router": "pnpm --filter router dev",
+    "upload:shared": "node scripts/upload-shared.mjs",
+    "verify:m1": "node scripts/verify-m1.mjs",
+    "deploy:staging": "pnpm build && pnpm --filter api migrate:staging && pnpm --filter api deploy:staging && pnpm --filter router deploy:staging",
+    "verify:staging": "node scripts/verify-staging.mjs"
+  },
+  "devDependencies": {
+    "playwright": "1.65.1"
+  }
+}
+# Platform API: site/version CRUD, preview, publish (render → R2 → KV), rollback.
+name = "sites-api"
+main = "src/index.ts"
+# Daniworks account (owns the dsites.kr zone). Local dev ignores it.
+account_id = "358a1b6caabcf91741109efca1ec0547"
+compatibility_date = "2026-11-01"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+# Public sites are served at <slug>.<BASE_DOMAIN>. Local dev uses *.localhost.
+BASE_DOMAIN = "localhost"
+# ADMIN_TOKEN comes from .dev.vars locally and a secret in production.
+
+[[d1_databases]]
+binding = "DB"
+database_name = "daniworks-sites"
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "migrations"
+
+[[r2_buckets]]
+binding = "SITES"
+bucket_name = "daniworks-sites"
+
+[[kv_namespaces]]
+binding = "ROUTES"
+id = "00000000000000000000000000000000"
+
+# Staging on the real zone: `pnpm --filter api deploy:staging`. Until launch dsites.kr doubles as staging.
+# Bindings and vars are not inherited by environments, so every one is repeated here.
+[env.staging]
+name = "sites-api-staging"
+workers_dev = false
+preview_urls = false
+# More specific than the router's `*/*`, so it wins for this host.
+routes = [{ pattern = "api.dsites.kr/*", zone_name = "dsites.kr" }]
+
+[env.staging.vars]
+BASE_DOMAIN = "dsites.kr"
+# ADMIN_TOKEN: `wrangler secret put ADMIN_TOKEN --env staging`
+
+[[env.staging.d1_databases]]
+binding = "DB"
+database_name = "daniworks-sites-staging"
+database_id = "fc09d755-f8b2-43e1-9bcf-55a00786d15a"
+migrations_dir = "migrations"
+
+[[env.staging.r2_buckets]]
+binding = "SITES"
+bucket_name = "daniworks-sites-staging"
+
+[[env.staging.kv_namespaces]]
+binding = "ROUTES"
+id = "81f56d8264ab431ab7ca5da79add2496"
+# Public router: Host → KV (site, published version) → R2. Serves files only; never renders.
+# Production: attach to the platform zone with a `*/*` route so Cloudflare for SaaS
+# custom hostnames and <slug>.<BASE_DOMAIN> both reach this Worker.
+name = "sites-router"
+main = "src/index.ts"
+# Daniworks account (owns the dsites.kr zone). Local dev ignores it.
+account_id = "358a1b6caabcf91741109efca1ec0547"
+compatibility_date = "2026-11-01"
+
+[vars]
+BASE_DOMAIN = "localhost"
+
+[[r2_buckets]]
+binding = "SITES"
+bucket_name = "daniworks-sites"
+
+[[kv_namespaces]]
+binding = "ROUTES"
+id = "00000000000000000000000000000000"
+
+# Staging on the real zone: `pnpm --filter router deploy:staging`.
+# `*/*` catches every host on the zone, including Cloudflare for SaaS custom hostnames
+# (their traffic enters through the zone's routes). api.dsites.kr/* is more specific and wins.
+[env.staging]
+name = "sites-router-staging"
+workers_dev = false
+preview_urls = false
+routes = [{ pattern = "*/*", zone_name = "dsites.kr" }]
+
+[env.staging.vars]
+BASE_DOMAIN = "dsites.kr"
+
+[[env.staging.r2_buckets]]
+binding = "SITES"
+bucket_name = "daniworks-sites-staging"
+
+[[env.staging.kv_namespaces]]
+binding = "ROUTES"
+id = "81f56d8264ab431ab7ca5da79add2496"
+// M1 acceptance: create → preview → publish → edit → republish → rollback, validation and auth
+// failures, then a browser check of the published site. Needs `pnpm dev:api` and `pnpm dev:router`.
+import { mkdirSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import { execFileSync } from "node:child_process";
+import http from "node:http";
+
+const require = createRequire(import.meta.url);
+const { chromium } = require("playwright");
+const { businessBasicTemplate } = await import(
+  "../packages/renderer/node_modules/@dani-builder/site-templates/dist/index.js"
+);
+
+const API = process.env.API_URL ?? "http://127.0.0.1:8788";
+const ROUTER_PORT = process.env.ROUTER_PORT ?? "8787";
+const TOKEN = process.env.ADMIN_TOKEN ?? "dev-admin-token";
+const out = "evidence/m1";
+mkdirSync(out, { recursive: true });
+
+const results = [];
+function check(name, pass, detail = {}) {
+  results.push({ name, pass: Boolean(pass), ...detail });
+  console.log(`${pass ? "PASS" : "FAIL"} ${name}${Object.keys(detail).length ? " " + JSON.stringify(detail) : ""}`);
+}
+async function api(method, path, body, { auth = true } = {}) {
+  const res = await fetch(`${API}${path}`, {
+    method,
+    headers: { ...(auth ? { authorization: `Bearer ${TOKEN}` } : {}), "content-type": "application/json" },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const text = await res.text();
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    data = text;
+  }
+  return { status: res.status, data, headers: res.headers };
+}
+const slug = `m1-${Date.now().toString(36)}`;
+const siteUrl = `http://${slug}.localhost:${ROUTER_PORT}/`;
+// Node cannot resolve *.localhost, so talk to 127.0.0.1 with the Host header set.
+function get(host, path = "/") {
+  return new Promise((resolve, reject) => {
+    http
+      .get({ host: "127.0.0.1", port: ROUTER_PORT, path, headers: { host: `${host}:${ROUTER_PORT}` } }, (res) => {
+        let body = "";
+        res.setEncoding("utf8");
+        res.on("data", (c) => (body += c));
+        res.on("end", () => resolve({ status: res.statusCode, headers: res.headers, body }));
+      })
+      .on("error", reject);
+  });
+}
+async function live() {
+  const res = await get(`${slug}.localhost`);
+  return { status: res.status, version: res.headers["x-site-version"] ?? null, title: res.body.match(/<title>([^<]*)/)?.[1] };
+}
+async function waitFor(predicate, timeoutMs = 70_000) {
+  const started = Date.now();
+  for (;;) {
+    const state = await live();
+    if (predicate(state)) return { state, ms: Date.now() - started };
+    if (Date.now() - started > timeoutMs) return { state, ms: null };
+    await new Promise((r) => setTimeout(r, 500));
+  }
+}
+function seedWithIcon(icon) {
+  const seed = structuredClone(businessBasicTemplate.compositions["forest-stay"].seed);
+  return JSON.parse(JSON.stringify(seed).replace('"icon":null', JSON.stringify({ icon }).slice(1, -1)));
+}
+const config = (title, extra = {}) => ({
+  slug,
+  templateId: "business-basic",
+  compositionId: "forest-stay",
+  paletteId: "pine",
+  meta: { title, description: "M1 게시 PoC" },
+  ...extra,
+});
+
+// 0. shared assets
+execFileSync("node", ["scripts/upload-shared.mjs"], { stdio: "inherit", env: { ...process.env, API_URL: API, ADMIN_TOKEN: TOKEN } });
+
+// 1. auth
+check("인증 없는 요청은 401", (await api("POST", "/sites", { config: config("x") }, { auth: false })).status === 401);
+
+// 2. create
+const created = await api("POST", "/sites", { config: config("M1 v1"), createdBy: "ai" });
+check("사이트 생성 201", created.status === 201, { hostname: created.data.hostname });
+const siteId = created.data.siteId;
+const v1 = created.data.versionId;
+
+// 3. preview before publish
+const site1 = await api("GET", `/sites/${siteId}`);
+const previewRes = await fetch(`${API}/preview/${site1.data.versions[0].preview_token}`);
+const previewHtml = await previewRes.text();
+check("프리뷰 200 + noindex", previewRes.status === 200 && previewRes.headers.get("x-robots-tag")?.includes("noindex") && previewHtml.includes("<title>M1 v1"));
+check("게시 전 공개 주소는 404", (await live()).status === 404);
+
+// 4. publish v1
+let t = Date.now();
+const pub1 = await api("POST", `/sites/${siteId}/publish`);
+const publishMs1 = Date.now() - t;
+const w1 = await waitFor((s) => s.version === "1");
+check("v1 게시 후 공개", pub1.status === 200 && w1.state.title === "M1 v1", { publishMs: publishMs1, propagationMs: w1.ms });
+
+// 5. edit → draft is not live → publish v2
+const v2 = await api("POST", `/sites/${siteId}/versions`, {
+  config: config("M1 v2", { paletteId: "clay", seed: seedWithIcon("FaPhone") }),
+  createdBy: "customer",
+  note: "콘솔 AI 수정 요청",
+});
+check("v2 초안 생성 201", v2.status === 201 && v2.data.number === 2);
+check("초안은 공개 주소에 반영되지 않음", (await live()).version === "1");
+t = Date.now();
+const pub2 = await api("POST", `/sites/${siteId}/publish`);
+const publishMs2 = Date.now() - t;
+const w2 = await waitFor((s) => s.version === "2");
+check("v2 게시 후 공개", pub2.status === 200 && w2.state.title === "M1 v2", { publishMs: publishMs2, propagationMs: w2.ms });
+
+// 6. rollback
+const rb = await api("POST", `/sites/${siteId}/rollback`, { versionId: v1 });
+const w3 = await waitFor((s) => s.version === "1");
+check("v1로 롤백", rb.status === 200 && w3.state.title === "M1 v1", { propagationMs: w3.ms });
+const v3 = await api("POST", `/sites/${siteId}/versions`, { config: config("M1 v3") });
+const rbDraft = await api("POST", `/sites/${siteId}/rollback`, { versionId: v3.data.versionId });
+check("게시된 적 없는 버전으로 롤백은 409", rbDraft.status === 409);
+await api("POST", `/sites/${siteId}/publish`, { versionId: v2.data.versionId });
+await waitFor((s) => s.version === "2");
+
+// 7. validation
+const before = (await api("GET", `/sites/${siteId}`)).data.versions.length;
+const badIcon = await api("POST", `/sites/${siteId}/versions`, { config: config("bad", { seed: seedWithIcon("FaRocket") }) });
+check("허용 목록 밖 아이콘은 422", badIcon.status === 422 && JSON.stringify(badIcon.data.details).includes("FaRocket"));
+const badSlug = await api("POST", `/sites/${siteId}/versions`, { config: { ...config("bad"), slug: `${slug}-x` } });
+check("slug 변경은 422", badSlug.status === 422);
+const after = (await api("GET", `/sites/${siteId}`)).data.versions.length;
+check("검증 실패는 버전을 만들지 않음", before === after, { versions: after });
+const dup = await api("POST", "/sites", { config: config("dup") });
+check("중복 slug는 409", dup.status === 409);
+
+// 8. router edges
+const unknown = await get(`nobody-${Date.now()}.localhost`);
+check("연결 안 된 호스트는 404", unknown.status === 404);
+const robots = await get(`${slug}.localhost`, "/robots.txt");
+const sitemap = await get(`${slug}.localhost`, "/sitemap.xml");
+check("robots.txt·sitemap.xml 200", robots.status === 200 && sitemap.status === 200 && sitemap.body.includes(`${slug}.localhost`));
+
+// 9. browser
+const browser = await chromium.launch();
+for (const [vp, viewport] of Object.entries({ mobile: { width: 390, height: 844 }, desktop: { width: 1280, height: 800 } })) {
+  const page = await browser.newPage({ viewport });
+  const errors = [];
+  const failed = [];
+  const external = [];
+  let jsBytes = 0;
+  page.on("console", (m) => m.type() === "error" && errors.push(m.text()));
+  page.on("pageerror", (e) => errors.push(String(e)));
+  page.on("requestfailed", (r) => failed.push(r.url()));
+  page.on("request", (r) => !r.url().startsWith(siteUrl.slice(0, -1)) && external.push(r.url()));
+  page.on("response", async (r) => {
+    if (r.url().endsWith(".js")) jsBytes += Number(r.headers()["content-length"] ?? (await r.body().catch(() => Buffer.alloc(0))).length);
+  });
+  await page.goto(siteUrl, { waitUntil: "networkidle" });
+  await page.evaluate(async () => {
+    for (let y = 0; y < document.body.scrollHeight; y += 400) {
+      window.scrollTo(0, y);
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    window.scrollTo(0, 0);
+  });
+  await page.waitForLoadState("networkidle");
+  const state = await page.evaluate(() => {
+    const root = document.getElementById("root");
+    return {
+      hydrated:
+        !!root &&
+        Object.keys(root).some((k) => k.startsWith("__reactContainer")) &&
+        [...root.querySelectorAll("*")].some((el) => Object.keys(el).some((k) => k.startsWith("__reactFiber"))),
+      unloadedImages: [...document.images].filter((i) => !i.complete || i.naturalWidth === 0).map((i) => i.src),
+      svgIcons: document.querySelectorAll("#root svg").length,
+    };
+  });
+  await page.screenshot({ path: `${out}/site-${vp}.png`, fullPage: true });
+  check(`브라우저 ${vp}`, state.hydrated && !errors.length && !failed.length && !external.length && !state.unloadedImages.length, {
+    jsKiB: Math.round(jsBytes / 1024),
+    errors,
+    failed,
+    external,
+    unloaded: state.unloadedImages.length,
+  });
+  await page.close();
+}
+await browser.close();
+
+writeFileSync(`${out}/results.json`, JSON.stringify({ slug, siteId, results }, null, 2));
+const failedCount = results.filter((r) => !r.pass).length;
+console.log(`\n${results.length - failedCount}/${results.length} passed`);
+process.exit(failedCount ? 1 : 0);
+diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
+index d9d57d3..21cb517 100644
+--- a/pnpm-lock.yaml
++++ b/pnpm-lock.yaml
+@@ -6,7 +6,11 @@ settings:
+ 
+ importers:
+ 
+-  .: {}
++  .:
++    devDependencies:
++      playwright:
++        specifier: 1.65.1
++        version: 1.65.1
+ 
+   apps/api:
+     dependencies:
+@@ -1339,6 +1343,16 @@ packages:
+     resolution: {integrity: sha512-qcJu88Q2IWqJsDD529JKMdwGm/dvInW4HvQnRwiH9JtihJvzGOscDtHE3x1pBKeUOTysQ8kVmLnJ2kJu7yhcGA==}
+     engines: {node: '>=12'}
+ 
++  playwright-core@1.65.1:
++    resolution: {integrity: sha512-hqPpz7blSMPxWVdoeE1yiBSzXsKiVOd2k+kjCvmUywD2GPO2Dd9HfcWnq9NN0GHbNZDFgZ9JfBFr+X5/BLo0qw==}
++    engines: {node: '>=20'}
++    hasBin: true
++
++  playwright@1.65.1:
++    resolution: {integrity: sha512-vJ1FuoOrNwOKHUIVEvSt3jT1L+wjjDpwhwIstKtfvTh8XIG4FG4bIFuvNdMxi81LGfAhUgUZleVFaOLY4RIUUw==}
++    engines: {node: '>=20'}
++    hasBin: true
++
+   postcss@8.5.23:
+     resolution: {integrity: sha512-g50586zr4bZmwFiTlflMu8E0bDTb5I5gertgwAKmsdUlTQIhZtunzUlD1WSzwcVWPoAVpsrA6vlfCD7oXvRwgg==}
+     engines: {node: ^10 || ^12 || >=14}
+@@ -2521,6 +2535,12 @@ snapshots:
+ 
+   picomatch@4.0.7: {}
+ 
++  playwright-core@1.65.1: {}
++
++  playwright@1.65.1:
++    dependencies:
++      playwright-core: 1.65.1
++
+   postcss@8.5.23:
+     dependencies:
+       nanoid: 3.3.20
+
+exec
+/bin/zsh -lc "cat packages/renderer/package.json; cat scripts/upload-shared.mjs; ls -la; cat .gitignore; command -v docker && docker info --format '{{.ServerVersion}}'; find packages/renderer -maxdepth 2 -type f | head -30" in /Users/steve/Projects/daniworks-sites-platform
+ succeeded in 444ms:
+{
+  "name": "@sites/renderer",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./client": "./src/client.tsx"
+  },
+  "scripts": {
+    "build": "node scripts/build-assets.mjs",
+    "check-types": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@dani-builder/agent-contract": "1.1.0",
+    "@dani-builder/blocks": "2.2.0",
+    "@dani-builder/site-templates": "0.8.0",
+    "@dani-builder/strapi-client": "2.5.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "react-icons": "5.5.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.3.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "esbuild": "^0.28.2",
+    "tailwindcss": "^4.3.5",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.1"
+  }
+}
+// Uploads the built shared assets (packages/renderer/dist/shared/<version>) through the API.
+// Usage: API_URL=http://127.0.0.1:8788 ADMIN_TOKEN=... node scripts/upload-shared.mjs
+import { readdirSync, readFileSync } from "node:fs";
+import { extname, join, relative } from "node:path";
+
+const api = process.env.API_URL ?? "http://127.0.0.1:8788";
+const token = process.env.ADMIN_TOKEN ?? "dev-admin-token";
+const sharedRoot = "packages/renderer/dist/shared";
+const types = {
+  ".css": "text/css; charset=utf-8",
+  ".js": "text/javascript; charset=utf-8",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".png": "image/png",
+  ".webp": "image/webp",
+  ".svg": "image/svg+xml",
+  ".woff2": "font/woff2",
+};
+
+const walk = (dir) =>
+  readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)]));
+
+const files = walk(sharedRoot);
+let bytes = 0;
+for (const file of files) {
+  const path = relative(sharedRoot, file);
+  const body = readFileSync(file);
+  bytes += body.byteLength;
+  const res = await fetch(`${api}/admin/shared/${path}`, {
+    method: "PUT",
+    headers: { authorization: `Bearer ${token}`, "content-type": types[extname(file)] ?? "application/octet-stream" },
+    body,
+  });
+  if (!res.ok) throw new Error(`${path}: ${res.status} ${await res.text()}`);
+}
+console.log(`uploaded ${files.length} files (${(bytes / 1024).toFixed(0)} KiB) to ${api}`);
+total 240
+drwxr-xr-x  18 steve  staff    576 Nov 19 02:29 .
+drwxr-xr-x@ 88 steve  staff   2816 Nov 19 01:09 ..
+-rw-r--r--@  1 steve  staff     82 Nov 19 02:26 .dockerignore
+drwxr-xr-x  14 steve  staff    448 Nov 19 02:29 .git
+-rw-r--r--@  1 steve  staff    114 Nov 19 01:56 .gitignore
+-rw-r--r--@  1 steve  staff   1830 Nov 19 02:29 README.md
+drwxr-xr-x   4 steve  staff    128 Nov 19 01:09 apps
+drwxr-xr-x@  4 steve  staff    128 Nov 19 02:27 docker
+-rw-r--r--@  1 steve  staff   1391 Nov 19 02:26 docker-compose.yml
+drwxr-xr-x   6 steve  staff    192 Nov 19 01:56 docs
+drwxr-xr-x@  5 steve  staff    160 Nov 19 02:29 evidence
+drwxr-xr-x@  8 steve  staff    256 Nov 19 02:26 node_modules
+-rw-r--r--@  1 steve  staff    727 Nov 19 02:26 package.json
+drwxr-xr-x   3 steve  staff     96 Nov 19 01:09 packages
+-rw-r--r--@  1 steve  staff  90873 Nov 19 02:26 pnpm-lock.yaml
+-rw-r--r--   1 steve  staff     36 Nov 19 01:09 pnpm-workspace.yaml
+drwxr-xr-x   5 steve  staff    160 Nov 19 01:56 scripts
+-rw-r--r--   1 steve  staff    338 Nov 19 01:09 tsconfig.base.json
+node_modules/
+dist/
+.wrangler/
+.dev.vars
+*.log
+evidence/
+packages/*/src/generated/
+.dev.vars.*
+!.dev.vars.example
+/usr/local/bin/docker
+29.6.2
+packages/renderer/test/validate.test.ts
+packages/renderer/package.json
+packages/renderer/scripts/build-assets.mjs
+packages/renderer/tsconfig.json
+packages/renderer/src/styles.css
+packages/renderer/src/validate.ts
+packages/renderer/src/view.tsx
+packages/renderer/src/site-config.ts
+packages/renderer/src/index.ts
+packages/renderer/src/client.tsx
+packages/renderer/src/preview.ts
+packages/renderer/src/render.tsx
+
+exec
+/bin/zsh -lc 'docker compose ps; ls evidence/m1; docker compose logs --tail 15 workers' in /Users/steve/Projects/daniworks-sites-platform
+ succeeded in 1ms:
+NAME               IMAGE                   COMMAND                  SERVICE   CREATED              STATUS                        PORTS
+dsites-mailpit-1   axllent/mailpit:v1.27   "/mailpit"               mailpit   2 minutes ago        Up 2 minutes (healthy)        0.0.0.0:8025->8025/tcp, [::]:8025->8025/tcp
+dsites-workers-1   dsites-app:local        "bash docker/workers…"   workers   About a minute ago   Up About a minute (healthy)   0.0.0.0:8787-8788->8787-8788/tcp, [::]:8787-8788->8787-8788/tcp
+results.json
+site-desktop.png
+site-mobile.png
+workers-1  | [wrangler:info] GET / 404 Not Found (3ms)
+workers-1  | [wrangler:info] GET /health 200 OK (2ms)
+workers-1  | [wrangler:info] GET / 404 Not Found (2ms)
+workers-1  | [wrangler:info] GET /health 200 OK (2ms)
+workers-1  | [wrangler:info] GET / 404 Not Found (2ms)
+workers-1  | [wrangler:info] GET /health 200 OK (3ms)
+workers-1  | [wrangler:info] GET / 404 Not Found (4ms)
+workers-1  | [wrangler:info] GET /health 200 OK (2ms)
+workers-1  | [wrangler:info] GET / 404 Not Found (3ms)
+workers-1  | [wrangler:info] GET /health 200 OK (2ms)
+workers-1  | [wrangler:info] GET / 404 Not Found (3ms)
+workers-1  | [wrangler:info] GET / 404 Not Found (4ms)
+workers-1  | [wrangler:info] GET /health 200 OK (5ms)
+workers-1  | [wrangler:info] GET /health 200 OK (2ms)
+workers-1  | [wrangler:info] GET / 404 Not Found (2ms)
+
+codex
+No actionable regressions were identified in the staged, unstaged, or untracked changes. The Docker configuration is consistent with the existing verification scripts, and the running Workers containers are healthy.
+No actionable regressions were identified in the staged, unstaged, or untracked changes. The Docker configuration is consistent with the existing verification scripts, and the running Workers containers are healthy.

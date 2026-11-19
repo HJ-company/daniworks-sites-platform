@@ -1,6 +1,6 @@
 // M2 step 2-6: pageview and click measurement. Browser beacons → router → api RPC → D1 daily
 // counters → report API. Bots, previews, bad events and suspended sites are not counted.
-import { API, ROUTER_PORT, api, chromium, evidence, routerRequest, uploadShared } from "./lib/verify.mjs";
+import { API, ROUTER_PORT, api, chromium, evidence, routerRequest, uploadShared, paySite } from "./lib/verify.mjs";
 
 const { fieldFixture } = await import("../packages/renderer/src/templates/service-local/fixtures.ts");
 const ev = evidence("m2-track");
@@ -17,6 +17,7 @@ config.business.bookingUrl = "https://m.booking.naver.com/booking/example";
 const host = `${config.slug}.localhost`;
 const created = await api("POST", "/sites", { config, createdBy: "operator" });
 const siteId = created.data.siteId;
+await paySite(siteId);
 await api("POST", `/sites/${siteId}/publish`);
 const totals = async () => (await api("GET", `/sites/${siteId}/metrics`)).data.totals;
 const settle = () => new Promise((r) => setTimeout(r, 800));

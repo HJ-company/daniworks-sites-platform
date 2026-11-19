@@ -1,0 +1,1861 @@
+OpenAI Codex v0.167.0
+--------
+workdir: /Users/steve/Projects/daniworks-sites-platform
+model: gpt-6.1-sol
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: low
+reasoning summaries: none
+session id: 01a1f085-5778-7b51-9f5f-20a1fe07b2ee
+--------
+user
+current changes
+exec
+/bin/zsh -lc 'pwd; git status --short; find .. -name AGENTS.md -o -name AGENTS.override.md' in /Users/steve/Projects/daniworks-sites-platform
+exec
+/bin/zsh -lc 'for p in /AGENTS /Users/AGENTS /Users/steve/AGENTS /Users/steve/Projects/AGENTS; do for s in .md .override.md; do test ! -f "$p$s" || cat "$p$s"; done; done; find . -name AGENTS.md -o -name AGENTS.override.md; git diff --stat; git diff' in /Users/steve/Projects/daniworks-sites-platform
+ succeeded in 1056ms:
+./node_modules/.pnpm/@dani-builder+strapi-client@2.5.0/node_modules/@dani-builder/strapi-client/AGENTS.md
+./node_modules/.pnpm/next@16.4.6_react-dom@19.3.1_react@19.3.1__react@19.3.1/node_modules/next/AGENTS.md
+./node_modules/.pnpm/next@16.4.6_@opentelemetry+api@1.10.0_@types+node@26.6.6_react-dom@19.3.1_react@19.3.1__react@19.3.1/node_modules/next/AGENTS.md
+ apps/api/package.json                       |  1 +
+ apps/api/src/env.ts                         |  2 ++
+ apps/api/src/index.ts                       | 18 ++++++++++++++++++
+ apps/api/src/publish.ts                     |  2 ++
+ apps/console/src/pages/site/OverviewTab.tsx |  4 +++-
+ pnpm-lock.yaml                              |  8 ++++++++
+ scripts/verify-all.mjs                      |  1 +
+ 7 files changed, 35 insertions(+), 1 deletion(-)
+diff --git a/apps/api/package.json b/apps/api/package.json
+index 10b8bb5..2da9e92 100644
+--- a/apps/api/package.json
++++ b/apps/api/package.json
+@@ -14,6 +14,7 @@
+     "@modelcontextprotocol/server": "2.4.0",
+     "@sites/renderer": "workspace:*",
+     "@sites/schema": "workspace:*",
++    "fflate": "0.8.3",
+     "zod": "4.6.7"
+   },
+   "devDependencies": {
+diff --git a/apps/api/src/env.ts b/apps/api/src/env.ts
+index 11cb6a4..240b457 100644
+--- a/apps/api/src/env.ts
++++ b/apps/api/src/env.ts
+@@ -24,6 +24,8 @@ export interface Env {
+   DOMAIN_CNAME_TARGET?: string;
+   /** Naver blog RSS base (`https://rss.blog.naver.com`); Docker points it at fixtures. */
+   BLOG_RSS_BASE?: string;
++  /** Days a cancelled site's data is kept before an operator may purge it (default 90). */
++  RETENTION_DAYS?: string;
+   /** Pepper for hashing visitor IPs (rate limiting without storing addresses). */
+   HASH_PEPPER?: string;
+ }
+diff --git a/apps/api/src/index.ts b/apps/api/src/index.ts
+index c1bb617..acdfcc8 100644
+--- a/apps/api/src/index.ts
++++ b/apps/api/src/index.ts
+@@ -11,6 +11,7 @@ import { addDomain, auditOrigins, domainQuota, listDomains, maintainDomains, ref
+ import { handleMcp } from "./mcp.js";
+ import { assetBase, publish, rollback, siteOrigin } from "./publish.js";
+ import { auditHostRecords, reconcileHostRecords, syncHostRecordsNow } from "./routes.js";
++import { cancelSite, exportSite, listCancellations, purgeSite, reactivateSite } from "./lifecycle.js";
+ import { commitRepublish, republishPlan, stagedPage, stageRepublish } from "./republish.js";
+ import { addDraft, configFromBody, createSiteFromInput, creator, previewUrl } from "./sites.js";
+ import { getSite, listSites, listVersions, setSiteStatus, versionByPreviewToken, type CreatedBy } from "./store.js";
+@@ -108,6 +109,9 @@ async function handle(request: Request, env: Env): Promise<Response> {
+     return stagedPage(env, parts[1]!, parts[2]!, parts[3] ?? "");
+   }
+ 
++  // GET /cancellations: cancelled sites with the date each may be purged.
++  if (method === "GET" && url.pathname === "/cancellations") return json({ cancellations: await listCancellations(env) });
++
+   // GET /domains/quota: custom hostnames on the zone vs. the 100 included.
+   if (method === "GET" && url.pathname === "/domains/quota") return json(await domainQuota(env));
+ 
+@@ -159,6 +163,20 @@ async function handle(request: Request, env: Env): Promise<Response> {
+     if (method === "DELETE" && parts.length === 4) return json(await removeDomain(env, site.id, hostname));
+   }
+ 
++  // Lifecycle: POST /cancel, /reactivate, /purge {confirmSlug}; GET /export.zip
++  if (method === "POST" && parts.length === 3 && parts[2] === "cancel") return json(await cancelSite(env, site));
++  if (method === "POST" && parts.length === 3 && parts[2] === "reactivate") return json(await reactivateSite(env, site));
++  if (method === "POST" && parts.length === 3 && parts[2] === "purge") {
++    const body = await readJson<{ confirmSlug?: unknown }>(request);
++    return json(await purgeSite(env, site, body.confirmSlug));
++  }
++  if (method === "GET" && parts.length === 3 && parts[2] === "export.zip") {
++    const { filename, body } = await exportSite(env, site.id);
++    return new Response(body as Uint8Array<ArrayBuffer>, {
++      headers: { "content-type": "application/zip", "content-disposition": `attachment; filename="${filename}"`, "cache-control": "no-store" },
++    });
++  }
++
+   // POST /sites/:id/republish/stage | /republish/commit {renderId}
+   if (method === "POST" && parts[2] === "republish" && parts.length === 4) {
+     if (parts[3] === "stage") return json(await stageRepublish(env, site.id), 201);
+diff --git a/apps/api/src/publish.ts b/apps/api/src/publish.ts
+index 4ae5c96..5c1a0b5 100644
+--- a/apps/api/src/publish.ts
++++ b/apps/api/src/publish.ts
+@@ -84,6 +84,7 @@ async function pointTo(env: Env, site: SiteRow, version: VersionRow, pages: stri
+ 
+ /** Publish = render (if needed) → R2 → move the KV pointer. Visible worldwide within about a minute. */
+ export async function publish(env: Env, site: SiteRow, versionId?: string) {
++  if (site.cancelled_at) throw new HttpError(409, "해지된 사이트입니다. 먼저 해지를 취소하세요");
+   await requireSharedAssets(env);
+   const version = versionId ? await getVersion(env.DB, site.id, versionId) : await latestVersion(env.DB, site.id);
+   const pages = await ensureRendered(env, version, await siteOrigin(env, site));
+@@ -96,6 +97,7 @@ export async function publish(env: Env, site: SiteRow, versionId?: string) {
+  * then only its HTML is re-rendered so canonical and OG URLs point at the current host.
+  */
+ export async function rollback(env: Env, site: SiteRow, versionId: string) {
++  if (site.cancelled_at) throw new HttpError(409, "해지된 사이트입니다. 먼저 해지를 취소하세요");
+   const version = await getVersion(env.DB, site.id, versionId);
+   if (!version.first_published_at) throw new HttpError(409, "게시된 적 없는 버전으로는 롤백할 수 없습니다");
+   const exists = await env.SITES.head(r2PageKey(site.id, version.id, "index.html", version.render_id));
+diff --git a/apps/console/src/pages/site/OverviewTab.tsx b/apps/console/src/pages/site/OverviewTab.tsx
+index 3786351..d7a12c2 100644
+--- a/apps/console/src/pages/site/OverviewTab.tsx
++++ b/apps/console/src/pages/site/OverviewTab.tsx
+@@ -15,6 +15,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
+ import { useState } from "react";
+ import { api, kst, type SiteRow, type VersionRow } from "../../api.js";
+ import { ErrorAlert, useToast } from "../../ui.js";
++import { LifecycleCard } from "./LifecycleCard.js";
+ 
+ const CREATOR: Record<string, string> = { ai: "AI", operator: "운영자", customer: "고객" };
+ 
+@@ -59,7 +60,7 @@ export function OverviewTab({ siteId, site, versions }: { siteId: string; site:
+             저장
+           </Button>
+           <Stack direction="row" sx={{ flex: 1, justifyContent: "flex-end" }}>
+-            {site.status === "active" ? (
++            {site.cancelled_at ? null : site.status === "active" ? (
+               <Button color="warning" onClick={() => action.mutate({ path: "suspend", done: "공개를 정지했습니다" })}>
+                 공개 정지
+               </Button>
+@@ -71,6 +72,7 @@ export function OverviewTab({ siteId, site, versions }: { siteId: string; site:
+           </Stack>
+         </Stack>
+       </Paper>
++      <LifecycleCard siteId={siteId} site={site} />
+       <Paper>
+         <Typography variant="subtitle1" sx={{ fontWeight: 700, p: 2, pb: 0 }}>
+           버전
+diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
+index 65a9031..6fbfb26 100644
+--- a/pnpm-lock.yaml
++++ b/pnpm-lock.yaml
+@@ -35,6 +35,9 @@ importers:
+       '@sites/schema':
+         specifier: workspace:*
+         version: link:../../packages/schema
++      fflate:
++        specifier: 0.8.3
++        version: 0.8.3
+       zod:
+         specifier: 4.6.7
+         version: 4.6.7
+@@ -1949,6 +1952,9 @@ packages:
+       picomatch:
+         optional: true
+ 
++  fflate@0.8.3:
++    resolution: {integrity: sha512-tbZNuJrLwGUp3zshBtdy4W+ORxZuIh8a5ilyIEQDC5rY1f3U20JMry0Ll3WBzU58EZKsEuJFXhb5gwv8CsPvgA==}
++
+   find-root@1.1.0:
+     resolution: {integrity: sha512-NKfW6bec6GfKc0SGx1e07QZY9PE99u0Bft/0rzSD5k3sO/vwkVUpDUKVm5Gpp5Ue3YfShPFTX2070tDs5kB9Ng==}
+ 
+@@ -4280,6 +4286,8 @@ snapshots:
+     optionalDependencies:
+       picomatch: 4.0.7
+ 
++  fflate@0.8.3: {}
++
+   find-root@1.1.0: {}
+ 
+   follow-redirects@1.16.3: {}
+diff --git a/scripts/verify-all.mjs b/scripts/verify-all.mjs
+index 1fcd3ac..4c1664b 100644
+--- a/scripts/verify-all.mjs
++++ b/scripts/verify-all.mjs
+@@ -16,6 +16,7 @@ const steps = [
+   ["m3-blog", "verify-m3-blog.mjs"],
+   ["m3-reports", "verify-m3-reports.mjs"],
+   ["m3-republish", "verify-m3-republish.mjs"],
++  ["m3-lifecycle", "verify-m3-lifecycle.mjs"],
+ ];
+ const only = process.argv.slice(2);
+ const summary = [];
+
+exec
+/bin/zsh -lc 'cat /Users/steve/.codex/skills/workers-best-practices/SKILL.md' in /Users/steve/Projects/daniworks-sites-platform
+ succeeded in 0ms:
+---
+name: workers-best-practices
+description: Cloudflare Workers best practices for production applications. Use when writing, reviewing, or configuring Workers.
+---
+
+Your knowledge of Cloudflare Workers APIs, types, and configuration may be outdated. **Prefer retrieval over pre-training** when writing or reviewing Workers code.
+
+Use the project's installed versions, generated types, and Wrangler compatibility settings as the baseline for existing code. Retrieve relevant Cloudflare documentation to verify API, configuration, runtime behavior, and limit claims.
+
+## References
+
+Read the sections relevant to the task:
+
+| Reference | When to use it |
+|-----------|----------------|
+| [Configuration and observability](references/configuration.md) | Compatibility dates, bindings, generated types, secrets, logs, and traces |
+| [Runtime patterns](references/runtime-patterns.md) | Streaming, promise lifetime, request state, service calls, security, and runtime tests |
+| [Platform API checks](references/platform-apis.md) | Handler signatures, platform classes, binding access, and serialization |
+
+For missing evidence, consult [Workers best practices](https://developers.cloudflare.com/workers/best-practices/workers-best-practices/index.md) or find the affected product in the [Cloudflare docs directory](https://developers.cloudflare.com/directory/index.md). Use the installed Wrangler schema for config fields. A newer type package does not supersede the project's configured target.
+
+## Keep Compatibility Dates Current
+
+Use today's date for new Workers. Encourage periodic updates for existing Workers, reviewing compatibility changes and running relevant tests. Assess existing behavior against its configured date and flags; see [compatibility guidance](references/configuration.md#keep-compatibility_date-current).
+
+## Enable Observability
+
+Enable [Workers Logs](https://developers.cloudflare.com/workers/observability/logs/workers-logs/index.md) and [Traces](https://developers.cloudflare.com/workers/observability/traces/index.md) when creating or preparing a Worker for production. Set `observability.enabled` and `observability.traces.enabled` to `true`; the top-level setting alone does not enable traces. Use structured JSON logging and configure sampling for the workload. During reviews, flag missing logs or traces. See the [configuration example](references/configuration.md#enable-workers-logs-and-traces).
+
+## Anti-Patterns to Flag
+
+| Anti-pattern | Consequence and preferred pattern |
+|-------------|-----------------------------------|
+| `await response.text()` or similar buffering on unbounded data | Can exhaust Worker memory; [stream large or unbounded bodies](references/runtime-patterns.md#stream-request-and-response-bodies). |
+| Hardcoded secrets in source or config | Leaks credentials through version control; use Wrangler secrets. |
+| `Math.random()` for security-sensitive tokens or IDs | Predictable values; use `crypto.randomUUID()` or `crypto.getRandomValues()`. |
+| Async work started without awaiting, returning, or attaching it to `ctx.waitUntil()` | Work can be dropped and errors missed; tie it to the request or background-work lifetime. |
+| Module-level mutable request state | Leaks data across requests and can cause I/O ownership errors; pass request state explicitly. |
+| Cloudflare REST API calls for operations available through Worker bindings | Adds network and authentication overhead; use the available binding. |
+| `ctx.passThroughOnException()` used as general error handling | Can conceal Worker failures by forwarding to the origin; use explicit error handling and structured error responses. |
+| Hand-written `Env` that duplicates Wrangler bindings | Can drift from configuration; generate binding types with `wrangler types`. |
+| Direct string comparison of secret values | Can expose timing differences; use the [Web Crypto comparison pattern](references/runtime-patterns.md#use-web-crypto-for-secure-token-generation). |
+| Destructuring `ctx` methods, such as `const { waitUntil } = ctx` | Loses the receiver; call `ctx.waitUntil(...)`. |
+| `any` on `Env` or handler parameters | Hides binding and handler contract errors; use the project's generated and platform types. |
+| `as unknown as T` to force a platform type match | Hides incompatibilities; fix the underlying contract. |
+| `implements` used in place of extending a platform base class | Does not inherit runtime behavior, `this.ctx`, or `this.env`; use the appropriate base class. |
+| Unbound `env.X` in a platform class method | Bindings are available through `this.env.X`; see [binding access patterns](references/platform-apis.md#binding-access--the-most-common-error). |
+| Applying one serialization rule across Queues, Workflow steps, storage, and WebSockets | Can reject valid payloads or accept unsupported ones; check the [specific API and encoding](references/platform-apis.md#serialization-boundaries). |
+
+## Validation
+
+Use the project's existing checks for affected Workers behavior: type-check binding or handler contract changes, and run relevant runtime tests for behavior changes. Preserve required repository checks; a narrow edit does not require a full Workers audit.
+
+## Scope
+
+This skill covers Workers-specific best practices and code review. For related topics:
+
+- **Durable Objects**: load the `durable-objects` skill
+- **Workflows**: see [Rules of Workflows](https://developers.cloudflare.com/workflows/build/rules-of-workflows/index.md)
+- **Wrangler CLI commands**: load the `wrangler` skill
+
+exec
+/bin/zsh -lc 'cat apps/api/src/lifecycle.ts; cat apps/console/src/pages/site/LifecycleCard.tsx; cat scripts/verify-m3-lifecycle.mjs' in /Users/steve/Projects/daniworks-sites-platform
+ succeeded in 0ms:
+import { zipSync, type Zippable } from "fflate";
+import { kvBlogKey } from "./blog.js";
+import type { Env } from "./env.js";
+import { HttpError } from "./http.js";
+import { allInquiries, inquiriesCsv } from "./inquiries.js";
+import { kvHostKey, kvSiteKey, r2PageKey } from "./keys.js";
+import { removeDomain } from "./domains.js";
+import { routesOf, syncHostRecordsNow } from "./routes.js";
+import { getSite, type SiteRow } from "./store.js";
+
+const now = () => new Date().toISOString();
+export const retentionDays = (env: Env) => Number(env.RETENTION_DAYS ?? 90);
+
+/**
+ * Cancellation: public serving stops (410), custom hostnames are deleted at Cloudflare so
+ * billing stops, the blog feed stops. Data and files stay until purge (retention period).
+ */
+export async function cancelSite(env: Env, site: SiteRow) {
+  if (site.cancelled_at) throw new HttpError(409, "이미 해지된 사이트입니다");
+  const at = now();
+  await env.DB.prepare("UPDATE sites SET cancelled_at = ?, status = 'suspended', updated_at = ? WHERE id = ?").bind(at, at, site.id).run();
+  await syncHostRecordsNow(env, site.id);
+  const { results } = await env.DB.prepare("SELECT hostname FROM domains WHERE site_id = ? AND kind = 'custom'")
+    .bind(site.id)
+    .all<{ hostname: string }>();
+  const domains: { hostname: string; removed: boolean; error?: string }[] = [];
+  for (const { hostname } of results) {
+    try {
+      await removeDomain(env, site.id, hostname);
+      domains.push({ hostname, removed: true });
+    } catch (error) {
+      // The row stays `removing`; the domains cron finishes it.
+      domains.push({ hostname, removed: false, error: error instanceof Error ? error.message : String(error) });
+    }
+  }
+  await env.DB.prepare("DELETE FROM blog_feeds WHERE site_id = ?").bind(site.id).run();
+  await env.ROUTES.delete(kvBlogKey(site.id));
+  const purgeAfter = new Date(Date.parse(at) + retentionDays(env) * 86_400_000).toISOString();
+  return { siteId: site.id, cancelledAt: at, purgeAfter, domains };
+}
+
+/** Undo a cancellation within the retention period. Custom domains must be connected again. */
+export async function reactivateSite(env: Env, site: SiteRow) {
+  if (!site.cancelled_at) throw new HttpError(409, "해지된 사이트가 아닙니다");
+  await env.DB.prepare("UPDATE sites SET cancelled_at = NULL, status = 'active', updated_at = ? WHERE id = ?").bind(now(), site.id).run();
+  await syncHostRecordsNow(env, site.id);
+  return { siteId: site.id, status: "active" };
+}
+
+export async function listCancellations(env: Env) {
+  const { results } = await env.DB.prepare("SELECT id, slug, cancelled_at FROM sites WHERE cancelled_at IS NOT NULL ORDER BY cancelled_at")
+    .all<{ id: string; slug: string; cancelled_at: string }>();
+  const days = retentionDays(env);
+  return results.map((row) => {
+    const purgeAfter = new Date(Date.parse(row.cancelled_at) + days * 86_400_000).toISOString();
+    return { ...row, purgeAfter, purgeable: purgeAfter <= now() };
+  });
+}
+
+/**
+ * Permanent deletion after the retention period. Irreversible, so never run by cron: an
+ * operator confirms with the site's slug. Removes R2 files, KV records and every D1 row.
+ */
+export async function purgeSite(env: Env, site: SiteRow, confirmSlug: unknown) {
+  if (confirmSlug !== site.slug) throw new HttpError(422, "확인용 slug가 일치하지 않습니다");
+  if (!site.cancelled_at) throw new HttpError(409, "해지된 사이트만 삭제할 수 있습니다");
+  const purgeAfter = Date.parse(site.cancelled_at) + retentionDays(env) * 86_400_000;
+  if (Date.now() < purgeAfter) {
+    throw new HttpError(409, `보관 기간이 끝나지 않았습니다 (${new Date(purgeAfter).toISOString().slice(0, 10)} 이후 삭제 가능)`);
+  }
+  const { results: domains } = await env.DB.prepare("SELECT hostname, kind, status FROM domains WHERE site_id = ?")
+    .bind(site.id)
+    .all<{ hostname: string; kind: string; status: string }>();
+  if (domains.some((d) => d.kind === "custom")) {
+    throw new HttpError(409, "커스텀 도메인 삭제가 끝나지 않았습니다. 잠시 뒤 다시 시도하세요");
+  }
+  let objects = 0;
+  let cursor: string | undefined;
+  do {
+    const page = await env.SITES.list({ prefix: `sites/${site.id}/`, cursor });
+    if (page.objects.length) await env.SITES.delete(page.objects.map((o) => o.key));
+    objects += page.objects.length;
+    cursor = page.truncated ? page.cursor : undefined;
+  } while (cursor);
+  for (const domain of domains) await env.ROUTES.delete(kvHostKey(domain.hostname));
+  await env.ROUTES.delete(kvSiteKey(site.id));
+  await env.ROUTES.delete(kvBlogKey(site.id));
+  const tables = ["inquiries", "metrics_daily", "assets", "blog_feeds", "staged_renders", "domains", "site_versions"];
+  await env.DB.batch([
+    ...tables.map((table) => env.DB.prepare(`DELETE FROM ${table} WHERE site_id = ?`).bind(site.id)),
+    env.DB.prepare("DELETE FROM sites WHERE id = ?").bind(site.id),
+  ]);
+  return { siteId: site.id, slug: site.slug, objectsDeleted: objects, purged: true };
+}
+
+const toBytes = (text: string) => new TextEncoder().encode(text);
+
+/** `/_shared/...` and `/_media/...` paths referenced by HTML (src, href, srcset). */
+function referencedFiles(html: string): string[] {
+  const out = new Set<string>();
+  for (const match of html.matchAll(/(?:src|href|srcset|imagesrcset)="([^"]+)"/gi)) {
+    for (const candidate of match[1]!.split(",")) {
+      const path = candidate.trim().split(/\s+/)[0] ?? "";
+      if (/^\/_(shared|media)\//.test(path)) out.add(path);
+    }
+  }
+  return [...out];
+}
+
+/**
+ * Everything a customer can take with them: the live site as static files (HTML, the shared
+ * assets it uses, uploaded photos) and their data (all versions, inquiries, daily metrics).
+ * Root-relative links: serve the folder at a domain root to view it.
+ */
+export async function exportSite(env: Env, siteId: string): Promise<{ filename: string; body: Uint8Array }> {
+  const site = await getSite(env.DB, siteId);
+  const files: Zippable = {};
+  const stored = (bytes: Uint8Array) => [bytes, { level: 0 }] as [Uint8Array, { level: 0 }];
+
+  if (site.published_version_id) {
+    const version = await env.DB.prepare("SELECT id, number, config, render_id FROM site_versions WHERE id = ?")
+      .bind(site.published_version_id)
+      .first<{ id: string; number: number; config: string; render_id: string | null }>();
+    if (version) {
+      const assets = new Set<string>();
+      for (const route of routesOf(JSON.parse(version.config) as { version?: unknown })) {
+        const path = route === "/" ? "index.html" : `${route.slice(1)}/index.html`;
+        const object = await env.SITES.get(r2PageKey(site.id, version.id, path, version.render_id));
+        if (!object) continue;
+        const html = await object.text();
+        files[`site/${path}`] = toBytes(html);
+        for (const file of referencedFiles(html)) assets.add(file);
+      }
+      // The client bundle loads chunks dynamically: take the whole _assets folder it lives in.
+      const bundle = [...assets].find((p) => p.endsWith("/_assets/client.js"));
+      if (bundle) {
+        const prefix = `shared/${bundle.slice("/_shared/".length, -"client.js".length)}`;
+        const listed = await env.SITES.list({ prefix });
+        for (const o of listed.objects) assets.add(`/_shared/${o.key.slice("shared/".length)}`);
+      }
+      for (const file of assets) {
+        const key = file.startsWith("/_media/")
+          ? `sites/${file.split("/")[2]}/media/${file.split("/").slice(3).join("/")}`
+          : `shared/${file.slice("/_shared/".length)}`;
+        const object = await env.SITES.get(key);
+        if (!object) continue;
+        const bytes = new Uint8Array(await object.arrayBuffer());
+        files[`site${file}`] = /\.(jpe?g|png|webp)$/.test(file) ? stored(bytes) : bytes;
+      }
+    }
+  }
+
+  const { results: versions } = await env.DB.prepare(
+    "SELECT id, number, config, created_by, note, created_at, first_published_at FROM site_versions WHERE site_id = ? ORDER BY number",
+  )
+    .bind(site.id)
+    .all<{ config: string }>();
+  files["data/versions.json"] = toBytes(JSON.stringify(versions.map((v) => ({ ...v, config: JSON.parse(v.config) })), null, 2));
+  files["data/site.json"] = toBytes(
+    JSON.stringify({ id: site.id, slug: site.slug, status: site.status, cancelled_at: site.cancelled_at, created_at: site.created_at }, null, 2),
+  );
+  files["data/inquiries.csv"] = toBytes(inquiriesCsv(await allInquiries(env, site.id, {})));
+  const { results: metrics } = await env.DB.prepare("SELECT date, event, count FROM metrics_daily WHERE site_id = ? ORDER BY date, event")
+    .bind(site.id)
+    .all<{ date: string; event: string; count: number }>();
+  files["data/metrics.csv"] = toBytes(`﻿date,event,count\r\n${metrics.map((m) => `${m.date},${m.event},${m.count}`).join("\r\n")}\r\n`);
+  files["README.txt"] = toBytes(
+    [
+      `${site.slug} 홈페이지 내보내기 (${now().slice(0, 10)})`,
+      "",
+      "site/  게시 중인 홈페이지 파일입니다. 웹 서버의 도메인 루트(/)에 그대로 올리면 열립니다.",
+      "data/versions.json  모든 버전의 사이트 설정(문구·사진 키·연락처)",
+      "data/inquiries.csv  홈페이지 문의 기록 (엑셀에서 열 수 있습니다)",
+      "data/metrics.csv  일별 방문·연락 클릭 수",
+    ].join("\r\n"),
+  );
+  return { filename: `${site.slug}-export.zip`, body: zipSync(files, { level: 6 }) };
+}
+import { Button, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, Paper, Stack, TextField, Typography } from "@mui/material";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
+import { useNavigate } from "react-router";
+import { api, kst, type SiteRow } from "../../api.js";
+import { ErrorAlert, useToast } from "../../ui.js";
+
+/** Export, cancel, reactivate and (after retention) purge. Destructive steps need the slug typed. */
+export function LifecycleCard({ siteId, site }: { siteId: string; site: SiteRow }) {
+  const queryClient = useQueryClient();
+  const toast = useToast();
+  const navigate = useNavigate();
+  const [dialog, setDialog] = useState<"cancel" | "purge" | null>(null);
+  const [typed, setTyped] = useState("");
+  const refresh = () => {
+    void queryClient.invalidateQueries({ queryKey: ["site", siteId] });
+    void queryClient.invalidateQueries({ queryKey: ["sites"] });
+    void queryClient.invalidateQueries({ queryKey: ["domains", siteId] });
+  };
+  const run = useMutation({
+    mutationFn: ({ action }: { action: "cancel" | "reactivate" | "purge" }) =>
+      api<{ purgeAfter?: string }>(`/sites/${siteId}/${action}`, { method: "POST", json: action === "purge" ? { confirmSlug: typed } : {} }),
+    onSuccess: (data, { action }) => {
+      setDialog(null);
+      setTyped("");
+      if (action === "purge") {
+        toast("사이트를 완전히 삭제했습니다");
+        void queryClient.invalidateQueries({ queryKey: ["sites"] });
+        navigate("/");
+        return;
+      }
+      toast(action === "cancel" ? `해지했습니다. ${kst(data.purgeAfter ?? null).slice(0, 10)} 이후 삭제할 수 있습니다` : "해지를 취소했습니다");
+      refresh();
+    },
+  });
+  return (
+    <Paper sx={{ p: 2 }}>
+      <Stack direction={{ xs: "column", sm: "row" }} spacing={1} sx={{ alignItems: { sm: "center" } }}>
+        <Typography variant="subtitle1" sx={{ fontWeight: 700, flex: 1 }}>
+          계약·데이터 {site.cancelled_at ? `· 해지 ${kst(site.cancelled_at)}` : ""}
+        </Typography>
+        <Button href={`/api/sites/${siteId}/export.zip`} data-testid="export">
+          내보내기(zip)
+        </Button>
+        {site.cancelled_at ? (
+          <>
+            <Button onClick={() => run.mutate({ action: "reactivate" })}>해지 취소</Button>
+            <Button color="error" onClick={() => setDialog("purge")}>
+              완전 삭제
+            </Button>
+          </>
+        ) : (
+          <Button color="error" onClick={() => setDialog("cancel")}>
+            해지
+          </Button>
+        )}
+      </Stack>
+      <ErrorAlert error={run.error} />
+      <Dialog open={dialog !== null} onClose={() => setDialog(null)}>
+        <DialogTitle>{dialog === "purge" ? "완전 삭제" : "해지"}</DialogTitle>
+        <DialogContent>
+          <DialogContentText sx={{ mb: 2 }}>
+            {dialog === "purge"
+              ? "파일·문의·통계·버전이 모두 지워지고 되돌릴 수 없습니다. 먼저 내보내기를 받아 두세요."
+              : "공개를 멈추고(410) 커스텀 도메인을 해제합니다. 데이터는 보관 기간 동안 남습니다."}
+            {" "}확인을 위해 <b>{site.slug}</b>를 입력하세요.
+          </DialogContentText>
+          <TextField fullWidth size="small" value={typed} onChange={(e) => setTyped(e.target.value)} slotProps={{ htmlInput: { name: "confirmSlug" } }} />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDialog(null)}>닫기</Button>
+          <Button color="error" variant="contained" disabled={typed !== site.slug || run.isPending} onClick={() => dialog && run.mutate({ action: dialog })}>
+            {dialog === "purge" ? "완전 삭제" : "해지"}
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </Paper>
+  );
+}
+// M3 step 3-4: cancellation and data export. The exported zip must work as a standalone site
+// elsewhere; cancellation stops serving and billing; purge is gated by retention and the slug.
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import http from "node:http";
+import { createRequire } from "node:module";
+import { tmpdir } from "node:os";
+import { dirname, extname, join } from "node:path";
+import { readFile } from "node:fs/promises";
+import { API, TOKEN, api, chromium, evidence, localD1, localKv, routerRequest, uploadShared } from "./lib/verify.mjs";
+
+const { unzipSync } = createRequire(new URL("../apps/api/package.json", import.meta.url))("fflate");
+const sharp = createRequire(new URL("../packages/renderer/package.json", import.meta.url))("sharp");
+const { fieldFixture } = await import("../packages/renderer/src/templates/service-local/fixtures.ts");
+const CF_MOCK = process.env.CF_MOCK_URL ?? "http://127.0.0.1:8790";
+const CONSOLE = process.env.CONSOLE_URL ?? "http://127.0.0.1:8789";
+const ev = evidence("m3-lifecycle");
+const { check } = ev;
+const run = Date.now().toString(36);
+
+uploadShared();
+const config = { ...structuredClone(fieldFixture), slug: `life-${run}` };
+const host = `${config.slug}.localhost`;
+const custom = `www.life-${run}.co.kr`;
+const created = await api("POST", "/sites", { config, createdBy: "operator" });
+const siteId = created.data.siteId;
+
+// A real-looking site: an uploaded hero photo, a custom domain, an inquiry, metrics.
+const photo = await sharp({ create: { width: 1200, height: 800, channels: 3, background: "#58a" } }).jpeg().toBuffer();
+const uploaded = (await fetch(`${API}/sites/${siteId}/assets`, { method: "POST", headers: { authorization: `Bearer ${TOKEN}`, "content-type": "image/jpeg" }, body: photo }).then((r) => r.json()));
+const v2 = structuredClone(config);
+v2.content.hero.image = { key: uploaded.key, alt: "현장", width: uploaded.width, height: uploaded.height };
+const draft = await api("POST", `/sites/${siteId}/versions`, { config: v2 });
+await api("POST", `/sites/${siteId}/publish`, { versionId: draft.data.versionId });
+await api("POST", `/sites/${siteId}/domains`, { hostname: custom });
+await fetch(`${CF_MOCK}/__mock/${custom}/activate`, { method: "POST" });
+await api("POST", `/sites/${siteId}/domains/${custom}/refresh`);
+await routerRequest(custom, "/api/inquiry", {
+  method: "POST",
+  body: JSON.stringify({ name: "인출 시험", phone: "010-3333-4444", message: "보관 확인", consent: true, elapsedMs: 5000, turnstileToken: "XXXX.DUMMY.TOKEN.XXXX" }),
+  headers: { "content-type": "application/json", "cf-connecting-ip": "198.51.100.9" },
+});
+localD1(`INSERT INTO metrics_daily (site_id, date, event, count) VALUES ('${siteId}', '2026-11-01', 'pageview', 7)`);
+check("준비: 커스텀 도메인에서 서빙", (await routerRequest(custom, "/")).status === 200);
+
+// 1. export
+const zipRes = await fetch(`${API}/sites/${siteId}/export.zip`, { headers: { authorization: `Bearer ${TOKEN}` } });
+const zip = unzipSync(new Uint8Array(await zipRes.arrayBuffer()));
+const names = Object.keys(zip);
+const text = (name) => new TextDecoder().decode(zip[name]);
+check("zip: 페이지 2개, 클라이언트 번들·청크, CSS", zipRes.ok && names.includes("site/index.html") && names.includes("site/privacy/index.html") &&
+  names.some((n) => n.endsWith("/_assets/client.js")) && names.some((n) => n.includes("/_assets/chunks/")) && names.some((n) => n.endsWith("/_assets/site.css")));
+check("zip: 업로드 사진과 쓰인 변형만", names.includes(`site/_media/${siteId}/${uploaded.key.split("/")[1]}`) && names.some((n) => n.endsWith(".w800.webp")) &&
+  !names.some((n) => n.includes("site-templates/pine-interior.jpg")));
+check("zip: 데이터(버전 2개, 문의, 통계, README)", JSON.parse(text("data/versions.json")).length === 2 && text("data/inquiries.csv").includes("인출 시험") &&
+  text("data/metrics.csv").includes("2026-11-01,pageview,7") && text("README.txt").includes("site/"));
+
+// The exported folder works as a site on another server.
+const root = mkdtempSync(join(tmpdir(), "export-"));
+for (const [name, bytes] of Object.entries(zip)) {
+  if (!name.startsWith("site/")) continue;
+  const path = join(root, name.slice(5));
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, bytes);
+}
+const types = { ".html": "text/html; charset=utf-8", ".css": "text/css", ".js": "text/javascript", ".jpg": "image/jpeg", ".webp": "image/webp", ".png": "image/png" };
+const server = http.createServer(async (req, res) => {
+  const url = new URL(req.url, "http://x");
+  let path = join(root, decodeURIComponent(url.pathname));
+  if (url.pathname.endsWith("/")) path = join(path, "index.html");
+  try {
+    const body = await readFile(path);
+    res.writeHead(200, { "content-type": types[extname(path)] ?? "application/octet-stream" });
+    res.end(body);
+  } catch {
+    res.writeHead(404).end();
+  }
+});
+await new Promise((r) => server.listen(8799, "127.0.0.1", r));
+const browser = await chromium().launch();
+const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+const failed = [];
+page.on("requestfailed", (r) => failed.push(r.url()));
+page.on("response", (r) => r.status() >= 400 && !r.url().includes("/api/track") && failed.push(`${r.status()} ${r.url()}`));
+await page.goto("http://127.0.0.1:8799/", { waitUntil: "networkidle" });
+const state = await page.evaluate(() => ({
+  hydrated: Object.keys(document.getElementById("root") ?? {}).some((k) => k.startsWith("__reactContainer")),
+  styled: getComputedStyle(document.body).fontFamily.length > 0 && document.styleSheets.length > 0,
+  images: [...document.images].filter((i) => i.complete && i.naturalWidth > 0).length,
+}));
+await page.screenshot({ path: `${ev.dir}/exported-site.png` });
+check("내보낸 폴더를 다른 서버에 올려도 열림(스타일, 사진, 하이드레이션)", state.hydrated && state.styled && state.images >= 1 && !failed.length, { ...state, failed });
+server.close();
+
+// 2. cancel
+const cancelled = await api("POST", `/sites/${siteId}/cancel`);
+check("해지: 커스텀 도메인 Cloudflare에서 삭제", cancelled.status === 200 && cancelled.data.domains[0]?.removed === true);
+check("해지: 기본 주소 410", (await routerRequest(host, "/")).status === 410);
+check("해지: 커스텀 도메인 더 이상 서빙 안 함", (await routerRequest(custom, "/")).status === 404);
+check("해지: 문의 받지 않음", (await routerRequest(host, "/api/inquiry", { method: "POST", body: "{}", headers: { "content-type": "application/json" } })).status === 404);
+check("해지 상태에서 게시·정지 해제 거부(409)", (await api("POST", `/sites/${siteId}/publish`)).status === 409 && (await api("POST", `/sites/${siteId}/resume`)).status === 409);
+check("두 번 해지는 409", (await api("POST", `/sites/${siteId}/cancel`)).status === 409);
+const due = (await api("GET", "/cancellations")).data.cancellations.find((c) => c.id === siteId);
+check("해지 목록: 보관 기한(90일)과 아직 삭제 불가", due && !due.purgeable && Date.parse(due.purgeAfter) - Date.parse(due.cancelled_at) === 90 * 86_400_000);
+check("보관 기간 전 완전 삭제는 409", (await api("POST", `/sites/${siteId}/purge`, { confirmSlug: config.slug })).status === 409);
+check("데이터는 보관됨(문의·내보내기)", (await api("GET", `/sites/${siteId}/inquiries`)).data.inquiries.length === 1 &&
+  (await fetch(`${API}/sites/${siteId}/export.zip`, { headers: { authorization: `Bearer ${TOKEN}` } })).ok);
+
+// 3. reactivate, then cancel again and purge after retention
+check("해지 취소 → 다시 200", (await api("POST", `/sites/${siteId}/reactivate`)).status === 200 && (await routerRequest(host, "/")).status === 200);
+await api("POST", `/sites/${siteId}/cancel`);
+localD1(`UPDATE sites SET cancelled_at = '2000-01-01T00:00:00.000Z' WHERE id = '${siteId}'`);
+check("확인 slug가 다르면 422", (await api("POST", `/sites/${siteId}/purge`, { confirmSlug: "wrong" })).status === 422);
+const purged = await api("POST", `/sites/${siteId}/purge`, { confirmSlug: config.slug });
+const left = ["inquiries", "metrics_daily", "assets", "domains", "site_versions", "sites"].map(
+  (t) => localD1(`SELECT COUNT(*) AS n FROM ${t} WHERE ${t === "sites" ? "id" : "site_id"} = '${siteId}'`)[0].n,
+);
+check("완전 삭제: R2 파일·D1 행 모두 삭제", purged.status === 200 && purged.data.objectsDeleted > 0 && left.every((n) => n === 0), { left, objects: purged.data.objectsDeleted });
+check("완전 삭제: KV 정리, 주소 404, API 404", localKv("get", `host:${host}`) === "" && localKv("get", `site:${siteId}`) === "" &&
+  (await routerRequest(host, "/")).status === 404 && (await api("GET", `/sites/${siteId}`)).status === 404);
+
+// 4. console: cancel needs the slug typed
+const other = await api("POST", "/sites", { config: { ...structuredClone(fieldFixture), slug: `life2-${run}` }, createdBy: "operator" });
+const tab = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+await tab.goto(`${CONSOLE}/sites/${other.data.siteId}`, { waitUntil: "networkidle" });
+await tab.getByRole("button", { name: "해지", exact: true }).click();
+const confirm = tab.getByRole("dialog").getByRole("button", { name: "해지" });
+const disabledFirst = await confirm.isDisabled();
+await tab.locator("input[name=confirmSlug]").fill(`life2-${run}`);
+await confirm.click();
+await tab.getByText("해지했습니다").first().waitFor({ timeout: 10000 });
+check("콘솔 해지: slug를 입력해야 버튼 활성, 해지 후 410", disabledFirst && (await routerRequest(`life2-${run}.localhost`, "/")).status === 410);
+await browser.close();
+
+ev.finish({ siteId });
+
+exec
+/bin/zsh -lc "cat apps/api/src/routes.ts; cat apps/api/src/republish.ts; cat apps/api/src/blog.ts | head -100; cat apps/api/src/index.ts | tail -100; cat apps/api/src/domains.ts | grep -A65 'function removeDomain'; cat apps/console/src/api.ts | head -90; ls apps/api/migrations" in /Users/steve/Projects/daniworks-sites-platform
+ succeeded in 0ms:
+import type { Env } from "./env.js";
+import { kvHostKey, type HostRecord, type PublishedPointer } from "./keys.js";
+import {
+  acquireRoutesLease,
+  clearRoutesSynced,
+  holdsRoutesLease,
+  markRoutesSynced,
+  primaryHostname,
+  releaseRoutesLease,
+  servingState,
+  sitesNeedingRouteSync,
+  type SiteRow,
+} from "./store.js";
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** KV allows one write per key per second; retry rate-limited writes a few times. */
+export async function kvWrite(op: () => Promise<void>) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await op();
+    } catch (error) {
+      const limited = /429|too many/i.test(String(error));
+      if (!limited || attempt >= 3) throw error;
+      await sleep(1100);
+    }
+  }
+}
+
+/** Public status of a site as the router sees it. */
+export function hostStatus(site: SiteRow): HostRecord["status"] {
+  if (site.cancelled_at) return "cancelled";
+  return site.status === "suspended" ? "suspended" : "active";
+}
+
+type Snapshot = Awaited<ReturnType<typeof snapshot>>;
+type DomainRow = Snapshot["domains"][number];
+
+/** What KV should hold for a hostname; null means the key must not exist. */
+function expectedRecord(state: Snapshot, domain: DomainRow): HostRecord | null {
+  // Custom hostnames that are not active yet must not serve the site.
+  if (domain.kind === "custom" && domain.status !== "active") return null;
+  return {
+    siteId: state.site.id,
+    status: state.status,
+    pointer: state.pointer,
+    redirectTo: domain.hostname === state.primary ? null : state.primary,
+  };
+}
+
+/** Routes a stored config renders to (v2 adds the privacy page). */
+export const routesOf = (config: { version?: unknown }) => (config.version === 2 ? ["/", "/privacy"] : ["/"]);
+
+async function snapshot(env: Env, siteId: string) {
+  const { site, version } = await servingState(env.DB, siteId);
+  const pointer: PublishedPointer | null =
+    version
+      ? {
+          versionId: version.id,
+          number: version.number,
+          // Rows from before migration 0003 are backfilled; never drop a live pointer over a missing time.
+          publishedAt: site.published_at ?? site.updated_at,
+          pages: routesOf(JSON.parse(version.config) as { version?: unknown }),
+          renderId: version.render_id,
+        }
+      : null;
+  const primary = await primaryHostname(env.DB, site, env.BASE_DOMAIN);
+  const { results: domains } = await env.DB.prepare("SELECT hostname, kind, status FROM domains WHERE site_id = ?")
+    .bind(site.id)
+    .all<{ hostname: string; kind: string; status: string }>();
+  const status = hostStatus(site);
+  const key = JSON.stringify([status, pointer?.versionId, pointer?.publishedAt, pointer?.renderId, primary, domains]);
+  return { site, pointer, primary, domains, status, key };
+}
+
+/**
+ * Rewrites the KV record of every hostname of a site from D1, the source of truth: status,
+ * published pointer and redirect. One writer per site at a time (D1 lease). A caller that
+ * cannot take the lease leaves the site marked unsynced; the holder re-reads D1 after writing
+ * and catches up, and the reconcile cron covers anything left. Returns whether KV now matches.
+ */
+export async function syncHostRecords(env: Env, siteId: string): Promise<boolean> {
+  await clearRoutesSynced(env.DB, siteId);
+  const token = await acquireRoutesLease(env.DB, siteId);
+  if (!token) return false;
+  try {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const state = await snapshot(env, siteId);
+      for (const domain of state.domains) {
+        // Fence: a holder whose lease expired must not overwrite a newer writer.
+        if (!(await holdsRoutesLease(env.DB, siteId, token))) return false;
+        const record = expectedRecord(state, domain);
+        await kvWrite(() =>
+          record
+            ? env.ROUTES.put(kvHostKey(domain.hostname), JSON.stringify(record))
+            : env.ROUTES.delete(kvHostKey(domain.hostname)),
+        );
+        // The lease may have expired while the write was in flight; then this write may be
+        // stale, so leave the site dirty for the cron instead of trusting anyone's marker.
+        if (!(await holdsRoutesLease(env.DB, siteId, token))) {
+          await clearRoutesSynced(env.DB, siteId);
+          return false;
+        }
+      }
+      if ((await snapshot(env, siteId)).key === state.key) {
+        await markRoutesSynced(env.DB, siteId, state.site.updated_at);
+        return true;
+      }
+    }
+    return false;
+  } finally {
+    await releaseRoutesLease(env.DB, siteId, token);
+  }
+}
+
+/**
+ * For request handlers: syncs now, retrying briefly while another writer holds the lease, so
+ * the caller's change is live when it responds. The cron catches anything still pending.
+ */
+export async function syncHostRecordsNow(env: Env, siteId: string) {
+  for (let attempt = 0; attempt < 4; attempt++) {
+    if (await syncHostRecords(env, siteId)) return true;
+    await sleep(1000);
+  }
+  return false;
+}
+
+/**
+ * Cron safety net: re-syncs sites whose host records may lag D1 (a request failed after D1
+ * committed, or KV kept rejecting writes). Guarantees serving converges to D1 within minutes.
+ */
+export async function reconcileHostRecords(env: Env) {
+  const ids = await sitesNeedingRouteSync(env.DB);
+  let synced = 0;
+  for (const id of ids) {
+    try {
+      if (await syncHostRecords(env, id)) synced++;
+    } catch (error) {
+      console.error("[routes] reconcile failed", id, error);
+    }
+  }
+  return { pending: ids.length, synced };
+}
+
+/**
+ * Hourly audit: compares every site's expected host records with KV and marks mismatches
+ * dirty, so the reconcile pass repairs them whatever race produced them. Writes nothing itself.
+ */
+export async function auditHostRecords(env: Env) {
+  const { results } = await env.DB.prepare("SELECT id FROM sites").all<{ id: string }>();
+  let dirty = 0;
+  // Orphans: host records whose hostname no longer exists in D1 (a race recreated one after
+  // removal). Routing must never outlive the domain row, so they are deleted here.
+  const known = new Set(
+    (await env.DB.prepare("SELECT hostname FROM domains").all<{ hostname: string }>()).results.map((row) => row.hostname),
+  );
+  let orphans = 0;
+  let cursor: string | undefined;
+  do {
+    const page = await env.ROUTES.list({ prefix: "host:", cursor });
+    for (const key of page.keys) {
+      const hostname = key.name.slice("host:".length);
+      if (known.has(hostname)) continue;
+      // The snapshot may predate a site created during this audit: confirm against D1 now.
+      const exists = await env.DB.prepare("SELECT 1 AS n FROM domains WHERE hostname = ?").bind(hostname).first();
+      if (exists) continue;
+      await kvWrite(() => env.ROUTES.delete(key.name));
+      orphans++;
+    }
+    cursor = page.list_complete ? undefined : page.cursor;
+  } while (cursor);
+  for (const { id } of results) {
+    const state = await snapshot(env, id);
+    for (const domain of state.domains) {
+      const expected = expectedRecord(state, domain);
+      const actual = await env.ROUTES.get(kvHostKey(domain.hostname));
+      if ((expected ? JSON.stringify(expected) : null) !== actual) {
+        await clearRoutesSynced(env.DB, id);
+        dirty++;
+        break;
+      }
+    }
+  }
+  return { sites: results.length, dirty, orphans };
+}
+import { RENDER_VERSION } from "@sites/renderer";
+import type { Env } from "./env.js";
+import { HttpError } from "./http.js";
+import { r2PageKey } from "./keys.js";
+import { renderKeyOf, renderToR2, siteOrigin } from "./publish.js";
+import { syncHostRecordsNow } from "./routes.js";
+import { getSite, getVersion, primaryHostname } from "./store.js";
+
+/**
+ * Full republish after a renderer or template update, in three explicit steps so a visual
+ * check can sit between rendering and serving: plan → stage (render, not served) → commit.
+ */
+export async function republishPlan(env: Env) {
+  const { results } = await env.DB.prepare(
+    `SELECT s.id, s.slug, s.published_version_id AS version_id, v.number, v.asset_version
+     FROM sites s JOIN site_versions v ON v.id = s.published_version_id
+     WHERE s.cancelled_at IS NULL ORDER BY s.slug`,
+  ).all<{ id: string; slug: string; version_id: string; number: number; asset_version: string | null }>();
+  const sites = [];
+  for (const row of results) {
+    const site = await getSite(env.DB, row.id);
+    sites.push({
+      siteId: row.id,
+      slug: row.slug,
+      versionId: row.version_id,
+      number: row.number,
+      assetVersion: row.asset_version,
+      outdated: row.asset_version !== RENDER_VERSION,
+      liveUrl: `${env.PUBLIC_SCHEME ?? "https"}://${await primaryHostname(env.DB, site, env.BASE_DOMAIN)}/`,
+    });
+  }
+  return { renderVersion: RENDER_VERSION, total: sites.length, outdated: sites.filter((s) => s.outdated).length, sites };
+}
+
+/** Renders the live version with the current renderer under a new render_id. Not served. */
+export async function stageRepublish(env: Env, siteId: string) {
+  const site = await getSite(env.DB, siteId);
+  if (!site.published_version_id) throw new HttpError(409, "게시된 버전이 없습니다");
+  const version = await getVersion(env.DB, siteId, site.published_version_id);
+  const render = await renderToR2(env, version, await siteOrigin(env, site));
+  await env.DB.prepare(
+    "INSERT INTO staged_renders (render_id, site_id, version_id, render_key, asset_version, base_render_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+  )
+    .bind(render.renderId, siteId, version.id, render.renderKey, RENDER_VERSION, version.render_id, new Date().toISOString())
+    .run();
+  return {
+    siteId,
+    versionId: version.id,
+    renderId: render.renderId,
+    stagedPath: `/staged/${siteId}/${render.renderId}/`,
+    /** Every route in the render; all must look the same before committing. */
+    routes: render.routes,
+  };
+}
+
+/**
+ * Serves the staged render (switched in only after a visual check). Valid only while that
+ * version is still live and its origin unchanged, so an older render cannot replace newer work.
+ */
+export async function commitRepublish(env: Env, siteId: string, renderId: string) {
+  const staged = await env.DB.prepare("SELECT * FROM staged_renders WHERE render_id = ? AND site_id = ?")
+    .bind(renderId, siteId)
+    .first<{ version_id: string; render_key: string; asset_version: string; base_render_id: string | null }>();
+  if (!staged) throw new HttpError(404, "스테이지 렌더가 없습니다");
+  // Staged before a renderer deployment: committing it would downgrade newer renders.
+  if (staged.asset_version !== RENDER_VERSION) throw new HttpError(409, "이전 배포에서 만든 스테이지입니다. 다시 스테이지하세요");
+  const site = await getSite(env.DB, siteId);
+  if (site.published_version_id !== staged.version_id) throw new HttpError(409, "그사이 다른 버전이 게시되었습니다. 다시 스테이지하세요");
+  if (staged.render_key !== renderKeyOf(env, await siteOrigin(env, site))) {
+    throw new HttpError(409, "그사이 사이트 주소가 바뀌었습니다. 다시 스테이지하세요");
+  }
+  const now = new Date().toISOString();
+  // One transaction: switch the render (fenced on the live render at staging time — a domain
+  // change or publish since then wins), and only if that applied, mark the site for route
+  // reconciliation and clear its stages. A failure after this still converges via the cron.
+  const applied = `EXISTS (SELECT 1 FROM site_versions WHERE id = ? AND render_id = ?)`;
+  const [updated] = await env.DB.batch([
+    env.DB.prepare(
+      `UPDATE site_versions SET render_id = ?, rendered_origin = ?, asset_version = ?, rendered_at = ?
+       WHERE id = ? AND render_id IS ? AND id = (SELECT published_version_id FROM sites WHERE id = ?)`,
+    ).bind(renderId, staged.render_key, staged.asset_version, now, staged.version_id, staged.base_render_id, siteId),
+    env.DB.prepare(
+      `UPDATE sites SET template_version = ?, updated_at = ?, routes_synced_at = NULL WHERE id = ? AND ${applied}`,
+    ).bind(staged.asset_version, now, siteId, staged.version_id, renderId),
+    env.DB.prepare(`DELETE FROM staged_renders WHERE site_id = ? AND ${applied}`).bind(siteId, staged.version_id, renderId),
+  ]);
+  if (updated?.meta.changes !== 1) throw new HttpError(409, "그사이 게시나 주소 변경이 있었습니다. 다시 스테이지하세요");
+  await syncHostRecordsNow(env, siteId);
+  return { siteId, versionId: staged.version_id, renderId, assetVersion: staged.asset_version };
+}
+
+/** Raw staged HTML for the visual check (admin only). `path`: `` or `privacy`. */
+export async function stagedPage(env: Env, siteId: string, renderId: string, path: string) {
+  const staged = await env.DB.prepare("SELECT version_id FROM staged_renders WHERE render_id = ? AND site_id = ?")
+    .bind(renderId, siteId)
+    .first<{ version_id: string }>();
+  if (!staged) throw new HttpError(404, "스테이지 렌더가 없습니다");
+  const object = await env.SITES.get(r2PageKey(siteId, staged.version_id, path ? `${path}/index.html` : "index.html", renderId));
+  if (!object) throw new HttpError(404, "페이지가 없습니다");
+  return new Response(object.body, {
+    headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "x-robots-tag": "noindex" },
+  });
+}
+import { naverRssUrl, parseNaverRss, type BlogFeed } from "@sites/renderer/blog";
+import { readLimited } from "./stream.js";
+import type { Env } from "./env.js";
+import { HttpError } from "./http.js";
+
+export const kvBlogKey = (siteId: string) => `blog:${siteId}`;
+const STALE_MS = 3 * 3_600_000;
+
+/** Keeps the feed row in step with the live version: present with its blog URL, or removed. */
+export async function syncBlogFeed(env: Env, siteId: string, config: { business?: { blogUrl?: string } }) {
+  const blogUrl = config.business?.blogUrl ?? null;
+  if (!blogUrl) {
+    await env.DB.prepare("DELETE FROM blog_feeds WHERE site_id = ?").bind(siteId).run();
+    await env.ROUTES.delete(kvBlogKey(siteId));
+    return;
+  }
+  // Another blog's posts must never show under this link: drop the cache when the URL changes.
+  const previous = await env.DB.prepare("SELECT blog_url FROM blog_feeds WHERE site_id = ?").bind(siteId).first<{ blog_url: string }>();
+  if (previous && previous.blog_url !== blogUrl) await env.ROUTES.delete(kvBlogKey(siteId));
+  // A new or changed URL is due immediately (fetched_at NULL).
+  await env.DB.prepare(
+    `INSERT INTO blog_feeds (site_id, blog_url) VALUES (?, ?)
+     ON CONFLICT (site_id) DO UPDATE SET blog_url = excluded.blog_url,
+       fetched_at = CASE WHEN blog_feeds.blog_url = excluded.blog_url THEN blog_feeds.fetched_at ELSE NULL END`,
+  )
+    .bind(siteId, blogUrl)
+    .run();
+}
+
+/** Fetches one feed and caches its latest posts. Failures keep the previous cache. */
+export async function refreshBlog(env: Env, siteId: string) {
+  const row = await env.DB.prepare("SELECT blog_url FROM blog_feeds WHERE site_id = ?").bind(siteId).first<{ blog_url: string }>();
+  if (!row) throw new HttpError(404, "블로그가 연결된 게시 버전이 없습니다");
+  const rss = naverRssUrl(row.blog_url, env.BLOG_RSS_BASE);
+  const now = new Date().toISOString();
+  try {
+    if (!rss) throw new Error("네이버 블로그 주소가 아닙니다");
+    const res = await fetch(rss, { headers: { "user-agent": "dsites-blog-feed/1.0", accept: "application/rss+xml, text/xml" } });
+    if (!res.ok) throw new Error(`RSS ${res.status}`);
+    const xml = new TextDecoder().decode(await readLimited(res.body, 2 * 1024 * 1024));
+    const feed: BlogFeed = { source: row.blog_url, fetchedAt: now, posts: parseNaverRss(xml) };
+    // The blog may have changed while fetching: never let an obsolete result become the cache.
+    const current = await env.DB.prepare("SELECT blog_url FROM blog_feeds WHERE site_id = ?").bind(siteId).first<{ blog_url: string }>();
+    if (current?.blog_url !== row.blog_url) return { status: "stale" };
+    await env.ROUTES.put(kvBlogKey(siteId), JSON.stringify(feed));
+    const updated = await env.DB.prepare(
+      "UPDATE blog_feeds SET fetched_at = ?, status = 'ok', error = NULL, post_count = ? WHERE site_id = ? AND blog_url = ?",
+    )
+      .bind(now, feed.posts.length, siteId, row.blog_url)
+      .run();
+    // Changed between the check and the write: make the new blog due again.
+    if (updated.meta.changes !== 1) await env.DB.prepare("UPDATE blog_feeds SET fetched_at = NULL WHERE site_id = ?").bind(siteId).run();
+    return { status: "ok", posts: feed.posts.length };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    await env.DB.prepare("UPDATE blog_feeds SET fetched_at = ?, status = 'error', error = ? WHERE site_id = ? AND blog_url = ?")
+      .bind(now, message.slice(0, 300), siteId, row.blog_url)
+      .run();
+    return { status: "error", error: message };
+  }
+}
+
+/** Cron: refresh up to 20 feeds that are new or older than three hours. */
+export async function refreshDueBlogs(env: Env) {
+  const { results } = await env.DB.prepare(
+    "SELECT site_id FROM blog_feeds WHERE fetched_at IS NULL OR fetched_at < ? ORDER BY fetched_at LIMIT 20",
+  )
+    .bind(new Date(Date.now() - STALE_MS).toISOString())
+    .all<{ site_id: string }>();
+  let ok = 0;
+  for (const { site_id } of results) if ((await refreshBlog(env, site_id)).status === "ok") ok++;
+  return { due: results.length, ok };
+}
+  if (method === "GET" && (parts[2] === "inquiries" || parts[2] === "inquiries.csv") && parts.length === 3) {
+    const range = { from: url.searchParams.get("from") ?? undefined, to: url.searchParams.get("to") ?? undefined };
+    if (parts[2] === "inquiries") {
+      return json(
+        await listInquiries(env, site.id, {
+          ...range,
+          before: url.searchParams.get("before") ?? undefined,
+          limit: Number(url.searchParams.get("limit") ?? 200),
+        }),
+      );
+    }
+    return new Response(inquiriesCsv(await allInquiries(env, site.id, range)), {
+      headers: {
+        "content-type": "text/csv; charset=utf-8",
+        "content-disposition": `attachment; filename="inquiries-${site.slug}.csv"`,
+      },
+    });
+  }
+
+  // GET /sites/:id/versions/:versionId (or "latest"): one version with its config
+  if (method === "GET" && parts[2] === "versions" && parts.length === 4) {
+    const row = await env.DB.prepare(
+      parts[3] === "latest"
+        ? "SELECT * FROM site_versions WHERE site_id = ? ORDER BY number DESC LIMIT 1"
+        : "SELECT * FROM site_versions WHERE site_id = ? AND id = ?",
+    )
+      .bind(...(parts[3] === "latest" ? [site.id] : [site.id, parts[3]]))
+      .first<{ config: string }>();
+    if (!row) throw new HttpError(404, "버전이 없습니다");
+    const { config, ...version } = row;
+    return json({ version, config: JSON.parse(config) });
+  }
+
+  // POST /sites/:id/versions {config, createdBy, note}: new draft version
+  if (method === "POST" && parts[2] === "versions") {
+    const body = await readJson<{ config: unknown; createdBy?: CreatedBy; note?: string }>(request);
+    const result = await addDraft(env, site, body.config, creator(body.createdBy), body.note ?? null);
+    return json(result, 201);
+  }
+
+  // POST /sites/:id/assets: raw image body, or JSON {url}. GET lists them.
+  if (parts[2] === "assets" && parts.length === 3) {
+    if (method === "POST") return json(await uploadAsset(env, site, request), 201);
+    if (method === "GET") return json({ assets: await listAssets(env, site) });
+  }
+
+  // POST /sites/:id/publish {versionId?}: latest version when omitted
+  if (method === "POST" && parts[2] === "publish") {
+    const body = await readJson<{ versionId?: string }>(request).catch(() => ({}) as { versionId?: string });
+    return json(await publish(env, site, body.versionId));
+  }
+
+  // POST /sites/:id/suspend | /resume: stop or restart public serving (non-payment, requests).
+  if (method === "POST" && (parts[2] === "suspend" || parts[2] === "resume") && parts.length === 3) {
+    if (site.cancelled_at) throw new HttpError(409, "해지된 사이트입니다");
+    const status = parts[2] === "suspend" ? "suspended" : "active";
+    await setSiteStatus(env.DB, site.id, status);
+    await syncHostRecordsNow(env, site.id);
+    return json({ siteId: site.id, status });
+  }
+
+  // POST /sites/:id/rollback {versionId}
+  if (method === "POST" && parts[2] === "rollback") {
+    const body = await readJson<{ versionId: string }>(request);
+    if (!body.versionId) throw new HttpError(400, "versionId가 필요합니다");
+    return json(await rollback(env, site, body.versionId));
+  }
+
+  throw new HttpError(404, "없는 경로입니다");
+}
+
+export { PublicApi } from "./public.js";
+
+export default {
+  async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext) {
+    ctx.waitUntil(
+      (async () => {
+        // Audits only mark work; maintenance and reconcile then do it in the same run.
+        if (controller.cron === AUDIT_CRON) {
+          console.log("[routes] audit", JSON.stringify(await auditHostRecords(env)));
+          console.log("[domains] origin audit", JSON.stringify(await auditOrigins(env)));
+        }
+        console.log("[domains] maintain", JSON.stringify(await maintainDomains(env)));
+        console.log("[blog] refresh", JSON.stringify(await refreshDueBlogs(env)));
+        console.log("[routes] reconcile", JSON.stringify(await reconcileHostRecords(env)));
+      })(),
+    );
+  },
+
+  async fetch(request: Request, env: Env): Promise<Response> {
+    try {
+      return await handle(request, env);
+    } catch (error) {
+      if (error instanceof HttpError) return json({ error: error.message, details: error.details }, error.status);
+      if (error instanceof SiteConfigError) return json({ error: "설정 검증 실패", details: error.errors }, 422);
+      console.error(error);
+      return json({ error: "서버 오류" }, 500);
+    }
+  },
+};
+export async function removeDomain(env: Env, siteId: string, hostname: string) {
+  const row = await env.DB.prepare("SELECT * FROM domains WHERE hostname = ? AND site_id = ? AND kind = 'custom'")
+    .bind(hostname, siteId)
+    .first<DomainRow>();
+  if (!row) throw new HttpError(404, "연결된 커스텀 도메인이 아닙니다");
+  // Intent first, together with the routing and origin retry markers: if anything below stops
+  // (even a Cloudflare outage), the cron restores the platform host and finishes the removal.
+  if (row.status !== "removing") {
+    await env.DB.batch([
+      env.DB.prepare("UPDATE domains SET status = 'removing' WHERE hostname = ?").bind(hostname),
+      env.DB.prepare("UPDATE sites SET origin_pending = 1, routes_synced_at = NULL, updated_at = ? WHERE id = ?").bind(now(), siteId),
+    ]);
+  }
+  if (row.cf_hostname_id) await requireSaas(env).delete(row.cf_hostname_id);
+  await afterPrimaryChange(env, siteId);
+  // Final cleanup under the route-writer lease, so no in-flight sync can recreate the record.
+  const token = await acquireRoutesLease(env.DB, siteId);
+  if (!token) throw new HttpError(409, "라우팅을 갱신하는 중입니다. 삭제는 곧 자동으로 마무리됩니다");
+  try {
+    await kvWrite(() => env.ROUTES.delete(kvHostKey(hostname)));
+    await env.DB.prepare("DELETE FROM domains WHERE hostname = ? AND status = 'removing'").bind(hostname).run();
+  } finally {
+    await releaseRoutesLease(env.DB, siteId, token);
+  }
+  await touchSite(env, siteId);
+  return { hostname, removed: true };
+}
+
+/**
+ * Cron: finish interrupted removals, retry pending origin re-renders, check pending hostnames
+ * every few minutes (for 14 days) and active ones every 6 hours (a moved or expired hostname
+ * falls back to the platform subdomain).
+ */
+export async function maintainDomains(env: Env) {
+  const result = { removed: 0, rerendered: 0, checked: 0, changed: 0 };
+  const { results: removing } = await env.DB.prepare("SELECT hostname, site_id FROM domains WHERE status = 'removing' LIMIT 20")
+    .all<{ hostname: string; site_id: string }>();
+  for (const row of removing) {
+    try {
+      await removeDomain(env, row.site_id, row.hostname);
+      result.removed++;
+    } catch (error) {
+      console.error("[domains] removal retry failed", row.hostname, error);
+    }
+  }
+  const { results: pendingOrigins } = await env.DB.prepare("SELECT id FROM sites WHERE origin_pending = 1 LIMIT 20").all<{ id: string }>();
+  for (const { id } of pendingOrigins) {
+    try {
+      await afterPrimaryChange(env, id);
+      result.rerendered++;
+    } catch (error) {
+      console.error("[domains] origin re-render failed", id, error);
+    }
+  }
+  if (!SaasClient.configured(env)) return result;
+  const at = Date.now();
+  const { results } = await env.DB.prepare(
+    `SELECT * FROM domains WHERE kind = 'custom' AND (
+       (status = 'pending' AND activated_at IS NULL AND created_at >= ? AND (checked_at IS NULL OR checked_at < ?))
+       OR (status IN ('pending', 'failed') AND activated_at IS NOT NULL AND (checked_at IS NULL OR checked_at < ?))
+       OR (status = 'active' AND (checked_at IS NULL OR checked_at < ?))
+     ) ORDER BY checked_at LIMIT 50`,
+  )
+    .bind(
+      new Date(at - 14 * 86_400_000).toISOString(),
+      new Date(at - 4 * 60_000).toISOString(),
+/**
+ * Console → platform API. Every path is under `/api`, which the console Worker (or the Vite
+ * dev proxy) forwards to the api Worker with the admin token added server-side: the browser
+ * never holds a credential.
+ */
+export class ApiError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+    readonly details?: unknown,
+  ) {
+    super(message);
+  }
+}
+
+export async function api<T>(path: string, init: RequestInit & { json?: unknown } = {}): Promise<T> {
+  const { json, ...rest } = init;
+  const res = await fetch(`/api${path}`, {
+    ...rest,
+    headers: { ...(json !== undefined ? { "content-type": "application/json" } : {}), ...rest.headers },
+    body: json !== undefined ? JSON.stringify(json) : rest.body,
+  });
+  const text = await res.text();
+  const data = text ? (JSON.parse(text) as unknown) : null;
+  if (!res.ok) {
+    const body = data as { error?: string; details?: unknown } | null;
+    throw new ApiError(res.status, body?.error ?? `HTTP ${res.status}`, body?.details);
+  }
+  return data as T;
+}
+
+export interface SiteSummary {
+  id: string;
+  slug: string;
+  template_id: string;
+  status: "active" | "suspended";
+  cancelled_at: string | null;
+  published_version_id: string | null;
+  published_number: number | null;
+  latest_number: number | null;
+  notify_email: string | null;
+  hostname: string;
+  updated_at: string;
+}
+
+export interface SiteRow extends Omit<SiteSummary, "published_number" | "latest_number" | "hostname"> {
+  published_at: string | null;
+  origin_pending: number;
+}
+
+export interface VersionRow {
+  id: string;
+  number: number;
+  created_by: "ai" | "operator" | "customer";
+  note: string | null;
+  preview_token: string;
+  /** Absolute api URL: previews load their own assets from the api origin. */
+  preview_url: string;
+  rendered_at: string | null;
+  first_published_at: string | null;
+  created_at: string;
+}
+
+export interface DomainRow {
+  hostname: string;
+  kind: "subdomain" | "custom";
+  status: string;
+  ssl_status: string | null;
+  last_error: string | null;
+  checked_at: string | null;
+  verification_records: {
+    cname: { type: string; name: string; value: string };
+    optionalTxt: { type: string; name: string; value: string } | null;
+    apex: boolean;
+    note: string | null;
+  } | null;
+}
+
+export interface Inquiry {
+  id: string;
+  name: string;
+  phone: string;
+  message: string;
+  page: string | null;
+  notify_status: string;
+  created_at: string;
+}
+
+export interface Asset {
+  key: string;
+0001_init.sql
+0002_m2_first_customer.sql
+0003_sites_published_at.sql
+0004_domain_origin_pending.sql
+0005_blog_feeds.sql
+0006_staged_renders.sql
+
+exec
+/bin/zsh -lc "cat apps/api/src/domains.ts | head -135; cat apps/api/migrations/0001_init.sql; cat apps/api/migrations/0002_m2_first_customer.sql; cat apps/api/src/publish.ts; cat packages/renderer/src/* 2>/dev/null | grep -n '_shared\\|assetBase' | head; nl -ba apps/api/src/lifecycle.ts | head -180" in /Users/steve/Projects/daniworks-sites-platform
+ succeeded in 0ms:
+import type { Env } from "./env.js";
+import { HttpError } from "./http.js";
+import { kvHostKey } from "./keys.js";
+import { renderKeyOf, rerenderLive, siteOrigin } from "./publish.js";
+import { kvWrite, syncHostRecordsNow } from "./routes.js";
+import { SaasClient, type CustomHostname } from "./saas.js";
+import { acquireRoutesLease, getSite, releaseRoutesLease, type SiteRow } from "./store.js";
+
+export const INCLUDED_HOSTNAMES = 100;
+/** The platform's own zone; never connectable as a customer domain in any environment. */
+const PLATFORM_ZONE = "dsites.kr";
+
+/** Public suffixes common for Korean small businesses; the label before one is the apex. */
+const SUFFIXES = ["co.kr", "or.kr", "ne.kr", "re.kr", "pe.kr", "go.kr", "ac.kr", "kr", "com", "net", "org", "shop", "store", "info", "biz", "me", "io", "co"];
+
+export interface DomainRow {
+  hostname: string;
+  site_id: string;
+  kind: string;
+  status: string;
+  cf_hostname_id: string | null;
+  ssl_status: string | null;
+  verification_records: string | null;
+  last_error: string | null;
+  checked_at: string | null;
+  activated_at: string | null;
+  created_at: string;
+}
+
+/** Lowercase FQDN without scheme, path or port; rejects platform hosts. */
+export function normalizeHostname(input: unknown, baseDomain: string): string {
+  if (typeof input !== "string") throw new HttpError(422, "hostname이 필요합니다");
+  const host = input.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/\/.*$/, "").replace(/\.$/, "");
+  const label = "[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?";
+  if (!new RegExp(`^(?:${label}\\.)+[a-z]{2,63}$`).test(host) || host.length > 253) {
+    throw new HttpError(422, `도메인 형식이 아닙니다: ${input}`);
+  }
+  const platform = [baseDomain, PLATFORM_ZONE];
+  if (platform.some((zone) => host === zone || host.endsWith(`.${zone}`)) || host.endsWith(".localhost")) {
+    throw new HttpError(422, "플랫폼 도메인은 연결할 수 없습니다");
+  }
+  return host;
+}
+
+/** `example.co.kr` and `example.com` are apex; `www.example.co.kr` is not. */
+export function isApex(hostname: string) {
+  const suffix = SUFFIXES.filter((s) => hostname.endsWith(`.${s}`)).sort((a, b) => b.length - a.length)[0];
+  if (!suffix) return hostname.split(".").length === 2;
+  return hostname.slice(0, -(suffix.length + 1)).split(".").length === 1;
+}
+
+/** DNS instructions shown to the operator and, later, the customer. */
+export function instructions(env: Env, hostname: string, cf: CustomHostname) {
+  const target = env.DOMAIN_CNAME_TARGET ?? `fallback.${env.BASE_DOMAIN}`;
+  const apex = isApex(hostname);
+  return {
+    cname: { type: "CNAME", name: hostname, value: target },
+    /** Only for a domain already live elsewhere: validate before switching DNS (no downtime). */
+    optionalTxt: cf.ownership_verification
+      ? { type: "TXT", name: cf.ownership_verification.name, value: cf.ownership_verification.value }
+      : null,
+    apex,
+    note: apex
+      ? `루트 도메인입니다. 대부분의 국내 등록업체는 루트에 CNAME을 걸 수 없습니다. www.${hostname}을 연결하고, 등록업체에서 ${hostname} → https://www.${hostname} 포워딩을 설정하세요(https 포워딩 지원 여부 확인).`
+      : null,
+  };
+}
+
+const now = () => new Date().toISOString();
+
+async function touchSite(env: Env, siteId: string) {
+  await env.DB.prepare("UPDATE sites SET updated_at = ? WHERE id = ?").bind(now(), siteId).run();
+}
+
+/**
+ * The primary host changed: re-render the live version for the new canonical origin and refresh
+ * routing. `origin_pending` stays 1 until this succeeds, so the cron retries a failed attempt.
+ */
+async function afterPrimaryChange(env: Env, siteId: string) {
+  await env.DB.prepare("UPDATE sites SET origin_pending = 1, updated_at = ? WHERE id = ?").bind(now(), siteId).run();
+  if (await rerenderLive(env, siteId)) {
+    await env.DB.prepare("UPDATE sites SET origin_pending = 0 WHERE id = ?").bind(siteId).run();
+  }
+}
+
+function requireSaas(env: Env) {
+  if (!SaasClient.configured(env)) throw new HttpError(503, "커스텀 도메인(Cloudflare for SaaS)이 설정되지 않았습니다");
+  return new SaasClient(env);
+}
+
+export async function listDomains(env: Env, siteId: string) {
+  const { results } = await env.DB.prepare("SELECT * FROM domains WHERE site_id = ? ORDER BY kind DESC, created_at")
+    .bind(siteId)
+    .all<DomainRow>();
+  return results.map((row) => ({ ...row, verification_records: row.verification_records ? JSON.parse(row.verification_records) : null }));
+}
+
+export async function addDomain(env: Env, site: SiteRow, input: unknown) {
+  const hostname = normalizeHostname(input, env.BASE_DOMAIN);
+  const taken = await env.DB.prepare("SELECT site_id FROM domains WHERE hostname = ?").bind(hostname).first<{ site_id: string }>();
+  if (taken) throw new HttpError(409, taken.site_id === site.id ? "이미 연결 중인 도메인입니다" : "다른 사이트가 쓰는 도메인입니다");
+  const saas = requireSaas(env);
+  const cf = await saas.create(hostname);
+  const records = instructions(env, hostname, cf);
+  try {
+    await env.DB.prepare(
+      "INSERT INTO domains (hostname, site_id, kind, status, cf_hostname_id, ssl_status, verification_records, created_at) VALUES (?, ?, 'custom', 'pending', ?, ?, ?, ?)",
+    )
+      .bind(hostname, site.id, cf.id, cf.ssl?.status ?? null, JSON.stringify(records), now())
+      .run();
+  } catch (error) {
+    // Lost a race for the same hostname: do not leave a billed hostname behind.
+    await saas.delete(cf.id);
+    throw error;
+  }
+  return { hostname, status: "pending", instructions: records };
+}
+
+/** Polls Cloudflare; on activation the domain becomes the site's primary host. */
+export async function refreshDomain(env: Env, row: DomainRow) {
+  if (!row.cf_hostname_id || row.status === "removing") return row.status;
+  const saas = requireSaas(env);
+  let cf: CustomHostname | null;
+  try {
+    cf = await saas.get(row.cf_hostname_id);
+  } catch (error) {
+    // Deleted at Cloudflare (outside this API): a confirmed failure, not a transient one.
+    if (error instanceof HttpError && error.status === 404) {
+      cf = null;
+    } else {
+      await env.DB.prepare("UPDATE domains SET last_error = ?, checked_at = ? WHERE hostname = ?")
+        .bind(String(error instanceof Error ? error.message : error).slice(0, 500), now(), row.hostname)
+        .run();
+      return row.status;
+    }
+-- Sites, their append-only versions, and the hostnames that route to them.
+CREATE TABLE sites (
+  id TEXT PRIMARY KEY,
+  slug TEXT NOT NULL UNIQUE,
+  template_id TEXT NOT NULL,
+  published_version_id TEXT,
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'suspended')),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE site_versions (
+  id TEXT PRIMARY KEY,
+  site_id TEXT NOT NULL REFERENCES sites(id),
+  number INTEGER NOT NULL,
+  config TEXT NOT NULL,
+  created_by TEXT NOT NULL CHECK (created_by IN ('ai', 'operator', 'customer')),
+  note TEXT,
+  preview_token TEXT NOT NULL UNIQUE,
+  asset_version TEXT,
+  rendered_at TEXT,
+  first_published_at TEXT,
+  created_at TEXT NOT NULL,
+  UNIQUE (site_id, number)
+);
+
+CREATE TABLE domains (
+  hostname TEXT PRIMARY KEY,
+  site_id TEXT NOT NULL REFERENCES sites(id),
+  kind TEXT NOT NULL CHECK (kind IN ('subdomain', 'custom')),
+  status TEXT NOT NULL DEFAULT 'active',
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX site_versions_site ON site_versions(site_id, number DESC);
+CREATE INDEX domains_site ON domains(site_id);
+-- M2: customers, custom domains, uploaded photos, inquiries and daily metrics.
+
+CREATE TABLE customers (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  contact_name TEXT,
+  phone TEXT,
+  email TEXT,
+  billing_cycle TEXT CHECK (billing_cycle IN ('monthly', 'yearly')),
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'cancelled')),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+-- Cancellation keeps sites.status = 'suspended' (public serving stops) and records when.
+ALTER TABLE sites ADD COLUMN customer_id TEXT REFERENCES customers(id);
+ALTER TABLE sites ADD COLUMN notify_email TEXT;
+ALTER TABLE sites ADD COLUMN template_version TEXT;
+ALTER TABLE sites ADD COLUMN cancelled_at TEXT;
+CREATE INDEX sites_customer ON sites(customer_id);
+
+-- Custom hostnames (Cloudflare for SaaS). Subdomain rows keep status 'active' and no cf fields.
+ALTER TABLE domains ADD COLUMN cf_hostname_id TEXT;
+ALTER TABLE domains ADD COLUMN ssl_status TEXT;
+ALTER TABLE domains ADD COLUMN verification_records TEXT;
+ALTER TABLE domains ADD COLUMN last_error TEXT;
+ALTER TABLE domains ADD COLUMN checked_at TEXT;
+
+CREATE TABLE assets (
+  key TEXT PRIMARY KEY,
+  site_id TEXT NOT NULL REFERENCES sites(id),
+  r2_key TEXT NOT NULL,
+  mime TEXT NOT NULL,
+  width INTEGER NOT NULL,
+  height INTEGER NOT NULL,
+  bytes INTEGER NOT NULL,
+  original_name TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX assets_site ON assets(site_id, created_at DESC);
+
+CREATE TABLE inquiries (
+  id TEXT PRIMARY KEY,
+  site_id TEXT NOT NULL REFERENCES sites(id),
+  name TEXT NOT NULL,
+  phone TEXT NOT NULL,
+  message TEXT NOT NULL,
+  page TEXT,
+  -- SHA-256 of IP + daily salt: rate limiting without storing the address.
+  client_hash TEXT,
+  notify_status TEXT NOT NULL DEFAULT 'pending' CHECK (notify_status IN ('pending', 'sent', 'failed', 'skipped')),
+  notify_error TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX inquiries_site ON inquiries(site_id, created_at DESC);
+CREATE INDEX inquiries_client ON inquiries(client_hash, created_at);
+
+CREATE TABLE metrics_daily (
+  site_id TEXT NOT NULL REFERENCES sites(id),
+  date TEXT NOT NULL,
+  event TEXT NOT NULL CHECK (event IN ('pageview', 'tel', 'kakao', 'map', 'booking', 'inquiry_cta', 'inquiry')),
+  count INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (site_id, date, event)
+);
+
+-- Origin the HTML was rendered for (canonical, OG). A domain change re-renders on publish.
+ALTER TABLE site_versions ADD COLUMN rendered_origin TEXT;
+import { ASSET_VERSION, RENDER_VERSION, renderSite, type SiteConfig } from "@sites/renderer";
+import type { Env } from "./env.js";
+import { HttpError } from "./http.js";
+import { kvSiteKey, r2PageKey, r2SharedKey, type PublishedPointer } from "./keys.js";
+import { syncBlogFeed } from "./blog.js";
+import { routesOf, syncHostRecordsNow } from "./routes.js";
+import {
+  getSite,
+  getVersion,
+  latestVersion,
+  markPublished,
+  markRendered,
+  primaryHostname,
+  type SiteRow,
+  type VersionRow,
+} from "./store.js";
+
+export const assetBase = () => `/_shared/${ASSET_VERSION}`;
+
+/** Turnstile frame URL baked into published pages; null when Turnstile is not configured. */
+export const turnstileFrameUrl = (env: Env) =>
+  env.TURNSTILE_SITE_KEY && env.API_ORIGIN ? `${env.API_ORIGIN}/turnstile-frame` : null;
+
+/** Public origin a site is served from: its active custom domain, else `<slug>.<BASE_DOMAIN>`. */
+export async function siteOrigin(env: Env, site: SiteRow) {
+  const host = await primaryHostname(env.DB, site, env.BASE_DOMAIN);
+  return `${env.PUBLIC_SCHEME ?? "https"}://${host}`;
+}
+
+async function requireSharedAssets(env: Env) {
+  const head = await env.SITES.head(r2SharedKey(`${ASSET_VERSION}/_assets/site.css`));
+  if (!head) {
+    throw new HttpError(409, `공용 에셋 ${ASSET_VERSION}이 R2에 없습니다. scripts/upload-shared.mjs를 먼저 실행하세요`);
+  }
+}
+
+/** Everything outside the config that changes the HTML (stored in rendered_origin). */
+export const renderKeyOf = (env: Env, origin: string) => JSON.stringify({ origin, turnstileFrame: turnstileFrameUrl(env) });
+
+/**
+ * Renders every page of a version with the current renderer and shared assets under a fresh,
+ * immutable render_id. Nothing points at it yet: concurrent renders never mix pages.
+ */
+export async function renderToR2(env: Env, version: VersionRow, origin: string) {
+  const config = JSON.parse(version.config) as SiteConfig;
+  // HTML comes from the current renderer, so it must point at the current client bundle.
+  await requireSharedAssets(env);
+  const { pages } = await renderSite(config, { assetBase: assetBase(), origin, turnstileFrame: turnstileFrameUrl(env) });
+  const renderId = crypto.randomUUID().replace(/-/g, "").slice(0, 16);
+  for (const page of pages) {
+    await env.SITES.put(r2PageKey(version.site_id, version.id, page.path, renderId), page.html, {
+      httpMetadata: { contentType: "text/html; charset=utf-8" },
+    });
+  }
+  return { renderId, renderKey: renderKeyOf(env, origin), routes: pages.map((page) => page.route) };
+}
+
+/**
+ * Renders a version unless it is already rendered against the current shared assets and
+ * origin, then records the render (the pointer follows it on the next sync).
+ */
+async function ensureRendered(env: Env, version: VersionRow, origin: string, { keepAssets = false } = {}) {
+  const config = JSON.parse(version.config) as SiteConfig;
+  // Rollback keeps the version's own render; publish moves it to the current renderer and assets.
+  // (site_versions.asset_version holds RENDER_VERSION: assets plus server renderer.)
+  const assetsOk = keepAssets || version.asset_version === RENDER_VERSION;
+  if (version.rendered_at && assetsOk && version.rendered_origin === renderKeyOf(env, origin)) {
+    return routesOf(config);
+  }
+  const render = await renderToR2(env, version, origin);
+  await markRendered(env.DB, version.id, RENDER_VERSION, render.renderKey, render.renderId);
+  return render.routes;
+}
+
+async function pointTo(env: Env, site: SiteRow, version: VersionRow, pages: string[]) {
+  const publishedAt = await markPublished(env.DB, site.id, version.id, RENDER_VERSION);
+  const renderId = (await getVersion(env.DB, site.id, version.id)).render_id;
+  const pointer: PublishedPointer = { versionId: version.id, number: version.number, publishedAt, pages, renderId };
+  await env.ROUTES.put(kvSiteKey(site.id), JSON.stringify(pointer));
+  await syncHostRecordsNow(env, site.id);
+  await syncBlogFeed(env, site.id, JSON.parse(version.config) as { business?: { blogUrl?: string } });
+  return pointer;
+}
+
+/** Publish = render (if needed) → R2 → move the KV pointer. Visible worldwide within about a minute. */
+export async function publish(env: Env, site: SiteRow, versionId?: string) {
+  if (site.cancelled_at) throw new HttpError(409, "해지된 사이트입니다. 먼저 해지를 취소하세요");
+  await requireSharedAssets(env);
+  const version = versionId ? await getVersion(env.DB, site.id, versionId) : await latestVersion(env.DB, site.id);
+  const pages = await ensureRendered(env, version, await siteOrigin(env, site));
+  return pointTo(env, site, version, pages);
+}
+
+/**
+ * Rollback = move the pointer back to a version that was published before. No re-render, unless
+ * the site's origin changed since that version was rendered (custom domain added or removed):
+ * then only its HTML is re-rendered so canonical and OG URLs point at the current host.
+ */
+export async function rollback(env: Env, site: SiteRow, versionId: string) {
+  if (site.cancelled_at) throw new HttpError(409, "해지된 사이트입니다. 먼저 해지를 취소하세요");
+  const version = await getVersion(env.DB, site.id, versionId);
+  if (!version.first_published_at) throw new HttpError(409, "게시된 적 없는 버전으로는 롤백할 수 없습니다");
+  const exists = await env.SITES.head(r2PageKey(site.id, version.id, "index.html", version.render_id));
+  if (!exists) throw new HttpError(409, "렌더된 파일이 R2에 없습니다. publish로 다시 게시하세요");
+  const pages = await ensureRendered(env, version, await siteOrigin(env, site), { keepAssets: true });
+  return pointTo(env, site, version, pages);
+}
+
+/**
+ * The site's origin changed (custom domain activated, failed or removed): re-render the live
+ * version's HTML in place (same R2 keys). The KV pointer is not touched, so this can never undo
+ * a concurrent publish; if the live version changes meanwhile, the new one is checked too.
+ * Returns false when it could not settle (the caller keeps origin_pending for the cron).
+ */
+export async function rerenderLive(env: Env, siteId: string): Promise<boolean> {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const site = await getSite(env.DB, siteId);
+    if (!site.published_version_id) {
+      await syncHostRecordsNow(env, siteId);
+      return true;
+    }
+    const version = await getVersion(env.DB, siteId, site.published_version_id);
+    await ensureRendered(env, version, await siteOrigin(env, site));
+    // Settled only if the live version is unchanged and its HTML matches the origin as of now
+    // (an overlapping domain change may have moved it while this render ran).
+    const after = await getSite(env.DB, siteId);
+    const rendered = await getVersion(env.DB, siteId, version.id);
+    if (after.published_version_id === version.id && rendered.rendered_origin === renderKeyOf(env, await siteOrigin(env, after))) {
+      await syncHostRecordsNow(env, siteId);
+      return true;
+    }
+  }
+  return false;
+}
+19: * Responsive image variants. Every packaged sample (`/_shared/<v>/site-templates/x.jpg`) and
+101:export function toSitePages(input: SiteConfigInput, assetBase: string): SitePage[] {
+102:  return sitePagesFor(requireValidConfig(input), assetBase);
+106:export function sitePagesFor(config: SiteConfig, assetBase: string): SitePage[] {
+124:        : `${assetBase}/site-templates/${asset.src.replace(/^assets\/business-basic\//, "")}`,
+149:export function toPageData(config: SiteConfigInput, assetBase: string): PageData {
+150:  return toSitePages(config, assetBase)[0]!.data;
+167:    linkPrefix && href.startsWith("/") && !href.startsWith("/_shared/") && !href.startsWith("/_media/")
+183:  assetBase: string;
+318:<link rel="stylesheet" href="${options.assetBase}/_assets/site.css">
+     1	import { zipSync, type Zippable } from "fflate";
+     2	import { kvBlogKey } from "./blog.js";
+     3	import type { Env } from "./env.js";
+     4	import { HttpError } from "./http.js";
+     5	import { allInquiries, inquiriesCsv } from "./inquiries.js";
+     6	import { kvHostKey, kvSiteKey, r2PageKey } from "./keys.js";
+     7	import { removeDomain } from "./domains.js";
+     8	import { routesOf, syncHostRecordsNow } from "./routes.js";
+     9	import { getSite, type SiteRow } from "./store.js";
+    10	
+    11	const now = () => new Date().toISOString();
+    12	export const retentionDays = (env: Env) => Number(env.RETENTION_DAYS ?? 90);
+    13	
+    14	/**
+    15	 * Cancellation: public serving stops (410), custom hostnames are deleted at Cloudflare so
+    16	 * billing stops, the blog feed stops. Data and files stay until purge (retention period).
+    17	 */
+    18	export async function cancelSite(env: Env, site: SiteRow) {
+    19	  if (site.cancelled_at) throw new HttpError(409, "이미 해지된 사이트입니다");
+    20	  const at = now();
+    21	  await env.DB.prepare("UPDATE sites SET cancelled_at = ?, status = 'suspended', updated_at = ? WHERE id = ?").bind(at, at, site.id).run();
+    22	  await syncHostRecordsNow(env, site.id);
+    23	  const { results } = await env.DB.prepare("SELECT hostname FROM domains WHERE site_id = ? AND kind = 'custom'")
+    24	    .bind(site.id)
+    25	    .all<{ hostname: string }>();
+    26	  const domains: { hostname: string; removed: boolean; error?: string }[] = [];
+    27	  for (const { hostname } of results) {
+    28	    try {
+    29	      await removeDomain(env, site.id, hostname);
+    30	      domains.push({ hostname, removed: true });
+    31	    } catch (error) {
+    32	      // The row stays `removing`; the domains cron finishes it.
+    33	      domains.push({ hostname, removed: false, error: error instanceof Error ? error.message : String(error) });
+    34	    }
+    35	  }
+    36	  await env.DB.prepare("DELETE FROM blog_feeds WHERE site_id = ?").bind(site.id).run();
+    37	  await env.ROUTES.delete(kvBlogKey(site.id));
+    38	  const purgeAfter = new Date(Date.parse(at) + retentionDays(env) * 86_400_000).toISOString();
+    39	  return { siteId: site.id, cancelledAt: at, purgeAfter, domains };
+    40	}
+    41	
+    42	/** Undo a cancellation within the retention period. Custom domains must be connected again. */
+    43	export async function reactivateSite(env: Env, site: SiteRow) {
+    44	  if (!site.cancelled_at) throw new HttpError(409, "해지된 사이트가 아닙니다");
+    45	  await env.DB.prepare("UPDATE sites SET cancelled_at = NULL, status = 'active', updated_at = ? WHERE id = ?").bind(now(), site.id).run();
+    46	  await syncHostRecordsNow(env, site.id);
+    47	  return { siteId: site.id, status: "active" };
+    48	}
+    49	
+    50	export async function listCancellations(env: Env) {
+    51	  const { results } = await env.DB.prepare("SELECT id, slug, cancelled_at FROM sites WHERE cancelled_at IS NOT NULL ORDER BY cancelled_at")
+    52	    .all<{ id: string; slug: string; cancelled_at: string }>();
+    53	  const days = retentionDays(env);
+    54	  return results.map((row) => {
+    55	    const purgeAfter = new Date(Date.parse(row.cancelled_at) + days * 86_400_000).toISOString();
+    56	    return { ...row, purgeAfter, purgeable: purgeAfter <= now() };
+    57	  });
+    58	}
+    59	
+    60	/**
+    61	 * Permanent deletion after the retention period. Irreversible, so never run by cron: an
+    62	 * operator confirms with the site's slug. Removes R2 files, KV records and every D1 row.
+    63	 */
+    64	export async function purgeSite(env: Env, site: SiteRow, confirmSlug: unknown) {
+    65	  if (confirmSlug !== site.slug) throw new HttpError(422, "확인용 slug가 일치하지 않습니다");
+    66	  if (!site.cancelled_at) throw new HttpError(409, "해지된 사이트만 삭제할 수 있습니다");
+    67	  const purgeAfter = Date.parse(site.cancelled_at) + retentionDays(env) * 86_400_000;
+    68	  if (Date.now() < purgeAfter) {
+    69	    throw new HttpError(409, `보관 기간이 끝나지 않았습니다 (${new Date(purgeAfter).toISOString().slice(0, 10)} 이후 삭제 가능)`);
+    70	  }
+    71	  const { results: domains } = await env.DB.prepare("SELECT hostname, kind, status FROM domains WHERE site_id = ?")
+    72	    .bind(site.id)
+    73	    .all<{ hostname: string; kind: string; status: string }>();
+    74	  if (domains.some((d) => d.kind === "custom")) {
+    75	    throw new HttpError(409, "커스텀 도메인 삭제가 끝나지 않았습니다. 잠시 뒤 다시 시도하세요");
+    76	  }
+    77	  let objects = 0;
+    78	  let cursor: string | undefined;
+    79	  do {
+    80	    const page = await env.SITES.list({ prefix: `sites/${site.id}/`, cursor });
+    81	    if (page.objects.length) await env.SITES.delete(page.objects.map((o) => o.key));
+    82	    objects += page.objects.length;
+    83	    cursor = page.truncated ? page.cursor : undefined;
+    84	  } while (cursor);
+    85	  for (const domain of domains) await env.ROUTES.delete(kvHostKey(domain.hostname));
+    86	  await env.ROUTES.delete(kvSiteKey(site.id));
+    87	  await env.ROUTES.delete(kvBlogKey(site.id));
+    88	  const tables = ["inquiries", "metrics_daily", "assets", "blog_feeds", "staged_renders", "domains", "site_versions"];
+    89	  await env.DB.batch([
+    90	    ...tables.map((table) => env.DB.prepare(`DELETE FROM ${table} WHERE site_id = ?`).bind(site.id)),
+    91	    env.DB.prepare("DELETE FROM sites WHERE id = ?").bind(site.id),
+    92	  ]);
+    93	  return { siteId: site.id, slug: site.slug, objectsDeleted: objects, purged: true };
+    94	}
+    95	
+    96	const toBytes = (text: string) => new TextEncoder().encode(text);
+    97	
+    98	/** `/_shared/...` and `/_media/...` paths referenced by HTML (src, href, srcset). */
+    99	function referencedFiles(html: string): string[] {
+   100	  const out = new Set<string>();
+   101	  for (const match of html.matchAll(/(?:src|href|srcset|imagesrcset)="([^"]+)"/gi)) {
+   102	    for (const candidate of match[1]!.split(",")) {
+   103	      const path = candidate.trim().split(/\s+/)[0] ?? "";
+   104	      if (/^\/_(shared|media)\//.test(path)) out.add(path);
+   105	    }
+   106	  }
+   107	  return [...out];
+   108	}
+   109	
+   110	/**
+   111	 * Everything a customer can take with them: the live site as static files (HTML, the shared
+   112	 * assets it uses, uploaded photos) and their data (all versions, inquiries, daily metrics).
+   113	 * Root-relative links: serve the folder at a domain root to view it.
+   114	 */
+   115	export async function exportSite(env: Env, siteId: string): Promise<{ filename: string; body: Uint8Array }> {
+   116	  const site = await getSite(env.DB, siteId);
+   117	  const files: Zippable = {};
+   118	  const stored = (bytes: Uint8Array) => [bytes, { level: 0 }] as [Uint8Array, { level: 0 }];
+   119	
+   120	  if (site.published_version_id) {
+   121	    const version = await env.DB.prepare("SELECT id, number, config, render_id FROM site_versions WHERE id = ?")
+   122	      .bind(site.published_version_id)
+   123	      .first<{ id: string; number: number; config: string; render_id: string | null }>();
+   124	    if (version) {
+   125	      const assets = new Set<string>();
+   126	      for (const route of routesOf(JSON.parse(version.config) as { version?: unknown })) {
+   127	        const path = route === "/" ? "index.html" : `${route.slice(1)}/index.html`;
+   128	        const object = await env.SITES.get(r2PageKey(site.id, version.id, path, version.render_id));
+   129	        if (!object) continue;
+   130	        const html = await object.text();
+   131	        files[`site/${path}`] = toBytes(html);
+   132	        for (const file of referencedFiles(html)) assets.add(file);
+   133	      }
+   134	      // The client bundle loads chunks dynamically: take the whole _assets folder it lives in.
+   135	      const bundle = [...assets].find((p) => p.endsWith("/_assets/client.js"));
+   136	      if (bundle) {
+   137	        const prefix = `shared/${bundle.slice("/_shared/".length, -"client.js".length)}`;
+   138	        const listed = await env.SITES.list({ prefix });
+   139	        for (const o of listed.objects) assets.add(`/_shared/${o.key.slice("shared/".length)}`);
+   140	      }
+   141	      for (const file of assets) {
+   142	        const key = file.startsWith("/_media/")
+   143	          ? `sites/${file.split("/")[2]}/media/${file.split("/").slice(3).join("/")}`
+   144	          : `shared/${file.slice("/_shared/".length)}`;
+   145	        const object = await env.SITES.get(key);
+   146	        if (!object) continue;
+   147	        const bytes = new Uint8Array(await object.arrayBuffer());
+   148	        files[`site${file}`] = /\.(jpe?g|png|webp)$/.test(file) ? stored(bytes) : bytes;
+   149	      }
+   150	    }
+   151	  }
+   152	
+   153	  const { results: versions } = await env.DB.prepare(
+   154	    "SELECT id, number, config, created_by, note, created_at, first_published_at FROM site_versions WHERE site_id = ? ORDER BY number",
+   155	  )
+   156	    .bind(site.id)
+   157	    .all<{ config: string }>();
+   158	  files["data/versions.json"] = toBytes(JSON.stringify(versions.map((v) => ({ ...v, config: JSON.parse(v.config) })), null, 2));
+   159	  files["data/site.json"] = toBytes(
+   160	    JSON.stringify({ id: site.id, slug: site.slug, status: site.status, cancelled_at: site.cancelled_at, created_at: site.created_at }, null, 2),
+   161	  );
+   162	  files["data/inquiries.csv"] = toBytes(inquiriesCsv(await allInquiries(env, site.id, {})));
+   163	  const { results: metrics } = await env.DB.prepare("SELECT date, event, count FROM metrics_daily WHERE site_id = ? ORDER BY date, event")
+   164	    .bind(site.id)
+   165	    .all<{ date: string; event: string; count: number }>();
+   166	  files["data/metrics.csv"] = toBytes(`﻿date,event,count\r\n${metrics.map((m) => `${m.date},${m.event},${m.count}`).join("\r\n")}\r\n`);
+   167	  files["README.txt"] = toBytes(
+   168	    [
+   169	      `${site.slug} 홈페이지 내보내기 (${now().slice(0, 10)})`,
+   170	      "",
+   171	      "site/  게시 중인 홈페이지 파일입니다. 웹 서버의 도메인 루트(/)에 그대로 올리면 열립니다.",
+   172	      "data/versions.json  모든 버전의 사이트 설정(문구·사진 키·연락처)",
+   173	      "data/inquiries.csv  홈페이지 문의 기록 (엑셀에서 열 수 있습니다)",
+   174	      "data/metrics.csv  일별 방문·연락 클릭 수",
+   175	    ].join("\r\n"),
+   176	  );
+   177	  return { filename: `${site.slug}-export.zip`, body: zipSync(files, { level: 6 }) };
+   178	}
+
+codex
+Cancellation can leave billing-related cleanup permanently unfinished after a routing failure. Reactivation also fails to restore an existing blog integration.
+
+Full review comments:
+
+- [P1] Persist cancellation cleanup before synchronizing KV — /Users/steve/Projects/daniworks-sites-platform/apps/api/src/lifecycle.ts:21-22
+  If `syncHostRecordsNow` throws after cancellation is committed, execution never marks custom domains for removal or deletes the blog feed. Subsequent cancellation requests return 409, and domain maintenance only retries domains already marked `removing`, so billed hostnames and feed refreshes can remain indefinitely. Persist cleanup intent alongside the cancellation, or make cancellation cleanup retryable.
+
+- [P2] Restore the published blog feed when reactivating — /Users/steve/Projects/daniworks-sites-platform/apps/api/src/lifecycle.ts:45-47
+  For a published site with a blog URL, cancellation deletes its `blog_feeds` row and cached feed, but reactivation restores only routing. `refreshDueBlogs` only processes existing feed rows, so the reactivated site's blog remains empty indefinitely unless an operator republishes it. Recreate the feed from the published version during reactivation.
+Cancellation can leave billing-related cleanup permanently unfinished after a routing failure. Reactivation also fails to restore an existing blog integration.
+
+Full review comments:
+
+- [P1] Persist cancellation cleanup before synchronizing KV — /Users/steve/Projects/daniworks-sites-platform/apps/api/src/lifecycle.ts:21-22
+  If `syncHostRecordsNow` throws after cancellation is committed, execution never marks custom domains for removal or deletes the blog feed. Subsequent cancellation requests return 409, and domain maintenance only retries domains already marked `removing`, so billed hostnames and feed refreshes can remain indefinitely. Persist cleanup intent alongside the cancellation, or make cancellation cleanup retryable.
+
+- [P2] Restore the published blog feed when reactivating — /Users/steve/Projects/daniworks-sites-platform/apps/api/src/lifecycle.ts:45-47
+  For a published site with a blog URL, cancellation deletes its `blog_feeds` row and cached feed, but reactivation restores only routing. `refreshDueBlogs` only processes existing feed rows, so the reactivated site's blog remains empty indefinitely unless an operator republishes it. Recreate the feed from the published version during reactivation.

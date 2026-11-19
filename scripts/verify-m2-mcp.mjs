@@ -2,7 +2,7 @@
 // read the template → validate → create → upload a photo → draft → preview → publish → rollback.
 import { createRequire } from "node:module";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
-import { API, TOKEN, evidence, routerRequest, uploadShared } from "./lib/verify.mjs";
+import { API, TOKEN, evidence, paySite, routerRequest, uploadShared } from "./lib/verify.mjs";
 
 const sharp = createRequire(new URL("../packages/renderer/package.json", import.meta.url))("sharp");
 const ev = evidence("m2-mcp");
@@ -36,7 +36,8 @@ const expected = [
   "asset_upload", "site_create", "site_get", "site_preview_url", "site_publish",
   "site_rollback", "site_update_draft", "site_validate", "template_get", "template_list",
 ].sort();
-check("도구 10종 노출", JSON.stringify(names) === JSON.stringify(expected), { names });
+// Later milestones add tools; the M2 ones must stay.
+check("M2 도구 10종 노출", expected.every((name) => names.includes(name)), { names });
 
 // 2. template
 const list = await call(client, "template_list");
@@ -91,8 +92,11 @@ check("site_get(slug): 버전 2개, 최신 설정", got.data.versions?.length ==
 const latestPreview = await call(client, "site_preview_url", { site: draft.slug });
 check("site_preview_url: 최신 버전", latestPreview.data.number === 2);
 
-// 6. publish → live → rollback
+// 6. publish → live → rollback (M4: refused until a payment is confirmed)
 const host = `${draft.slug}.localhost`;
+const unpaid = await call(client, "site_publish", { site: draft.slug, versionId: created.data.versionId });
+check("site_publish: 입금 전에는 도구 오류", unpaid.isError && JSON.stringify(unpaid.data).includes("입금"), unpaid.data);
+await paySite(created.data.siteId);
 const pub1 = await call(client, "site_publish", { site: draft.slug, versionId: created.data.versionId });
 const pub2 = await call(client, "site_publish", { site: draft.slug });
 const live = await routerRequest(host, "/");

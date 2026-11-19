@@ -11,6 +11,9 @@ export interface SiteRow {
   notify_email: string | null;
   template_version: string | null;
   cancelled_at: string | null;
+  suspend_reason: "billing" | "manual" | null;
+  preview_token: string | null;
+  preview_expires_at: string | null;
   published_at: string | null;
   routes_synced_at: string | null;
   origin_pending: number;
@@ -66,14 +69,22 @@ export async function latestVersion(db: D1Database, siteId: string): Promise<Ver
 export async function listVersions(db: D1Database, siteId: string) {
   const { results } = await db
     .prepare(
-      "SELECT id, number, created_by, note, preview_token, asset_version, rendered_at, first_published_at, created_at FROM site_versions WHERE site_id = ? ORDER BY number DESC",
+      "SELECT id, number, created_by, author, note, preview_token, asset_version, rendered_at, first_published_at, created_at FROM site_versions WHERE site_id = ? ORDER BY number DESC",
     )
     .bind(siteId)
     .all();
   return results;
 }
 
-export async function createSite(db: D1Database, config: SiteConfig, createdBy: CreatedBy, hostname: string) {
+/** `extra` statements (the subscription, the customer link) commit together with the site. */
+export async function createSite(
+  db: D1Database,
+  config: SiteConfig,
+  createdBy: CreatedBy,
+  hostname: string,
+  extra: (siteId: string) => D1PreparedStatement[] = () => [],
+  author: string | null = null,
+) {
   const exists = await db.prepare("SELECT id FROM sites WHERE slug = ?").bind(config.slug).first();
   if (exists) throw new HttpError(409, `이미 쓰는 slug입니다: ${config.slug}`);
   const siteId = crypto.randomUUID();
@@ -85,12 +96,13 @@ export async function createSite(db: D1Database, config: SiteConfig, createdBy: 
       .bind(siteId, config.slug, config.templateId, at, at),
     db
       .prepare(
-        "INSERT INTO site_versions (id, site_id, number, config, created_by, note, preview_token, created_at) VALUES (?, ?, 1, ?, ?, ?, ?, ?)",
+        "INSERT INTO site_versions (id, site_id, number, config, created_by, author, note, preview_token, created_at) VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?)",
       )
-      .bind(versionId, siteId, JSON.stringify(config), createdBy, "최초 생성", token(), at),
+      .bind(versionId, siteId, JSON.stringify(config), createdBy, author, "최초 생성", token(), at),
     db
       .prepare("INSERT INTO domains (hostname, site_id, kind, created_at) VALUES (?, ?, 'subdomain', ?)")
       .bind(hostname, siteId, at),
+    ...extra(siteId),
   ]);
   return { siteId, versionId };
 }
@@ -101,6 +113,7 @@ export async function addVersion(
   config: SiteConfig,
   createdBy: CreatedBy,
   note: string | null,
+  author: string | null = null,
 ) {
   if (config.slug !== site.slug) throw new HttpError(422, "slug는 바꿀 수 없습니다", [`slug: ${site.slug}`]);
   const latest = await latestVersion(db, site.id);
@@ -110,10 +123,10 @@ export async function addVersion(
     db
       .prepare(
         // Never into a site being purged (its rows are being deleted).
-        `INSERT INTO site_versions (id, site_id, number, config, created_by, note, preview_token, created_at)
-         SELECT ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM sites WHERE id = ? AND purging_at IS NULL)`,
+        `INSERT INTO site_versions (id, site_id, number, config, created_by, author, note, preview_token, created_at)
+         SELECT ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM sites WHERE id = ? AND purging_at IS NULL)`,
       )
-      .bind(versionId, site.id, latest.number + 1, JSON.stringify(config), createdBy, note, token(), at, site.id),
+      .bind(versionId, site.id, latest.number + 1, JSON.stringify(config), createdBy, author, note, token(), at, site.id),
     db.prepare("UPDATE sites SET updated_at = ? WHERE id = ?").bind(at, site.id),
   ]);
   if (inserted?.meta.changes !== 1) throw new HttpError(409, "삭제 중인 사이트입니다");
@@ -170,8 +183,12 @@ export async function versionByPreviewToken(db: D1Database, previewToken: string
   return row;
 }
 
+/** Operator suspend/resume. A manual suspension is never lifted by an incoming payment. */
 export async function setSiteStatus(db: D1Database, siteId: string, status: "active" | "suspended") {
-  await db.prepare("UPDATE sites SET status = ?, updated_at = ? WHERE id = ?").bind(status, now(), siteId).run();
+  await db
+    .prepare("UPDATE sites SET status = ?, suspend_reason = ?, updated_at = ? WHERE id = ?")
+    .bind(status, status === "suspended" ? "manual" : null, now(), siteId)
+    .run();
 }
 
 /** Authoritative serving state from D1: site row plus the published version, if any. */
@@ -237,11 +254,27 @@ export async function releaseRoutesLease(db: D1Database, siteId: string, token: 
     .run();
 }
 
+/** SQL for a site's business name: the live version's, else the latest draft's. */
+export const BUSINESS_NAME_SQL = (siteIdColumn: string, publishedColumn: string) =>
+  `(SELECT json_extract(config, '$.business.name') FROM site_versions
+    WHERE id = COALESCE(${publishedColumn}, (SELECT id FROM site_versions WHERE site_id = ${siteIdColumn} ORDER BY number DESC LIMIT 1)))`;
+
+export async function businessName(db: D1Database, site: SiteRow): Promise<string | null> {
+  const row = await db
+    .prepare(`SELECT ${BUSINESS_NAME_SQL("?1", "?2")} AS name`)
+    .bind(site.id, site.published_version_id)
+    .first<{ name: string | null }>();
+  return row?.name ?? null;
+}
+
 export async function listSites(db: D1Database, baseDomain: string) {
   const { results } = await db
     .prepare(
       `SELECT s.id, s.slug, s.template_id, s.status, s.cancelled_at, s.published_version_id, s.published_at,
-              s.notify_email, s.created_at, s.updated_at,
+              s.notify_email, s.created_at, s.updated_at, s.customer_id, s.suspend_reason,
+              ${BUSINESS_NAME_SQL("s.id", "s.published_version_id")} AS business_name,
+              (SELECT status FROM subscriptions WHERE site_id = s.id) AS billing_status,
+              (SELECT name FROM customers WHERE id = s.customer_id) AS customer_name,
               (SELECT number FROM site_versions WHERE id = s.published_version_id) AS published_number,
               (SELECT MAX(number) FROM site_versions WHERE site_id = s.id) AS latest_number,
               (SELECT hostname FROM domains WHERE site_id = s.id AND kind = 'custom' AND status = 'active' ORDER BY created_at LIMIT 1) AS custom_hostname

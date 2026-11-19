@@ -35,4 +35,6 @@ export interface HostRecord {
   pointer: PublishedPointer | null;
   /** 301 target host, e.g. the default subdomain once a custom domain is active. */
   redirectTo: string | null;
+  /** Business name for notice pages (the suspended page shows only this). Missing before M4. */
+  name?: string | null;
 }

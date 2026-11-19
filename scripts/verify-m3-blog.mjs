@@ -1,6 +1,6 @@
 // M3 step 3-1: latest blog posts. Publish caches nothing; the cron (or refresh) fetches the RSS
 // into KV and the router fills the section at request time, without republishing.
-import { API, ROUTER_PORT, api, chromium, evidence, localD1, routerRequest, uploadShared, viewports } from "./lib/verify.mjs";
+import { API, ROUTER_PORT, api, chromium, evidence, localD1, routerRequest, uploadShared, viewports, paySite } from "./lib/verify.mjs";
 
 const { lessonFixture } = await import("../packages/renderer/src/templates/service-local/fixtures.ts");
 const ev = evidence("m3-blog");
@@ -21,6 +21,7 @@ config.business.blogUrl = "https://blog.naver.com/fixtureblog";
 const host = `${config.slug}.localhost`;
 const created = await api("POST", "/sites", { config, createdBy: "operator" });
 const siteId = created.data.siteId;
+await paySite(siteId);
 await api("POST", `/sites/${siteId}/publish`);
 
 // 1. before the first fetch: the section is there, empty

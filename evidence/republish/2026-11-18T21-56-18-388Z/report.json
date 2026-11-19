@@ -1,0 +1,54 @@
+{
+  "renderVersion": "75701628af5d-639a4436",
+  "threshold": 0.0001,
+  "apply": true,
+  "tokenLeaks": [],
+  "report": [
+    {
+      "slug": "rp-changed-mwmnux4e",
+      "siteId": "1dcbf45a-64ba-4a31-9e1b-9fe986d95db0",
+      "from": "old-assets",
+      "to": "75701628af5d-639a4436",
+      "renderId": "a849fce0ed8442a7",
+      "diffs": {
+        "home-mobile": {
+          "ratio": 0.00257485585034392
+        },
+        "home-desktop": {
+          "ratio": 0.0020036604020979023
+        },
+        "privacy-mobile": {
+          "ratio": 0
+        },
+        "privacy-desktop": {
+          "ratio": 0
+        }
+      },
+      "same": false,
+      "result": "review"
+    },
+    {
+      "slug": "rp-same-mwmnux4e",
+      "siteId": "da9ba2d8-5d79-4ae7-a427-50720562009f",
+      "from": "old-assets",
+      "to": "75701628af5d-639a4436",
+      "renderId": "007e186a1b0d491a",
+      "diffs": {
+        "home-mobile": {
+          "ratio": 0
+        },
+        "home-desktop": {
+          "ratio": 0
+        },
+        "privacy-mobile": {
+          "ratio": 0
+        },
+        "privacy-desktop": {
+          "ratio": 0
+        }
+      },
+      "same": true,
+      "result": "applied"
+    }
+  ]
+}

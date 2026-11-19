@@ -6,13 +6,12 @@ import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, extname, join } from "node:path";
 import { readFile } from "node:fs/promises";
-import { API, TOKEN, api, chromium, evidence, localD1, localKv, routerRequest, uploadShared } from "./lib/verify.mjs";
+import { API, TOKEN, api, chromium, evidence, localD1, localKv, routerRequest, uploadShared, paySite, consoleLogin, CONSOLE } from "./lib/verify.mjs";
 
 const { unzipSync } = createRequire(new URL("../apps/api/package.json", import.meta.url))("fflate");
 const sharp = createRequire(new URL("../packages/renderer/package.json", import.meta.url))("sharp");
 const { fieldFixture } = await import("../packages/renderer/src/templates/service-local/fixtures.ts");
 const CF_MOCK = process.env.CF_MOCK_URL ?? "http://127.0.0.1:8790";
-const CONSOLE = process.env.CONSOLE_URL ?? "http://127.0.0.1:8789";
 const ev = evidence("m3-lifecycle");
 const { check } = ev;
 const run = Date.now().toString(36);
@@ -24,6 +23,7 @@ const host = `${config.slug}.localhost`;
 const custom = `www.life-${run}.co.kr`;
 const created = await api("POST", "/sites", { config, createdBy: "operator" });
 const siteId = created.data.siteId;
+await paySite(siteId);
 
 // A real-looking site: an uploaded hero photo, a custom domain, an inquiry, metrics.
 const photo = await sharp({ create: { width: 1200, height: 800, channels: 3, background: "#58a" } }).jpeg().toBuffer();
@@ -112,7 +112,7 @@ check("해지된 사이트에 사진 업로드·재게시 스테이지 거부(40
 check("해지된 사이트에 도메인 연결 거부, Cloudflare 호스트네임 안 남음", (await api("POST", `/sites/${siteId}/domains`, { hostname: `x.life-${run}.co.kr` })).status === 409 &&
   (await api("GET", "/domains/quota")).data.used === quotaBefore);
 const due = (await api("GET", "/cancellations")).data.cancellations.find((c) => c.id === siteId);
-check("해지 목록: 보관 기한(90일)과 아직 삭제 불가", due && !due.purgeable && Date.parse(due.purgeAfter) - Date.parse(due.cancelled_at) === 90 * 86_400_000);
+check("해지 목록: 보관 기한(1년)과 아직 삭제 불가", due && !due.purgeable && Date.parse(due.purgeAfter) - Date.parse(due.cancelled_at) === 365 * 86_400_000);
 check("보관 기간 전 완전 삭제는 409", (await api("POST", `/sites/${siteId}/purge`, { confirmSlug: config.slug })).status === 409);
 check("데이터는 보관됨(문의·내보내기)", (await api("GET", `/sites/${siteId}/inquiries`)).data.inquiries.length === 1 &&
   (await fetch(`${API}/sites/${siteId}/export.zip`, { headers: { authorization: `Bearer ${TOKEN}` } })).ok);
@@ -164,6 +164,7 @@ check("완전 삭제: KV 정리, 주소 404, API 404", localKv("get", `host:${ho
 // 4. console: cancel needs the slug typed
 const other = await api("POST", "/sites", { config: { ...structuredClone(fieldFixture), slug: `life2-${run}` }, createdBy: "operator" });
 const tab = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+await consoleLogin(tab);
 await tab.goto(`${CONSOLE}/sites/${other.data.siteId}`, { waitUntil: "networkidle" });
 await tab.getByRole("button", { name: "해지", exact: true }).click();
 const confirm = tab.getByRole("dialog").getByRole("button", { name: "해지" });

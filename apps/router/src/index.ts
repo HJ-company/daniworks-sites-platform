@@ -13,6 +13,7 @@ import {
 /** RPC surface of the api Worker's `PublicApi` entrypoint (apps/api/src/public.ts). */
 interface PublicApi {
   track(request: { siteId: string; userAgent: string | null; body: unknown }): Promise<"counted" | "ignored">;
+  renderDraft(request: { token: string; route: string }): Promise<{ status: number; html: string }>;
   submitInquiry(request: { siteId: string; hostname: string; ip: string | null; body: unknown }): Promise<{
     status: number;
     body: unknown;
@@ -59,13 +60,38 @@ async function readSmallJson(request: Request, limit: number): Promise<unknown> 
   return JSON.parse(new TextDecoder().decode(bytes));
 }
 
+const DRAFT_PATH = /^\/preview\/([A-Za-z0-9]{1,64})(?:\/([a-z0-9-]{1,40}))?\/?$/;
+
 // KV values are cached at the edge for this long (KV minimum); publish/rollback propagate within it.
 const KV_CACHE_TTL = 30;
+
+const escapeHtml = (value: string) =>
+  value.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 
 function page(status: number, message: string, headers: Record<string, string> = {}) {
   return new Response(
     `<!doctype html><html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>${message}</title><body style="font-family:system-ui;padding:48px"><p>${message}</p></body></html>`,
     { status, headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", ...headers } },
+  );
+}
+
+/**
+ * Shown while a site is suspended (overdue). Visitors see only the business name: no hint of
+ * non-payment, no contact details or form. 503 + Retry-After tells crawlers the outage is temporary.
+ */
+function preparingPage(name: string | null | undefined) {
+  const title = name ? escapeHtml(name) : "홈페이지 준비 중";
+  return new Response(
+    `<!doctype html><html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>${title}</title>` +
+      `<body style="margin:0;min-height:100vh;display:grid;place-items:center;font-family:system-ui,-apple-system,'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:#f6f7f9;color:#1f2329">` +
+      `<main style="text-align:center;padding:32px 24px">` +
+      (name ? `<h1 style="font-size:24px;margin:0 0 12px">${title}</h1>` : "") +
+      `<p style="font-size:16px;margin:0;color:#5b616e">홈페이지를 준비하고 있습니다.<br>잠시 후 다시 방문해 주세요.</p>` +
+      `</main></body></html>`,
+    {
+      status: 503,
+      headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "retry-after": "86400" },
+    },
   );
 }
 
@@ -156,10 +182,25 @@ export default {
       );
     }
 
+    // Customer draft links live on the bare base domain: dsites.kr/preview/<token>[/<page>].
+    const draft = hostname === env.BASE_DOMAIN ? DRAFT_PATH.exec(url.pathname) : null;
+    if (draft) {
+      const rendered = await env.API.renderDraft({ token: draft[1]!, route: draft[2] ? `/${draft[2]}` : "/" });
+      return new Response(rendered.html, {
+        status: rendered.status,
+        headers: {
+          "content-type": "text/html; charset=utf-8",
+          "cache-control": "no-store",
+          "x-robots-tag": "noindex, nofollow",
+          "referrer-policy": "no-referrer",
+        },
+      });
+    }
+
     const host = await resolveHost(env, hostname);
     if (!host) return page(404, "연결된 사이트가 없습니다.");
     if (host.status === "cancelled") return page(410, "운영이 종료된 사이트입니다.");
-    if (host.status === "suspended") return page(503, "잠시 운영을 멈춘 사이트입니다.", { "retry-after": "86400" });
+    if (host.status === "suspended") return preparingPage(host.name);
     if (host.redirectTo) {
       return Response.redirect(`${url.protocol}//${host.redirectTo}${url.pathname}${url.search}`, 301);
     }
