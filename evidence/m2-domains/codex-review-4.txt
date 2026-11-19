@@ -1,0 +1,1483 @@
+OpenAI Codex v0.167.0
+--------
+workdir: /Users/steve/Projects/daniworks-sites-platform
+model: gpt-6.1-sol
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: low
+reasoning summaries: none
+session id: 01a1f01d-40e5-7292-ba68-773f517df4c6
+--------
+user
+current changes
+exec
+/bin/zsh -lc 'git status --short; find .. -name AGENTS.md -o -name AGENTS.override.md' in /Users/steve/Projects/daniworks-sites-platform
+exec
+/bin/zsh -lc 'pwd; ls -a | head; find . -name AGENTS.md -o -name AGENTS.override.md; git diff --stat; cat /Users/steve/.codex/skills/workers-best-practices/SKILL.md' in /Users/steve/Projects/daniworks-sites-platform
+ succeeded in 474ms:
+/Users/steve/Projects/daniworks-sites-platform
+.
+..
+.dockerignore
+.git
+.gitignore
+README.md
+apps
+docker
+docker-compose.yml
+docs
+./node_modules/.pnpm/@dani-builder+strapi-client@2.5.0/node_modules/@dani-builder/strapi-client/AGENTS.md
+./node_modules/.pnpm/next@16.4.6_react-dom@19.3.1_react@19.3.1__react@19.3.1/node_modules/next/AGENTS.md
+./node_modules/.pnpm/next@16.4.6_@opentelemetry+api@1.10.0_@types+node@26.6.6_react-dom@19.3.1_react@19.3.1__react@19.3.1/node_modules/next/AGENTS.md
+ apps/api/src/env.ts               |  6 ++++
+ apps/api/src/index.ts             | 23 ++++++++++++++
+ apps/api/src/publish.ts           | 48 +++++++++++++++++++++++++----
+ apps/api/src/store.ts             |  1 +
+ apps/api/wrangler.toml            |  5 +++
+ docker-compose.yml                | 11 +++++++
+ evidence/m2-mcp/results.json      | 18 +++++------
+ evidence/m2-router/results.json   | 20 ++++++------
+ evidence/m2-template/results.json | 64 +++++++++++++++++++--------------------
+ scripts/lib/verify.mjs            | 10 +++++-
+ 10 files changed, 148 insertions(+), 58 deletions(-)
+---
+name: workers-best-practices
+description: Cloudflare Workers best practices for production applications. Use when writing, reviewing, or configuring Workers.
+---
+
+Your knowledge of Cloudflare Workers APIs, types, and configuration may be outdated. **Prefer retrieval over pre-training** when writing or reviewing Workers code.
+
+Use the project's installed versions, generated types, and Wrangler compatibility settings as the baseline for existing code. Retrieve relevant Cloudflare documentation to verify API, configuration, runtime behavior, and limit claims.
+
+## References
+
+Read the sections relevant to the task:
+
+| Reference | When to use it |
+|-----------|----------------|
+| [Configuration and observability](references/configuration.md) | Compatibility dates, bindings, generated types, secrets, logs, and traces |
+| [Runtime patterns](references/runtime-patterns.md) | Streaming, promise lifetime, request state, service calls, security, and runtime tests |
+| [Platform API checks](references/platform-apis.md) | Handler signatures, platform classes, binding access, and serialization |
+
+For missing evidence, consult [Workers best practices](https://developers.cloudflare.com/workers/best-practices/workers-best-practices/index.md) or find the affected product in the [Cloudflare docs directory](https://developers.cloudflare.com/directory/index.md). Use the installed Wrangler schema for config fields. A newer type package does not supersede the project's configured target.
+
+## Keep Compatibility Dates Current
+
+Use today's date for new Workers. Encourage periodic updates for existing Workers, reviewing compatibility changes and running relevant tests. Assess existing behavior against its configured date and flags; see [compatibility guidance](references/configuration.md#keep-compatibility_date-current).
+
+## Enable Observability
+
+Enable [Workers Logs](https://developers.cloudflare.com/workers/observability/logs/workers-logs/index.md) and [Traces](https://developers.cloudflare.com/workers/observability/traces/index.md) when creating or preparing a Worker for production. Set `observability.enabled` and `observability.traces.enabled` to `true`; the top-level setting alone does not enable traces. Use structured JSON logging and configure sampling for the workload. During reviews, flag missing logs or traces. See the [configuration example](references/configuration.md#enable-workers-logs-and-traces).
+
+## Anti-Patterns to Flag
+
+| Anti-pattern | Consequence and preferred pattern |
+|-------------|-----------------------------------|
+| `await response.text()` or similar buffering on unbounded data | Can exhaust Worker memory; [stream large or unbounded bodies](references/runtime-patterns.md#stream-request-and-response-bodies). |
+| Hardcoded secrets in source or config | Leaks credentials through version control; use Wrangler secrets. |
+| `Math.random()` for security-sensitive tokens or IDs | Predictable values; use `crypto.randomUUID()` or `crypto.getRandomValues()`. |
+| Async work started without awaiting, returning, or attaching it to `ctx.waitUntil()` | Work can be dropped and errors missed; tie it to the request or background-work lifetime. |
+| Module-level mutable request state | Leaks data across requests and can cause I/O ownership errors; pass request state explicitly. |
+| Cloudflare REST API calls for operations available through Worker bindings | Adds network and authentication overhead; use the available binding. |
+| `ctx.passThroughOnException()` used as general error handling | Can conceal Worker failures by forwarding to the origin; use explicit error handling and structured error responses. |
+| Hand-written `Env` that duplicates Wrangler bindings | Can drift from configuration; generate binding types with `wrangler types`. |
+| Direct string comparison of secret values | Can expose timing differences; use the [Web Crypto comparison pattern](references/runtime-patterns.md#use-web-crypto-for-secure-token-generation). |
+| Destructuring `ctx` methods, such as `const { waitUntil } = ctx` | Loses the receiver; call `ctx.waitUntil(...)`. |
+| `any` on `Env` or handler parameters | Hides binding and handler contract errors; use the project's generated and platform types. |
+| `as unknown as T` to force a platform type match | Hides incompatibilities; fix the underlying contract. |
+| `implements` used in place of extending a platform base class | Does not inherit runtime behavior, `this.ctx`, or `this.env`; use the appropriate base class. |
+| Unbound `env.X` in a platform class method | Bindings are available through `this.env.X`; see [binding access patterns](references/platform-apis.md#binding-access--the-most-common-error). |
+| Applying one serialization rule across Queues, Workflow steps, storage, and WebSockets | Can reject valid payloads or accept unsupported ones; check the [specific API and encoding](references/platform-apis.md#serialization-boundaries). |
+
+## Validation
+
+Use the project's existing checks for affected Workers behavior: type-check binding or handler contract changes, and run relevant runtime tests for behavior changes. Preserve required repository checks; a narrow edit does not require a full Workers audit.
+
+## Scope
+
+This skill covers Workers-specific best practices and code review. For related topics:
+
+- **Durable Objects**: load the `durable-objects` skill
+- **Workflows**: see [Rules of Workflows](https://developers.cloudflare.com/workflows/build/rules-of-workflows/index.md)
+- **Wrangler CLI commands**: load the `wrangler` skill
+
+exec
+/bin/zsh -lc 'for p in /AGENTS.md /Users/AGENTS.md /Users/steve/AGENTS.md /Users/steve/Projects/AGENTS.md; do [ ! -f "$p" ] || cat "$p"; done; git diff -- apps/api scripts/lib/verify.mjs docker-compose.yml; cat apps/api/src/domains.ts apps/api/src/saas.ts' in /Users/steve/Projects/daniworks-sites-platform
+ succeeded in 0ms:
+diff --git a/apps/api/src/env.ts b/apps/api/src/env.ts
+index ad5ef50..d09fdf1 100644
+--- a/apps/api/src/env.ts
++++ b/apps/api/src/env.ts
+@@ -16,6 +16,12 @@ export interface Env {
+   MAIL_FROM?: string;
+   MAIL_PIT_URL?: string;
+   EMAIL?: SendEmail;
++  /** Cloudflare for SaaS custom hostnames. Locally CF_API_BASE is the cf-mock container. */
++  CF_API_BASE?: string;
++  CF_ZONE_ID?: string;
++  CF_API_TOKEN?: string;
++  /** CNAME target customers point their domain at (the SaaS fallback origin host). */
++  DOMAIN_CNAME_TARGET?: string;
+   /** Pepper for hashing visitor IPs (rate limiting without storing addresses). */
+   HASH_PEPPER?: string;
+ }
+diff --git a/apps/api/src/index.ts b/apps/api/src/index.ts
+index 2f9de3f..843b766 100644
+--- a/apps/api/src/index.ts
++++ b/apps/api/src/index.ts
+@@ -6,6 +6,7 @@ import { turnstileFrame } from "./turnstile.js";
+ import type { Env } from "./env.js";
+ import { HttpError, json, readJson, requireAdmin } from "./http.js";
+ import { MEDIA_PATH, r2MediaKey, r2SharedKey } from "./keys.js";
++import { addDomain, domainQuota, listDomains, maintainDomains, refreshDomain, removeDomain, type DomainRow } from "./domains.js";
+ import { handleMcp } from "./mcp.js";
+ import { assetBase, publish, rollback, siteOrigin } from "./publish.js";
+ import { auditHostRecords, reconcileHostRecords, syncHostRecordsNow } from "./routes.js";
+@@ -85,6 +86,9 @@ async function handle(request: Request, env: Env): Promise<Response> {
+     return json({ key }, 201);
+   }
+ 
++  // GET /domains/quota: custom hostnames on the zone vs. the 100 included.
++  if (method === "GET" && url.pathname === "/domains/quota") return json(await domainQuota(env));
++
+   if (parts[0] !== "sites") throw new HttpError(404, "없는 경로입니다");
+ 
+   // POST /sites {config, createdBy}
+@@ -114,6 +118,24 @@ async function handle(request: Request, env: Env): Promise<Response> {
+     return json({ site: await getSite(env.DB, site.id) });
+   }
+ 
++  // Custom domains: GET list, POST {hostname}, POST /:host/refresh, DELETE /:host
++  if (parts[2] === "domains") {
++    if (method === "GET" && parts.length === 3) return json({ domains: await listDomains(env, site.id) });
++    if (method === "POST" && parts.length === 3) {
++      const body = await readJson<{ hostname?: unknown }>(request);
++      return json(await addDomain(env, site, body.hostname), 201);
++    }
++    const hostname = decodeURIComponent(parts[3] ?? "");
++    if (method === "POST" && parts[4] === "refresh" && parts.length === 5) {
++      const row = await env.DB.prepare("SELECT * FROM domains WHERE hostname = ? AND site_id = ? AND kind = 'custom'")
++        .bind(hostname, site.id)
++        .first<DomainRow>();
++      if (!row) throw new HttpError(404, "연결된 커스텀 도메인이 아닙니다");
++      return json({ hostname, status: await refreshDomain(env, row) });
++    }
++    if (method === "DELETE" && parts.length === 4) return json(await removeDomain(env, site.id, hostname));
++  }
++
+   // GET /sites/:id/metrics?from=YYYY-MM-DD&to=YYYY-MM-DD (Korean dates, inclusive; default last 30 days)
+   if (method === "GET" && parts[2] === "metrics" && parts.length === 3) {
+     const today = kstDay(new Date());
+@@ -187,6 +209,7 @@ export default {
+   async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext) {
+     ctx.waitUntil(
+       (async () => {
++        console.log("[domains] maintain", JSON.stringify(await maintainDomains(env)));
+         if (controller.cron === AUDIT_CRON) console.log("[routes] audit", JSON.stringify(await auditHostRecords(env)));
+         console.log("[routes] reconcile", JSON.stringify(await reconcileHostRecords(env)));
+       })(),
+diff --git a/apps/api/src/publish.ts b/apps/api/src/publish.ts
+index 1b4a17b..8eea98a 100644
+--- a/apps/api/src/publish.ts
++++ b/apps/api/src/publish.ts
+@@ -4,6 +4,7 @@ import { HttpError } from "./http.js";
+ import { kvSiteKey, r2PageKey, r2SharedKey, type PublishedPointer } from "./keys.js";
+ import { routesOf, syncHostRecordsNow } from "./routes.js";
+ import {
++  getSite,
+   getVersion,
+   latestVersion,
+   markPublished,
+@@ -36,14 +37,20 @@ async function requireSharedAssets(env: Env) {
+  * Renders every page of a version to R2 unless it is already rendered against the current
+  * shared assets and origin.
+  */
+-async function ensureRendered(env: Env, version: VersionRow, origin: string) {
++/** Everything outside the config that changes the HTML (stored in rendered_origin). */
++const renderKeyOf = (env: Env, origin: string) => JSON.stringify({ origin, turnstileFrame: turnstileFrameUrl(env) });
++
++async function ensureRendered(env: Env, version: VersionRow, origin: string, { keepAssets = false } = {}) {
+   const config = JSON.parse(version.config) as SiteConfig;
+   const turnstileFrame = turnstileFrameUrl(env);
+-  // Everything outside the config that changes the HTML; a change re-renders on publish.
+-  const renderKey = JSON.stringify({ origin, turnstileFrame });
+-  if (version.rendered_at && version.asset_version === ASSET_VERSION && version.rendered_origin === renderKey) {
++  const renderKey = renderKeyOf(env, origin);
++  // Rollback keeps the version's own shared assets; publish moves it to the current ones.
++  const assetsOk = keepAssets || version.asset_version === ASSET_VERSION;
++  if (version.rendered_at && assetsOk && version.rendered_origin === renderKey) {
+     return routesOf(config);
+   }
++  // HTML comes from the current renderer, so it must point at the current client bundle.
++  await requireSharedAssets(env);
+   const { pages } = await renderSite(config, { assetBase: assetBase(), origin, turnstileFrame });
+   for (const page of pages) {
+     await env.SITES.put(r2PageKey(version.site_id, version.id, page.path), page.html, {
+@@ -70,11 +77,40 @@ export async function publish(env: Env, site: SiteRow, versionId?: string) {
+   return pointTo(env, site, version, pages);
+ }
+ 
+-/** Rollback = move the pointer back to a version that was published before. No re-render. */
++/**
++ * Rollback = move the pointer back to a version that was published before. No re-render, unless
++ * the site's origin changed since that version was rendered (custom domain added or removed):
++ * then only its HTML is re-rendered so canonical and OG URLs point at the current host.
++ */
+ export async function rollback(env: Env, site: SiteRow, versionId: string) {
+   const version = await getVersion(env.DB, site.id, versionId);
+   if (!version.first_published_at) throw new HttpError(409, "게시된 적 없는 버전으로는 롤백할 수 없습니다");
+   const exists = await env.SITES.head(r2PageKey(site.id, version.id));
+   if (!exists) throw new HttpError(409, "렌더된 파일이 R2에 없습니다. publish로 다시 게시하세요");
+-  return pointTo(env, site, version, routesOf(JSON.parse(version.config) as SiteConfig));
++  const pages = await ensureRendered(env, version, await siteOrigin(env, site), { keepAssets: true });
++  return pointTo(env, site, version, pages);
++}
++
++/**
++ * The site's origin changed (custom domain activated, failed or removed): re-render the live
++ * version's HTML in place (same R2 keys). The KV pointer is not touched, so this can never undo
++ * a concurrent publish; if the live version changes meanwhile, the new one is checked too.
++ * Returns false when it could not settle (the caller keeps origin_pending for the cron).
++ */
++export async function rerenderLive(env: Env, siteId: string): Promise<boolean> {
++  for (let attempt = 0; attempt < 3; attempt++) {
++    const site = await getSite(env.DB, siteId);
++    if (!site.published_version_id) {
++      await syncHostRecordsNow(env, siteId);
++      return true;
++    }
++    const version = await getVersion(env.DB, siteId, site.published_version_id);
++    await ensureRendered(env, version, await siteOrigin(env, site));
++    const after = await getSite(env.DB, siteId);
++    if (after.published_version_id === version.id) {
++      await syncHostRecordsNow(env, siteId);
++      return true;
++    }
++  }
++  return false;
+ }
+diff --git a/apps/api/src/store.ts b/apps/api/src/store.ts
+index 3521836..831afd7 100644
+--- a/apps/api/src/store.ts
++++ b/apps/api/src/store.ts
+@@ -13,6 +13,7 @@ export interface SiteRow {
+   cancelled_at: string | null;
+   published_at: string | null;
+   routes_synced_at: string | null;
++  origin_pending: number;
+   created_at: string;
+   updated_at: string;
+ }
+diff --git a/apps/api/wrangler.toml b/apps/api/wrangler.toml
+index 471445f..cf7b049 100644
+--- a/apps/api/wrangler.toml
++++ b/apps/api/wrangler.toml
+@@ -19,6 +19,8 @@ API_ORIGIN = "http://127.0.0.1:8788"
+ TURNSTILE_SITE_KEY = "1x00000000000000000000AA"
+ MAIL_MODE = "mailpit"
+ MAIL_FROM = "noreply@dsites.kr"
++DOMAIN_CNAME_TARGET = "fallback.dsites.kr"
++# Custom domains locally: CF_API_BASE / CF_ZONE_ID / CF_API_TOKEN in .dev.vars (Docker: cf-mock).
+ # ADMIN_TOKEN comes from .dev.vars locally and a secret in production.
+ 
+ [[d1_databases]]
+@@ -55,6 +57,9 @@ API_ORIGIN = "https://api.dsites.kr"
+ # TURNSTILE_SECRET, HASH_PEPPER: `wrangler secret put ... --env staging`
+ MAIL_MODE = "binding"
+ MAIL_FROM = "noreply@dsites.kr"
++CF_API_BASE = "https://api.cloudflare.com/client/v4"
++DOMAIN_CNAME_TARGET = "fallback.dsites.kr"
++# CF_ZONE_ID (dsites.kr) and CF_API_TOKEN (SSL and Certificates: Edit): wrangler secret put
+ # ADMIN_TOKEN: `wrangler secret put ADMIN_TOKEN --env staging`
+ 
+ # Cloudflare Email Service; dsites.kr must be onboarded for sending (wrangler email sending enable).
+diff --git a/docker-compose.yml b/docker-compose.yml
+index 49793fa..e594ef0 100644
+--- a/docker-compose.yml
++++ b/docker-compose.yml
+@@ -17,6 +17,9 @@ services:
+       TURNSTILE_SECRET: 1x0000000000000000000000000000000AA
+       HASH_PEPPER: dev-pepper
+       MAIL_PIT_URL: http://mailpit:8025
++      CF_API_BASE: http://cf-mock:8790/client/v4
++      CF_ZONE_ID: mock-zone
++      CF_API_TOKEN: mock-token
+     ports:
+       - "8787:8787" # router: http://<slug>.localhost:8787
+       - "8788:8788" # api
+@@ -32,6 +35,13 @@ services:
+       timeout: 3s
+       retries: 60
+ 
++  # Cloudflare for SaaS custom hostname API stand-in (docker/cf-mock.mjs).
++  cf-mock:
++    <<: *app
++    command: ["node", "docker/cf-mock.mjs"]
++    ports:
++      - "8790:8790"
++
+   mailpit:
+     image: axllent/mailpit:v1.27
+     ports:
+@@ -50,6 +60,7 @@ services:
+       API_URL: http://127.0.0.1:8788
+       ADMIN_TOKEN: dev-admin-token
+       MAILPIT_URL: http://mailpit:8025
++      CF_MOCK_URL: http://cf-mock:8790
+     volumes:
+       - ./evidence:/app/evidence
+       # Same local D1/R2/KV state as the workers, for checks that read or seed storage directly.
+diff --git a/scripts/lib/verify.mjs b/scripts/lib/verify.mjs
+index e0a4f34..55814a4 100644
+--- a/scripts/lib/verify.mjs
++++ b/scripts/lib/verify.mjs
+@@ -154,7 +154,15 @@ export async function lighthouse(url) {
+ export function localKv(action, key, value) {
+   const args = ["exec", "wrangler", "kv", "key", action, key, ...(value !== undefined ? [value] : []), "--binding", "ROUTES", "--local", "--persist-to", process.env.STATE_DIR ?? "/state"];
+   if (action === "get") args.push("--text");
+-  return execFileSync("pnpm", args, { cwd: "apps/router", encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
++  try {
++    const out = execFileSync("pnpm", args, { cwd: "apps/router", encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
++    // wrangler prints this and exits 0 for a missing key.
++    return action === "get" && out === "Value not found" ? "" : out;
++  } catch (error) {
++    // A missing key exits non-zero; reads report it as empty.
++    if (action === "get" && /not found/i.test(String(error.stderr ?? error.stdout ?? ""))) return "";
++    throw error;
++  }
+ }
+ 
+ /** Runs SQL against the API's local D1 (Docker: shared /state volume). Returns result rows. */
+import type { Env } from "./env.js";
+import { HttpError } from "./http.js";
+import { kvHostKey } from "./keys.js";
+import { rerenderLive } from "./publish.js";
+import { syncHostRecordsNow } from "./routes.js";
+import { SaasClient, type CustomHostname } from "./saas.js";
+import type { SiteRow } from "./store.js";
+
+export const INCLUDED_HOSTNAMES = 100;
+/** The platform's own zone; never connectable as a customer domain in any environment. */
+const PLATFORM_ZONE = "dsites.kr";
+
+/** Public suffixes common for Korean small businesses; the label before one is the apex. */
+const SUFFIXES = ["co.kr", "or.kr", "ne.kr", "re.kr", "pe.kr", "go.kr", "ac.kr", "kr", "com", "net", "org", "shop", "store", "info", "biz", "me", "io", "co"];
+
+export interface DomainRow {
+  hostname: string;
+  site_id: string;
+  kind: string;
+  status: string;
+  cf_hostname_id: string | null;
+  ssl_status: string | null;
+  verification_records: string | null;
+  last_error: string | null;
+  checked_at: string | null;
+  created_at: string;
+}
+
+/** Lowercase FQDN without scheme, path or port; rejects platform hosts. */
+export function normalizeHostname(input: unknown, baseDomain: string): string {
+  if (typeof input !== "string") throw new HttpError(422, "hostname이 필요합니다");
+  const host = input.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/\/.*$/, "").replace(/\.$/, "");
+  const label = "[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?";
+  if (!new RegExp(`^(?:${label}\\.)+[a-z]{2,63}$`).test(host) || host.length > 253) {
+    throw new HttpError(422, `도메인 형식이 아닙니다: ${input}`);
+  }
+  const platform = [baseDomain, PLATFORM_ZONE];
+  if (platform.some((zone) => host === zone || host.endsWith(`.${zone}`)) || host.endsWith(".localhost")) {
+    throw new HttpError(422, "플랫폼 도메인은 연결할 수 없습니다");
+  }
+  return host;
+}
+
+/** `example.co.kr` and `example.com` are apex; `www.example.co.kr` is not. */
+export function isApex(hostname: string) {
+  const suffix = SUFFIXES.filter((s) => hostname.endsWith(`.${s}`)).sort((a, b) => b.length - a.length)[0];
+  if (!suffix) return hostname.split(".").length === 2;
+  return hostname.slice(0, -(suffix.length + 1)).split(".").length === 1;
+}
+
+/** DNS instructions shown to the operator and, later, the customer. */
+export function instructions(env: Env, hostname: string, cf: CustomHostname) {
+  const target = env.DOMAIN_CNAME_TARGET ?? `fallback.${env.BASE_DOMAIN}`;
+  const apex = isApex(hostname);
+  return {
+    cname: { type: "CNAME", name: hostname, value: target },
+    /** Only for a domain already live elsewhere: validate before switching DNS (no downtime). */
+    optionalTxt: cf.ownership_verification
+      ? { type: "TXT", name: cf.ownership_verification.name, value: cf.ownership_verification.value }
+      : null,
+    apex,
+    note: apex
+      ? `루트 도메인입니다. 대부분의 국내 등록업체는 루트에 CNAME을 걸 수 없습니다. www.${hostname}을 연결하고, 등록업체에서 ${hostname} → https://www.${hostname} 포워딩을 설정하세요(https 포워딩 지원 여부 확인).`
+      : null,
+  };
+}
+
+const now = () => new Date().toISOString();
+
+async function touchSite(env: Env, siteId: string) {
+  await env.DB.prepare("UPDATE sites SET updated_at = ? WHERE id = ?").bind(now(), siteId).run();
+}
+
+/**
+ * The primary host changed: re-render the live version for the new canonical origin and refresh
+ * routing. `origin_pending` stays 1 until this succeeds, so the cron retries a failed attempt.
+ */
+async function afterPrimaryChange(env: Env, siteId: string) {
+  await env.DB.prepare("UPDATE sites SET origin_pending = 1, updated_at = ? WHERE id = ?").bind(now(), siteId).run();
+  if (await rerenderLive(env, siteId)) {
+    await env.DB.prepare("UPDATE sites SET origin_pending = 0 WHERE id = ?").bind(siteId).run();
+  }
+}
+
+function requireSaas(env: Env) {
+  if (!SaasClient.configured(env)) throw new HttpError(503, "커스텀 도메인(Cloudflare for SaaS)이 설정되지 않았습니다");
+  return new SaasClient(env);
+}
+
+export async function listDomains(env: Env, siteId: string) {
+  const { results } = await env.DB.prepare("SELECT * FROM domains WHERE site_id = ? ORDER BY kind DESC, created_at")
+    .bind(siteId)
+    .all<DomainRow>();
+  return results.map((row) => ({ ...row, verification_records: row.verification_records ? JSON.parse(row.verification_records) : null }));
+}
+
+export async function addDomain(env: Env, site: SiteRow, input: unknown) {
+  const hostname = normalizeHostname(input, env.BASE_DOMAIN);
+  const taken = await env.DB.prepare("SELECT site_id FROM domains WHERE hostname = ?").bind(hostname).first<{ site_id: string }>();
+  if (taken) throw new HttpError(409, taken.site_id === site.id ? "이미 연결 중인 도메인입니다" : "다른 사이트가 쓰는 도메인입니다");
+  const saas = requireSaas(env);
+  const cf = await saas.create(hostname);
+  const records = instructions(env, hostname, cf);
+  try {
+    await env.DB.prepare(
+      "INSERT INTO domains (hostname, site_id, kind, status, cf_hostname_id, ssl_status, verification_records, created_at) VALUES (?, ?, 'custom', 'pending', ?, ?, ?, ?)",
+    )
+      .bind(hostname, site.id, cf.id, cf.ssl?.status ?? null, JSON.stringify(records), now())
+      .run();
+  } catch (error) {
+    // Lost a race for the same hostname: do not leave a billed hostname behind.
+    await saas.delete(cf.id);
+    throw error;
+  }
+  return { hostname, status: "pending", instructions: records };
+}
+
+/** Polls Cloudflare; on activation the domain becomes the site's primary host. */
+export async function refreshDomain(env: Env, row: DomainRow) {
+  if (!row.cf_hostname_id) return row.status;
+  const saas = requireSaas(env);
+  let cf: CustomHostname | null;
+  try {
+    cf = await saas.get(row.cf_hostname_id);
+  } catch (error) {
+    // Deleted at Cloudflare (outside this API): a confirmed failure, not a transient one.
+    if (error instanceof HttpError && error.status === 404) {
+      cf = null;
+    } else {
+      await env.DB.prepare("UPDATE domains SET last_error = ?, checked_at = ? WHERE hostname = ?")
+        .bind(String(error instanceof Error ? error.message : error).slice(0, 500), now(), row.hostname)
+        .run();
+      return row.status;
+    }
+  }
+  const ready = cf?.status === "active" && cf.ssl?.status === "active";
+  const failed = !cf || ["moved", "deleted", "blocked"].includes(cf.status);
+  const status = ready ? "active" : failed ? "failed" : "pending";
+  const error = cf ? cf.verification_errors?.join("; ") || null : "Cloudflare에 호스트네임이 없습니다";
+  const update = env.DB.prepare("UPDATE domains SET status = ?, ssl_status = ?, last_error = ?, checked_at = ? WHERE hostname = ?").bind(
+    status,
+    cf?.ssl?.status ?? null,
+    error,
+    now(),
+    row.hostname,
+  );
+  if (status === row.status) {
+    await update.run();
+    return status;
+  }
+  // Status and the re-render marker commit together, so an interruption here is retried by the cron.
+  await env.DB.batch([
+    update,
+    env.DB.prepare("UPDATE sites SET origin_pending = 1, updated_at = ? WHERE id = ?").bind(now(), row.site_id),
+  ]);
+  await afterPrimaryChange(env, row.site_id);
+  return status;
+}
+
+/**
+ * Removal is resumable: stop billing at Cloudflare, mark the row `removing` (routing treats it
+ * as gone), restore the primary host, and only then delete the row. A failure at any step
+ * leaves a `removing` row that a retry or the cron finishes.
+ */
+export async function removeDomain(env: Env, siteId: string, hostname: string) {
+  const row = await env.DB.prepare("SELECT * FROM domains WHERE hostname = ? AND site_id = ? AND kind = 'custom'")
+    .bind(hostname, siteId)
+    .first<DomainRow>();
+  if (!row) throw new HttpError(404, "연결된 커스텀 도메인이 아닙니다");
+  if (row.cf_hostname_id) await requireSaas(env).delete(row.cf_hostname_id);
+  if (row.status !== "removing") {
+    await env.DB.prepare("UPDATE domains SET status = 'removing' WHERE hostname = ?").bind(hostname).run();
+  }
+  await afterPrimaryChange(env, siteId);
+  await env.ROUTES.delete(kvHostKey(hostname));
+  await env.DB.prepare("DELETE FROM domains WHERE hostname = ? AND status = 'removing'").bind(hostname).run();
+  await touchSite(env, siteId);
+  return { hostname, removed: true };
+}
+
+/**
+ * Cron: finish interrupted removals, retry pending origin re-renders, check pending hostnames
+ * every few minutes (for 14 days) and active ones every 6 hours (a moved or expired hostname
+ * falls back to the platform subdomain).
+ */
+export async function maintainDomains(env: Env) {
+  const result = { removed: 0, rerendered: 0, checked: 0, changed: 0 };
+  const { results: removing } = await env.DB.prepare("SELECT hostname, site_id FROM domains WHERE status = 'removing' LIMIT 20")
+    .all<{ hostname: string; site_id: string }>();
+  for (const row of removing) {
+    try {
+      await removeDomain(env, row.site_id, row.hostname);
+      result.removed++;
+    } catch (error) {
+      console.error("[domains] removal retry failed", row.hostname, error);
+    }
+  }
+  const { results: pendingOrigins } = await env.DB.prepare("SELECT id FROM sites WHERE origin_pending = 1 LIMIT 20").all<{ id: string }>();
+  for (const { id } of pendingOrigins) {
+    try {
+      await afterPrimaryChange(env, id);
+      result.rerendered++;
+    } catch (error) {
+      console.error("[domains] origin re-render failed", id, error);
+    }
+  }
+  if (!SaasClient.configured(env)) return result;
+  const at = Date.now();
+  const { results } = await env.DB.prepare(
+    `SELECT * FROM domains WHERE kind = 'custom' AND (
+       (status = 'pending' AND created_at >= ? AND (checked_at IS NULL OR checked_at < ?))
+       OR (status = 'active' AND (checked_at IS NULL OR checked_at < ?))
+     ) ORDER BY checked_at LIMIT 50`,
+  )
+    .bind(new Date(at - 14 * 86_400_000).toISOString(), new Date(at - 4 * 60_000).toISOString(), new Date(at - 6 * 3_600_000).toISOString())
+    .all<DomainRow>();
+  for (const row of results) {
+    try {
+      if ((await refreshDomain(env, row)) !== row.status) result.changed++;
+      result.checked++;
+    } catch (error) {
+      console.error("[domains] refresh failed", row.hostname, error);
+    }
+  }
+  return result;
+}
+
+export async function domainQuota(env: Env) {
+  const used = await requireSaas(env).count();
+  return { used, included: INCLUDED_HOSTNAMES, overage: Math.max(0, used - INCLUDED_HOSTNAMES) };
+}
+import type { Env } from "./env.js";
+import { HttpError } from "./http.js";
+
+/** The parts of a Cloudflare for SaaS custom hostname the platform uses. */
+export interface CustomHostname {
+  id: string;
+  hostname: string;
+  status: string;
+  ssl?: { status?: string; method?: string; validation_records?: { txt_name?: string; txt_value?: string }[] };
+  ownership_verification?: { type: string; name: string; value: string };
+  verification_errors?: string[];
+}
+
+interface CfEnvelope<T> {
+  success: boolean;
+  errors?: { code: number; message: string }[];
+  result: T;
+  result_info?: { total_count?: number };
+}
+
+/**
+ * Cloudflare for SaaS custom hostnames API. Locally `CF_API_BASE` points at the cf-mock
+ * container, which serves the same HTTP shape, so this client is the code path in both.
+ */
+export class SaasClient {
+  constructor(private readonly env: Env) {}
+
+  static configured(env: Env) {
+    return Boolean(env.CF_API_BASE && env.CF_ZONE_ID && env.CF_API_TOKEN);
+  }
+
+  private async call<T>(method: string, path: string, body?: unknown): Promise<CfEnvelope<T>> {
+    const res = await fetch(`${this.env.CF_API_BASE}/zones/${this.env.CF_ZONE_ID}/custom_hostnames${path}`, {
+      method,
+      headers: { authorization: `Bearer ${this.env.CF_API_TOKEN}`, "content-type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    const envelope = (await res.json().catch(() => null)) as CfEnvelope<T> | null;
+    if (!res.ok || !envelope?.success) {
+      const message = envelope?.errors?.map((e) => `${e.code} ${e.message}`).join("; ") ?? `HTTP ${res.status}`;
+      throw new HttpError(res.status === 404 ? 404 : 502, `Cloudflare custom hostname 오류: ${message}`);
+    }
+    return envelope;
+  }
+
+  /** HTTP DCV: once the customer's CNAME points at the platform, hostname and certificate validate on their own. */
+  async create(hostname: string) {
+    return (await this.call<CustomHostname>("POST", "", { hostname, ssl: { method: "http", type: "dv", settings: { min_tls_version: "1.2" } } })).result;
+  }
+
+  async get(id: string) {
+    return (await this.call<CustomHostname>("GET", `/${id}`)).result;
+  }
+
+  /** Idempotent: an already deleted hostname is fine. */
+  async delete(id: string) {
+    try {
+      await this.call("DELETE", `/${id}`);
+    } catch (error) {
+      if (!(error instanceof HttpError && error.status === 404)) throw error;
+    }
+  }
+
+  /** Hostnames on the zone (billing: 100 included, then per hostname). */
+  async count() {
+    return (await this.call<CustomHostname[]>("GET", "?per_page=1")).result_info?.total_count ?? 0;
+  }
+}
+
+exec
+/bin/zsh -lc 'cat apps/api/src/publish.ts apps/api/src/routes.ts; cat apps/api/test/domains.test.ts' in /Users/steve/Projects/daniworks-sites-platform
+ succeeded in 0ms:
+import { ASSET_VERSION, renderSite, type SiteConfig } from "@sites/renderer";
+import type { Env } from "./env.js";
+import { HttpError } from "./http.js";
+import { kvSiteKey, r2PageKey, r2SharedKey, type PublishedPointer } from "./keys.js";
+import { routesOf, syncHostRecordsNow } from "./routes.js";
+import {
+  getSite,
+  getVersion,
+  latestVersion,
+  markPublished,
+  markRendered,
+  primaryHostname,
+  type SiteRow,
+  type VersionRow,
+} from "./store.js";
+
+export const assetBase = () => `/_shared/${ASSET_VERSION}`;
+
+/** Turnstile frame URL baked into published pages; null when Turnstile is not configured. */
+export const turnstileFrameUrl = (env: Env) =>
+  env.TURNSTILE_SITE_KEY && env.API_ORIGIN ? `${env.API_ORIGIN}/turnstile-frame` : null;
+
+/** Public origin a site is served from: its active custom domain, else `<slug>.<BASE_DOMAIN>`. */
+export async function siteOrigin(env: Env, site: SiteRow) {
+  const host = await primaryHostname(env.DB, site, env.BASE_DOMAIN);
+  return `${env.PUBLIC_SCHEME ?? "https"}://${host}`;
+}
+
+async function requireSharedAssets(env: Env) {
+  const head = await env.SITES.head(r2SharedKey(`${ASSET_VERSION}/_assets/site.css`));
+  if (!head) {
+    throw new HttpError(409, `공용 에셋 ${ASSET_VERSION}이 R2에 없습니다. scripts/upload-shared.mjs를 먼저 실행하세요`);
+  }
+}
+
+/**
+ * Renders every page of a version to R2 unless it is already rendered against the current
+ * shared assets and origin.
+ */
+/** Everything outside the config that changes the HTML (stored in rendered_origin). */
+const renderKeyOf = (env: Env, origin: string) => JSON.stringify({ origin, turnstileFrame: turnstileFrameUrl(env) });
+
+async function ensureRendered(env: Env, version: VersionRow, origin: string, { keepAssets = false } = {}) {
+  const config = JSON.parse(version.config) as SiteConfig;
+  const turnstileFrame = turnstileFrameUrl(env);
+  const renderKey = renderKeyOf(env, origin);
+  // Rollback keeps the version's own shared assets; publish moves it to the current ones.
+  const assetsOk = keepAssets || version.asset_version === ASSET_VERSION;
+  if (version.rendered_at && assetsOk && version.rendered_origin === renderKey) {
+    return routesOf(config);
+  }
+  // HTML comes from the current renderer, so it must point at the current client bundle.
+  await requireSharedAssets(env);
+  const { pages } = await renderSite(config, { assetBase: assetBase(), origin, turnstileFrame });
+  for (const page of pages) {
+    await env.SITES.put(r2PageKey(version.site_id, version.id, page.path), page.html, {
+      httpMetadata: { contentType: "text/html; charset=utf-8" },
+    });
+  }
+  await markRendered(env.DB, version.id, ASSET_VERSION, renderKey);
+  return pages.map((page) => page.route);
+}
+
+async function pointTo(env: Env, site: SiteRow, version: VersionRow, pages: string[]) {
+  const publishedAt = await markPublished(env.DB, site.id, version.id, ASSET_VERSION);
+  const pointer: PublishedPointer = { versionId: version.id, number: version.number, publishedAt, pages };
+  await env.ROUTES.put(kvSiteKey(site.id), JSON.stringify(pointer));
+  await syncHostRecordsNow(env, site.id);
+  return pointer;
+}
+
+/** Publish = render (if needed) → R2 → move the KV pointer. Visible worldwide within about a minute. */
+export async function publish(env: Env, site: SiteRow, versionId?: string) {
+  await requireSharedAssets(env);
+  const version = versionId ? await getVersion(env.DB, site.id, versionId) : await latestVersion(env.DB, site.id);
+  const pages = await ensureRendered(env, version, await siteOrigin(env, site));
+  return pointTo(env, site, version, pages);
+}
+
+/**
+ * Rollback = move the pointer back to a version that was published before. No re-render, unless
+ * the site's origin changed since that version was rendered (custom domain added or removed):
+ * then only its HTML is re-rendered so canonical and OG URLs point at the current host.
+ */
+export async function rollback(env: Env, site: SiteRow, versionId: string) {
+  const version = await getVersion(env.DB, site.id, versionId);
+  if (!version.first_published_at) throw new HttpError(409, "게시된 적 없는 버전으로는 롤백할 수 없습니다");
+  const exists = await env.SITES.head(r2PageKey(site.id, version.id));
+  if (!exists) throw new HttpError(409, "렌더된 파일이 R2에 없습니다. publish로 다시 게시하세요");
+  const pages = await ensureRendered(env, version, await siteOrigin(env, site), { keepAssets: true });
+  return pointTo(env, site, version, pages);
+}
+
+/**
+ * The site's origin changed (custom domain activated, failed or removed): re-render the live
+ * version's HTML in place (same R2 keys). The KV pointer is not touched, so this can never undo
+ * a concurrent publish; if the live version changes meanwhile, the new one is checked too.
+ * Returns false when it could not settle (the caller keeps origin_pending for the cron).
+ */
+export async function rerenderLive(env: Env, siteId: string): Promise<boolean> {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const site = await getSite(env.DB, siteId);
+    if (!site.published_version_id) {
+      await syncHostRecordsNow(env, siteId);
+      return true;
+    }
+    const version = await getVersion(env.DB, siteId, site.published_version_id);
+    await ensureRendered(env, version, await siteOrigin(env, site));
+    const after = await getSite(env.DB, siteId);
+    if (after.published_version_id === version.id) {
+      await syncHostRecordsNow(env, siteId);
+      return true;
+    }
+  }
+  return false;
+}
+import type { Env } from "./env.js";
+import { kvHostKey, type HostRecord, type PublishedPointer } from "./keys.js";
+import {
+  acquireRoutesLease,
+  clearRoutesSynced,
+  holdsRoutesLease,
+  markRoutesSynced,
+  primaryHostname,
+  releaseRoutesLease,
+  servingState,
+  sitesNeedingRouteSync,
+  type SiteRow,
+} from "./store.js";
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** KV allows one write per key per second; retry rate-limited writes a few times. */
+async function kvWrite(op: () => Promise<void>) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await op();
+    } catch (error) {
+      const limited = /429|too many/i.test(String(error));
+      if (!limited || attempt >= 3) throw error;
+      await sleep(1100);
+    }
+  }
+}
+
+/** Public status of a site as the router sees it. */
+export function hostStatus(site: SiteRow): HostRecord["status"] {
+  if (site.cancelled_at) return "cancelled";
+  return site.status === "suspended" ? "suspended" : "active";
+}
+
+type Snapshot = Awaited<ReturnType<typeof snapshot>>;
+type DomainRow = Snapshot["domains"][number];
+
+/** What KV should hold for a hostname; null means the key must not exist. */
+function expectedRecord(state: Snapshot, domain: DomainRow): HostRecord | null {
+  // Custom hostnames that are not active yet must not serve the site.
+  if (domain.kind === "custom" && domain.status !== "active") return null;
+  return {
+    siteId: state.site.id,
+    status: state.status,
+    pointer: state.pointer,
+    redirectTo: domain.hostname === state.primary ? null : state.primary,
+  };
+}
+
+/** Routes a stored config renders to (v2 adds the privacy page). */
+export const routesOf = (config: { version?: unknown }) => (config.version === 2 ? ["/", "/privacy"] : ["/"]);
+
+async function snapshot(env: Env, siteId: string) {
+  const { site, version } = await servingState(env.DB, siteId);
+  const pointer: PublishedPointer | null =
+    version
+      ? {
+          versionId: version.id,
+          number: version.number,
+          // Rows from before migration 0003 are backfilled; never drop a live pointer over a missing time.
+          publishedAt: site.published_at ?? site.updated_at,
+          pages: routesOf(JSON.parse(version.config) as { version?: unknown }),
+        }
+      : null;
+  const primary = await primaryHostname(env.DB, site, env.BASE_DOMAIN);
+  const { results: domains } = await env.DB.prepare("SELECT hostname, kind, status FROM domains WHERE site_id = ?")
+    .bind(site.id)
+    .all<{ hostname: string; kind: string; status: string }>();
+  const status = hostStatus(site);
+  const key = JSON.stringify([status, pointer?.versionId, pointer?.publishedAt, primary, domains]);
+  return { site, pointer, primary, domains, status, key };
+}
+
+/**
+ * Rewrites the KV record of every hostname of a site from D1, the source of truth: status,
+ * published pointer and redirect. One writer per site at a time (D1 lease). A caller that
+ * cannot take the lease leaves the site marked unsynced; the holder re-reads D1 after writing
+ * and catches up, and the reconcile cron covers anything left. Returns whether KV now matches.
+ */
+export async function syncHostRecords(env: Env, siteId: string): Promise<boolean> {
+  await clearRoutesSynced(env.DB, siteId);
+  const token = await acquireRoutesLease(env.DB, siteId);
+  if (!token) return false;
+  try {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const state = await snapshot(env, siteId);
+      for (const domain of state.domains) {
+        // Fence: a holder whose lease expired must not overwrite a newer writer.
+        if (!(await holdsRoutesLease(env.DB, siteId, token))) return false;
+        const record = expectedRecord(state, domain);
+        await kvWrite(() =>
+          record
+            ? env.ROUTES.put(kvHostKey(domain.hostname), JSON.stringify(record))
+            : env.ROUTES.delete(kvHostKey(domain.hostname)),
+        );
+        // The lease may have expired while the write was in flight; then this write may be
+        // stale, so leave the site dirty for the cron instead of trusting anyone's marker.
+        if (!(await holdsRoutesLease(env.DB, siteId, token))) {
+          await clearRoutesSynced(env.DB, siteId);
+          return false;
+        }
+      }
+      if ((await snapshot(env, siteId)).key === state.key) {
+        await markRoutesSynced(env.DB, siteId, state.site.updated_at);
+        return true;
+      }
+    }
+    return false;
+  } finally {
+    await releaseRoutesLease(env.DB, siteId, token);
+  }
+}
+
+/**
+ * For request handlers: syncs now, retrying briefly while another writer holds the lease, so
+ * the caller's change is live when it responds. The cron catches anything still pending.
+ */
+export async function syncHostRecordsNow(env: Env, siteId: string) {
+  for (let attempt = 0; attempt < 4; attempt++) {
+    if (await syncHostRecords(env, siteId)) return true;
+    await sleep(1000);
+  }
+  return false;
+}
+
+/**
+ * Cron safety net: re-syncs sites whose host records may lag D1 (a request failed after D1
+ * committed, or KV kept rejecting writes). Guarantees serving converges to D1 within minutes.
+ */
+export async function reconcileHostRecords(env: Env) {
+  const ids = await sitesNeedingRouteSync(env.DB);
+  let synced = 0;
+  for (const id of ids) {
+    try {
+      if (await syncHostRecords(env, id)) synced++;
+    } catch (error) {
+      console.error("[routes] reconcile failed", id, error);
+    }
+  }
+  return { pending: ids.length, synced };
+}
+
+/**
+ * Hourly audit: compares every site's expected host records with KV and marks mismatches
+ * dirty, so the reconcile pass repairs them whatever race produced them. Writes nothing itself.
+ */
+export async function auditHostRecords(env: Env) {
+  const { results } = await env.DB.prepare("SELECT id FROM sites").all<{ id: string }>();
+  let dirty = 0;
+  for (const { id } of results) {
+    const state = await snapshot(env, id);
+    for (const domain of state.domains) {
+      const expected = expectedRecord(state, domain);
+      const actual = await env.ROUTES.get(kvHostKey(domain.hostname));
+      if ((expected ? JSON.stringify(expected) : null) !== actual) {
+        await clearRoutesSynced(env.DB, id);
+        dirty++;
+        break;
+      }
+    }
+  }
+  return { sites: results.length, dirty };
+}
+import { describe, expect, it } from "vitest";
+import { isApex, normalizeHostname } from "../src/domains.js";
+
+describe("normalizeHostname", () => {
+  it.each([
+    ["WWW.Example.co.kr", "www.example.co.kr"],
+    ["https://www.example.com/path", "www.example.com"],
+    ["shop.example.kr.", "shop.example.kr"],
+  ])("%s → %s", (input, host) => {
+    expect(normalizeHostname(input, "dsites.kr")).toBe(host);
+  });
+
+  it.each(["", "localhost", "a..b.com", "under_score.com", "dsites.kr", "x.dsites.kr", "jefes.localhost", "-bad.com"])(
+    "rejects %s",
+    (input) => {
+      expect(() => normalizeHostname(input, "dsites.kr")).toThrow();
+    },
+  );
+});
+
+describe("isApex", () => {
+  it.each([
+    ["example.co.kr", true],
+    ["www.example.co.kr", false],
+    ["example.kr", true],
+    ["www.example.kr", false],
+    ["example.com", true],
+    ["shop.example.com", false],
+    ["example.xyz", true],
+  ])("%s → %s", (host, apex) => {
+    expect(isApex(host)).toBe(apex);
+  });
+});
+
+exec
+/bin/zsh -lc "cat scripts/verify-m2-domains.mjs; cat apps/api/migrations/0004_domain_origin_pending.sql; cat docker/cf-mock.mjs; cat package.json; grep -n -A14 'primaryHostname\\|markRendered\\|markPublished' apps/api/src/store.ts; cat apps/api/migrations/0001* | tail -65" in /Users/steve/Projects/daniworks-sites-platform
+ succeeded in 0ms:
+// M2 step 2-8: custom domains through the Cloudflare for SaaS API (cf-mock in Docker).
+// register → instructions → pending (not served) → activation by cron → custom host serves,
+// subdomain 301s, canonical moves → removal restores the subdomain; failure and quota paths.
+import { API, ROUTER_PORT, api, chromium, evidence, localD1, localKv, routerRequest, uploadShared } from "./lib/verify.mjs";
+
+const { fieldFixture } = await import("../packages/renderer/src/templates/service-local/fixtures.ts");
+const CF_MOCK = process.env.CF_MOCK_URL ?? "http://127.0.0.1:8790";
+const ev = evidence("m2-domains");
+const { check } = ev;
+const run = Date.now().toString(36);
+const mock = (host, action) => fetch(`${CF_MOCK}/__mock/${host}/${action}`, { method: "POST" });
+const cron = () => fetch(`${API}/__scheduled?cron=*/5+*+*+*+*`);
+const settle = async (predicate, tries = 40) => {
+  for (let i = 0; i < tries; i++) {
+    if (await predicate()) return true;
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  return false;
+};
+
+uploadShared();
+const config = { ...structuredClone(fieldFixture), slug: `dom-${run}` };
+const sub = `${config.slug}.localhost`;
+const custom = `www.verify-${run}.co.kr`;
+const created = await api("POST", "/sites", { config, createdBy: "operator" });
+const siteId = created.data.siteId;
+await api("POST", `/sites/${siteId}/publish`);
+// A second published version, so rollback after the domain change can be checked.
+const v2 = await api("POST", `/sites/${siteId}/versions`, { config: { ...config, meta: { ...config.meta, title: "두 번째 버전" } } });
+await api("POST", `/sites/${siteId}/publish`, { versionId: v2.data.versionId });
+const quota0 = (await api("GET", "/domains/quota")).data;
+
+// 1. register
+const added = await api("POST", `/sites/${siteId}/domains`, { hostname: `https://WWW.verify-${run}.co.kr/` });
+check(
+  "등록: 201 pending, CNAME 안내(fallback 대상), www라 루트 아님",
+  added.status === 201 && added.data.hostname === custom && added.data.status === "pending" &&
+    added.data.instructions.cname.value === "fallback.dsites.kr" && added.data.instructions.apex === false &&
+    added.data.instructions.optionalTxt?.name === `_cf-custom-hostname.${custom}`,
+  added.data,
+);
+const apex = await api("POST", `/sites/${siteId}/domains`, { hostname: `verify-${run}.co.kr` });
+check("루트 도메인은 apex 표시와 www+포워딩 안내", apex.status === 201 && apex.data.instructions.apex === true && apex.data.instructions.note.includes("포워딩"));
+check("같은 도메인 중복 409", (await api("POST", `/sites/${siteId}/domains`, { hostname: custom })).status === 409);
+const other = await api("POST", "/sites", { config: { ...structuredClone(fieldFixture), slug: `dom2-${run}` }, createdBy: "operator" });
+check("다른 사이트가 쓰는 도메인 409", (await api("POST", `/sites/${other.data.siteId}/domains`, { hostname: custom })).status === 409);
+check("형식 오류 422", (await api("POST", `/sites/${siteId}/domains`, { hostname: "not a domain" })).status === 422);
+check("플랫폼 도메인 422", (await api("POST", `/sites/${siteId}/domains`, { hostname: "x.dsites.kr" })).status === 422 &&
+  (await api("POST", `/sites/${siteId}/domains`, { hostname: `x.${config.slug}.localhost` })).status === 422);
+const quota1 = (await api("GET", "/domains/quota")).data;
+check("quota: 호스트네임 2개 증가, 포함 100개", Number.isInteger(quota0.used) && quota1.used === quota0.used + 2 && quota1.included === 100, { quota0, quota1 });
+
+// 2. pending: not served, subdomain unaffected
+check("검증 전 커스텀 도메인은 404", (await routerRequest(custom, "/")).status === 404);
+check("검증 전 서브도메인은 그대로 200", (await routerRequest(sub, "/")).status === 200);
+
+// 3. activation by the cron
+await mock(custom, "activate");
+await cron();
+const active = await settle(async () => (await api("GET", `/sites/${siteId}/domains`)).data.domains.find((d) => d.hostname === custom)?.status === "active");
+check("cron이 활성화를 반영", active);
+let home;
+await settle(async () => (home = await routerRequest(custom, "/")).status === 200);
+check("커스텀 도메인 200, canonical이 커스텀 도메인", home.status === 200 && home.body.includes(`<link rel="canonical" href="http://${custom}/">`));
+const redirect = await routerRequest(sub, "/privacy?x=1");
+check("서브도메인은 경로를 유지해 301", redirect.status === 301 && redirect.headers.location === `http://${custom}/privacy?x=1`, { location: redirect.headers.location });
+check("KV: 커스텀 레코드는 redirect 없음, 서브도메인은 커스텀으로", JSON.parse(localKv("get", `host:${custom}`)).redirectTo === null && JSON.parse(localKv("get", `host:${sub}`)).redirectTo === custom);
+check("사이트 목록의 대표 호스트가 커스텀 도메인", (await api("GET", "/sites")).data.sites.find((s) => s.id === siteId)?.hostname === custom);
+
+// 4. a browser on the custom hostname
+const browser = await chromium().launch({ args: [`--host-resolver-rules=MAP ${custom} 127.0.0.1`] });
+const page = await browser.newPage();
+const errors = [];
+page.on("pageerror", (e) => errors.push(String(e)));
+const response = await page.goto(`http://${custom}:${ROUTER_PORT}/`, { waitUntil: "networkidle" });
+const hydrated = await page.evaluate(() => Object.keys(document.getElementById("root") ?? {}).some((k) => k.startsWith("__reactContainer")));
+check("브라우저: 커스텀 도메인에서 열리고 하이드레이션", response?.status() === 200 && hydrated && !errors.length, { errors });
+await browser.close();
+
+// 4a. rollback to a version rendered before the domain change re-renders its origin
+const rolled = await api("POST", `/sites/${siteId}/rollback`, { versionId: created.data.versionId });
+const rolledHome = await routerRequest(custom, "/");
+check("도메인 변경 전 버전으로 롤백해도 canonical은 현재 도메인", rolled.status === 200 && rolledHome.headers["x-site-version"] === "1" && rolledHome.body.includes(`<link rel="canonical" href="http://${custom}/">`));
+await api("POST", `/sites/${siteId}/publish`, { versionId: v2.data.versionId });
+
+// 4b. resilience: an interrupted origin re-render is retried by the cron
+localD1(`UPDATE sites SET origin_pending = 1 WHERE id = '${siteId}'`);
+localD1(`UPDATE site_versions SET rendered_origin = 'stale' WHERE site_id = '${siteId}'`);
+await cron();
+const retried = await settle(async () => localD1(`SELECT origin_pending FROM sites WHERE id = '${siteId}'`)[0].origin_pending === 0);
+const rerendered = localD1(`SELECT rendered_origin FROM site_versions WHERE id = (SELECT published_version_id FROM sites WHERE id = '${siteId}')`)[0];
+check("중단된 재렌더는 cron이 다시 해서 origin_pending 0", retried && rerendered.rendered_origin.includes(custom), rerendered);
+
+// 5. a failing hostname never serves
+await mock(apex.data.hostname, "fail");
+const refreshed = await api("POST", `/sites/${siteId}/domains/${apex.data.hostname}/refresh`);
+check("검증 실패는 failed, 서빙 안 함", refreshed.data.status === "failed" && (await routerRequest(apex.data.hostname, "/")).status === 404);
+
+// 5b. an active hostname that Cloudflare later moves falls back to the subdomain (cron)
+const extra = `shop-${run}.example.com`;
+await api("POST", `/sites/${other.data.siteId}/publish`);
+await api("POST", `/sites/${other.data.siteId}/domains`, { hostname: extra });
+await mock(extra, "activate");
+await api("POST", `/sites/${other.data.siteId}/domains/${extra}/refresh`);
+await mock(extra, "fail");
+localD1(`UPDATE domains SET checked_at = '2000-01-01T00:00:00.000Z' WHERE hostname = '${extra}'`);
+await cron();
+const fellBack = await settle(async () => (await routerRequest(`dom2-${run}.localhost`, "/")).status === 200);
+check("활성 도메인이 나중에 실패하면 cron이 찾아 서브도메인으로 복귀", fellBack && (await routerRequest(extra, "/")).status === 404);
+
+// 5b'. a hostname deleted at Cloudflare outside the API is treated as failed
+const gone = `gone-${run}.example.com`;
+await api("POST", `/sites/${other.data.siteId}/domains`, { hostname: gone });
+await mock(gone, "activate");
+await api("POST", `/sites/${other.data.siteId}/domains/${gone}/refresh`);
+const redirectingBefore = (await routerRequest(`dom2-${run}.localhost`, "/")).status === 301;
+await mock(gone, "delete");
+const refreshedGone = await api("POST", `/sites/${other.data.siteId}/domains/${gone}/refresh`);
+check("Cloudflare에서 지워진 호스트네임(404)은 failed, 서브도메인 복귀", redirectingBefore && refreshedGone.data.status === "failed" && (await routerRequest(`dom2-${run}.localhost`, "/")).status === 200);
+await api("DELETE", `/sites/${other.data.siteId}/domains/${gone}`);
+
+// 5c. a removal interrupted after the row was marked finishes on the next cron
+localD1(`UPDATE domains SET status = 'removing' WHERE hostname = '${extra}'`);
+await cron();
+const finished = await settle(async () => localD1(`SELECT COUNT(*) AS n FROM domains WHERE hostname = '${extra}'`)[0].n === 0);
+check("중단된 삭제는 cron이 마무리(행·KV 정리)", finished && localKv("get", `host:${extra}`).length === 0);
+
+// 6. removal restores the subdomain and stops billing
+const removed = await api("DELETE", `/sites/${siteId}/domains/${custom}`);
+await api("DELETE", `/sites/${siteId}/domains/${apex.data.hostname}`);
+const quota2 = (await api("GET", "/domains/quota")).data;
+let back;
+await settle(async () => (back = await routerRequest(sub, "/")).status === 200);
+check("삭제: 커스텀 404, 서브도메인 다시 200·canonical 복귀", removed.status === 200 && (await routerRequest(custom, "/")).status === 404 && back.status === 200 && back.body.includes(`href="http://${sub}/"`));
+check("삭제하면 Cloudflare 호스트네임도 삭제(quota 원복)", Number.isInteger(quota2.used) && quota2.used === quota0.used, quota2);
+check("없는 도메인 삭제 404", (await api("DELETE", `/sites/${siteId}/domains/${custom}`)).status === 404);
+
+ev.finish({ siteId, custom });
+-- 1 while a site's primary host changed (custom domain activated, failed or removed) and the live
+-- version has not been re-rendered for the new origin yet. The domains cron retries until it is 0.
+ALTER TABLE sites ADD COLUMN origin_pending INTEGER NOT NULL DEFAULT 0;
+// Stand-in for the Cloudflare for SaaS custom hostnames API (same paths and envelope), so the
+// api Worker's real client runs unchanged in Docker. In-memory; restart clears it.
+// Control (tests only): POST /__mock/:hostname/activate | /fail | /pending | /delete, GET /__mock/calls
+import http from "node:http";
+import { randomUUID } from "node:crypto";
+
+const TOKEN = process.env.CF_API_TOKEN ?? "mock-token";
+const hostnames = new Map();
+const calls = [];
+
+const send = (res, status, body) => {
+  res.writeHead(status, { "content-type": "application/json" });
+  res.end(JSON.stringify(body));
+};
+const ok = (res, result, extra = {}) => send(res, 200, { success: true, errors: [], messages: [], result, ...extra });
+const fail = (res, status, code, message) => send(res, status, { success: false, errors: [{ code, message }], result: null });
+
+function view(h) {
+  return {
+    id: h.id,
+    hostname: h.hostname,
+    status: h.status,
+    ssl: { method: h.sslMethod, type: "dv", status: h.sslStatus, validation_records: [] },
+    ownership_verification: { type: "txt", name: `_cf-custom-hostname.${h.hostname}`, value: h.token },
+    verification_errors: h.status === "pending" ? ["custom hostname does not CNAME to this zone."] : [],
+    created_at: h.createdAt,
+  };
+}
+
+http
+  .createServer(async (req, res) => {
+    const url = new URL(req.url, "http://cf-mock");
+    let raw = "";
+    for await (const chunk of req) raw += chunk;
+    calls.push({ method: req.method, path: url.pathname + url.search });
+
+    const control = url.pathname.match(/^\/__mock\/([^/]+)\/(activate|fail|pending|delete)$/);
+    if (control && req.method === "POST") {
+      const h = [...hostnames.values()].find((x) => x.hostname === control[1]);
+      if (!h) return fail(res, 404, 1436, "not found");
+      if (control[2] === "activate") Object.assign(h, { status: "active", sslStatus: "active" });
+      if (control[2] === "fail") Object.assign(h, { status: "moved", sslStatus: "pending_validation" });
+      if (control[2] === "pending") Object.assign(h, { status: "pending", sslStatus: "pending_validation" });
+      if (control[2] === "delete") hostnames.delete(h.id);
+      return ok(res, view(h));
+    }
+    if (url.pathname === "/__mock/calls") return ok(res, calls);
+    if (url.pathname === "/health") return ok(res, { ok: true });
+
+    const m = url.pathname.match(/^\/client\/v4\/zones\/([^/]+)\/custom_hostnames(?:\/([^/]+))?$/);
+    if (!m) return fail(res, 404, 7000, "No route for that URI");
+    if (req.headers.authorization !== `Bearer ${TOKEN}`) return fail(res, 403, 10000, "Authentication error");
+    const id = m[2];
+
+    if (req.method === "POST" && !id) {
+      const body = JSON.parse(raw || "{}");
+      if ([...hostnames.values()].some((h) => h.hostname === body.hostname)) {
+        return fail(res, 409, 1406, "Duplicate custom hostname found.");
+      }
+      const h = {
+        id: randomUUID(),
+        hostname: body.hostname,
+        status: "pending",
+        sslStatus: "initializing",
+        sslMethod: body.ssl?.method ?? "http",
+        token: randomUUID(),
+        createdAt: new Date().toISOString(),
+      };
+      hostnames.set(h.id, h);
+      return ok(res, view(h));
+    }
+    if (req.method === "GET" && !id) {
+      const all = [...hostnames.values()];
+      return ok(res, all.slice(0, Number(url.searchParams.get("per_page") ?? 50)).map(view), { result_info: { total_count: all.length } });
+    }
+    const h = hostnames.get(id);
+    if (!h) return fail(res, 404, 1436, "The custom hostname was not found.");
+    if (req.method === "GET") {
+      if (h.sslStatus === "initializing") h.sslStatus = "pending_validation";
+      return ok(res, view(h));
+    }
+    if (req.method === "DELETE") {
+      hostnames.delete(id);
+      return ok(res, { id });
+    }
+    return fail(res, 405, 7001, "Method not allowed");
+  })
+  .listen(8790, () => console.log("cf-mock on :8790"));
+{
+  "name": "daniworks-sites-platform",
+  "private": true,
+  "packageManager": "pnpm@10.28.0",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "build": "pnpm --filter @sites/renderer build",
+    "test": "pnpm -r test",
+    "check-types": "pnpm -r check-types",
+    "dev:api": "pnpm --filter api dev",
+    "dev:router": "pnpm --filter router dev",
+    "upload:shared": "node scripts/upload-shared.mjs",
+    "verify:m1": "node scripts/verify-m1.mjs",
+    "deploy:staging": "pnpm build && pnpm --filter api migrate:staging && pnpm --filter api deploy:staging && pnpm --filter router deploy:staging",
+    "verify:staging": "node scripts/verify-staging.mjs"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/client": "2.4.0",
+    "chrome-launcher": "1.2.3",
+    "lighthouse": "13.6.0",
+    "playwright": "1.65.1"
+  }
+}
+120:export async function markRendered(db: D1Database, versionId: string, assetVersion: string, renderKey: string) {
+121-  await db
+122-    .prepare("UPDATE site_versions SET rendered_at = ?, asset_version = ?, rendered_origin = ? WHERE id = ?")
+123-    .bind(now(), assetVersion, renderKey, versionId)
+124-    .run();
+125-}
+126-
+127:export async function markPublished(db: D1Database, siteId: string, versionId: string, templateVersion: string) {
+128-  const at = now();
+129-  await db.batch([
+130-    db
+131-      .prepare("UPDATE site_versions SET first_published_at = COALESCE(first_published_at, ?) WHERE id = ?")
+132-      .bind(at, versionId),
+133-    db
+134-      .prepare(
+135-        "UPDATE sites SET published_version_id = ?, published_at = ?, template_version = ?, updated_at = ? WHERE id = ?",
+136-      )
+137-      .bind(versionId, at, templateVersion, at, siteId),
+138-  ]);
+139-  return at;
+140-}
+141-
+--
+143:export async function primaryHostname(db: D1Database, site: SiteRow, baseDomain: string): Promise<string> {
+144-  const custom = await db
+145-    .prepare("SELECT hostname FROM domains WHERE site_id = ? AND kind = 'custom' AND status = 'active' ORDER BY created_at LIMIT 1")
+146-    .bind(site.id)
+147-    .first<{ hostname: string }>();
+148-  return custom?.hostname ?? `${site.slug}.${baseDomain}`;
+149-}
+150-
+151-export async function versionByPreviewToken(db: D1Database, previewToken: string): Promise<VersionRow> {
+152-  const row = await db
+153-    .prepare("SELECT * FROM site_versions WHERE preview_token = ?")
+154-    .bind(previewToken)
+155-    .first<VersionRow>();
+156-  if (!row) throw new HttpError(404, "프리뷰가 없습니다");
+157-  return row;
+-- Sites, their append-only versions, and the hostnames that route to them.
+CREATE TABLE sites (
+  id TEXT PRIMARY KEY,
+  slug TEXT NOT NULL UNIQUE,
+  template_id TEXT NOT NULL,
+  published_version_id TEXT,
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'suspended')),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE site_versions (
+  id TEXT PRIMARY KEY,
+  site_id TEXT NOT NULL REFERENCES sites(id),
+  number INTEGER NOT NULL,
+  config TEXT NOT NULL,
+  created_by TEXT NOT NULL CHECK (created_by IN ('ai', 'operator', 'customer')),
+  note TEXT,
+  preview_token TEXT NOT NULL UNIQUE,
+  asset_version TEXT,
+  rendered_at TEXT,
+  first_published_at TEXT,
+  created_at TEXT NOT NULL,
+  UNIQUE (site_id, number)
+);
+
+CREATE TABLE domains (
+  hostname TEXT PRIMARY KEY,
+  site_id TEXT NOT NULL REFERENCES sites(id),
+  kind TEXT NOT NULL CHECK (kind IN ('subdomain', 'custom')),
+  status TEXT NOT NULL DEFAULT 'active',
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX site_versions_site ON site_versions(site_id, number DESC);
+CREATE INDEX domains_site ON domains(site_id);
+
+exec
+/bin/zsh -lc "pnpm --filter api test; pnpm --filter api check-types; nl -ba apps/api/src/domains.ts | sed -n '130,245p'; nl -ba apps/api/src/publish.ts | tail -35" in /Users/steve/Projects/daniworks-sites-platform
+ succeeded in 843ms:
+
+> api@ test /Users/steve/Projects/daniworks-sites-platform/apps/api
+> vitest run
+
+
+ RUN  v5.1.1 /Users/steve/Projects/daniworks-sites-platform/apps/api
+
+
+ Test Files  5 passed (5)
+      Tests  70 passed (70)
+   Start at  04:24:05
+   Duration  248ms (import 59%, transform 28%, tests 11%, worker 2%)
+
+
+> api@ check-types /Users/steve/Projects/daniworks-sites-platform/apps/api
+> tsc -p tsconfig.json
+
+   130	      await env.DB.prepare("UPDATE domains SET last_error = ?, checked_at = ? WHERE hostname = ?")
+   131	        .bind(String(error instanceof Error ? error.message : error).slice(0, 500), now(), row.hostname)
+   132	        .run();
+   133	      return row.status;
+   134	    }
+   135	  }
+   136	  const ready = cf?.status === "active" && cf.ssl?.status === "active";
+   137	  const failed = !cf || ["moved", "deleted", "blocked"].includes(cf.status);
+   138	  const status = ready ? "active" : failed ? "failed" : "pending";
+   139	  const error = cf ? cf.verification_errors?.join("; ") || null : "Cloudflare에 호스트네임이 없습니다";
+   140	  const update = env.DB.prepare("UPDATE domains SET status = ?, ssl_status = ?, last_error = ?, checked_at = ? WHERE hostname = ?").bind(
+   141	    status,
+   142	    cf?.ssl?.status ?? null,
+   143	    error,
+   144	    now(),
+   145	    row.hostname,
+   146	  );
+   147	  if (status === row.status) {
+   148	    await update.run();
+   149	    return status;
+   150	  }
+   151	  // Status and the re-render marker commit together, so an interruption here is retried by the cron.
+   152	  await env.DB.batch([
+   153	    update,
+   154	    env.DB.prepare("UPDATE sites SET origin_pending = 1, updated_at = ? WHERE id = ?").bind(now(), row.site_id),
+   155	  ]);
+   156	  await afterPrimaryChange(env, row.site_id);
+   157	  return status;
+   158	}
+   159	
+   160	/**
+   161	 * Removal is resumable: stop billing at Cloudflare, mark the row `removing` (routing treats it
+   162	 * as gone), restore the primary host, and only then delete the row. A failure at any step
+   163	 * leaves a `removing` row that a retry or the cron finishes.
+   164	 */
+   165	export async function removeDomain(env: Env, siteId: string, hostname: string) {
+   166	  const row = await env.DB.prepare("SELECT * FROM domains WHERE hostname = ? AND site_id = ? AND kind = 'custom'")
+   167	    .bind(hostname, siteId)
+   168	    .first<DomainRow>();
+   169	  if (!row) throw new HttpError(404, "연결된 커스텀 도메인이 아닙니다");
+   170	  if (row.cf_hostname_id) await requireSaas(env).delete(row.cf_hostname_id);
+   171	  if (row.status !== "removing") {
+   172	    await env.DB.prepare("UPDATE domains SET status = 'removing' WHERE hostname = ?").bind(hostname).run();
+   173	  }
+   174	  await afterPrimaryChange(env, siteId);
+   175	  await env.ROUTES.delete(kvHostKey(hostname));
+   176	  await env.DB.prepare("DELETE FROM domains WHERE hostname = ? AND status = 'removing'").bind(hostname).run();
+   177	  await touchSite(env, siteId);
+   178	  return { hostname, removed: true };
+   179	}
+   180	
+   181	/**
+   182	 * Cron: finish interrupted removals, retry pending origin re-renders, check pending hostnames
+   183	 * every few minutes (for 14 days) and active ones every 6 hours (a moved or expired hostname
+   184	 * falls back to the platform subdomain).
+   185	 */
+   186	export async function maintainDomains(env: Env) {
+   187	  const result = { removed: 0, rerendered: 0, checked: 0, changed: 0 };
+   188	  const { results: removing } = await env.DB.prepare("SELECT hostname, site_id FROM domains WHERE status = 'removing' LIMIT 20")
+   189	    .all<{ hostname: string; site_id: string }>();
+   190	  for (const row of removing) {
+   191	    try {
+   192	      await removeDomain(env, row.site_id, row.hostname);
+   193	      result.removed++;
+   194	    } catch (error) {
+   195	      console.error("[domains] removal retry failed", row.hostname, error);
+   196	    }
+   197	  }
+   198	  const { results: pendingOrigins } = await env.DB.prepare("SELECT id FROM sites WHERE origin_pending = 1 LIMIT 20").all<{ id: string }>();
+   199	  for (const { id } of pendingOrigins) {
+   200	    try {
+   201	      await afterPrimaryChange(env, id);
+   202	      result.rerendered++;
+   203	    } catch (error) {
+   204	      console.error("[domains] origin re-render failed", id, error);
+   205	    }
+   206	  }
+   207	  if (!SaasClient.configured(env)) return result;
+   208	  const at = Date.now();
+   209	  const { results } = await env.DB.prepare(
+   210	    `SELECT * FROM domains WHERE kind = 'custom' AND (
+   211	       (status = 'pending' AND created_at >= ? AND (checked_at IS NULL OR checked_at < ?))
+   212	       OR (status = 'active' AND (checked_at IS NULL OR checked_at < ?))
+   213	     ) ORDER BY checked_at LIMIT 50`,
+   214	  )
+   215	    .bind(new Date(at - 14 * 86_400_000).toISOString(), new Date(at - 4 * 60_000).toISOString(), new Date(at - 6 * 3_600_000).toISOString())
+   216	    .all<DomainRow>();
+   217	  for (const row of results) {
+   218	    try {
+   219	      if ((await refreshDomain(env, row)) !== row.status) result.changed++;
+   220	      result.checked++;
+   221	    } catch (error) {
+   222	      console.error("[domains] refresh failed", row.hostname, error);
+   223	    }
+   224	  }
+   225	  return result;
+   226	}
+   227	
+   228	export async function domainQuota(env: Env) {
+   229	  const used = await requireSaas(env).count();
+   230	  return { used, included: INCLUDED_HOSTNAMES, overage: Math.max(0, used - INCLUDED_HOSTNAMES) };
+   231	}
+    82	 * the site's origin changed since that version was rendered (custom domain added or removed):
+    83	 * then only its HTML is re-rendered so canonical and OG URLs point at the current host.
+    84	 */
+    85	export async function rollback(env: Env, site: SiteRow, versionId: string) {
+    86	  const version = await getVersion(env.DB, site.id, versionId);
+    87	  if (!version.first_published_at) throw new HttpError(409, "게시된 적 없는 버전으로는 롤백할 수 없습니다");
+    88	  const exists = await env.SITES.head(r2PageKey(site.id, version.id));
+    89	  if (!exists) throw new HttpError(409, "렌더된 파일이 R2에 없습니다. publish로 다시 게시하세요");
+    90	  const pages = await ensureRendered(env, version, await siteOrigin(env, site), { keepAssets: true });
+    91	  return pointTo(env, site, version, pages);
+    92	}
+    93	
+    94	/**
+    95	 * The site's origin changed (custom domain activated, failed or removed): re-render the live
+    96	 * version's HTML in place (same R2 keys). The KV pointer is not touched, so this can never undo
+    97	 * a concurrent publish; if the live version changes meanwhile, the new one is checked too.
+    98	 * Returns false when it could not settle (the caller keeps origin_pending for the cron).
+    99	 */
+   100	export async function rerenderLive(env: Env, siteId: string): Promise<boolean> {
+   101	  for (let attempt = 0; attempt < 3; attempt++) {
+   102	    const site = await getSite(env.DB, siteId);
+   103	    if (!site.published_version_id) {
+   104	      await syncHostRecordsNow(env, siteId);
+   105	      return true;
+   106	    }
+   107	    const version = await getVersion(env.DB, siteId, site.published_version_id);
+   108	    await ensureRendered(env, version, await siteOrigin(env, site));
+   109	    const after = await getSite(env.DB, siteId);
+   110	    if (after.published_version_id === version.id) {
+   111	      await syncHostRecordsNow(env, siteId);
+   112	      return true;
+   113	    }
+   114	  }
+   115	  return false;
+   116	}
+
+codex
+Domain lifecycle handling has recovery and concurrency defects that can leave domains disabled, resurrect removed mappings, or retain stale canonical origins. The API's 70 tests and type check pass, but do not cover these scenarios.
+
+Full review comments:
+
+- [P2] Continue polling previously active domains after transient validation — /Users/steve/Projects/daniworks-sites-platform/apps/api/src/domains.ts:210-212
+  If a domain registered more than 14 days ago temporarily loses active SSL or hostname status, `refreshDomain` changes it to `pending`. This query then excludes it permanently because of its original `created_at`, so even after Cloudflare recovers, the domain remains disabled and the site stays on its platform subdomain until someone manually refreshes it. Apply the onboarding timeout only to domains that have never activated, or track when the pending state began.
+
+- [P2] Fence refresh updates against concurrent domain removal — /Users/steve/Projects/daniworks-sites-platform/apps/api/src/domains.ts:140-145
+  When a refresh reads an active Cloudflare response just before a concurrent removal deletes the Cloudflare hostname and marks the row `removing`, this unconditional update can change the row back to `active`. The removal's final conditional DELETE then removes nothing but still reports success, leaving a domain row that can redirect the platform subdomain to the now-deleted hostname. Guard updates using the expected status and Cloudflare ID, and prevent refreshes from reviving removing rows.
+
+- [P2] Verify the origin as well as the version before clearing pending — /Users/steve/Projects/daniworks-sites-platform/apps/api/src/publish.ts:108-112
+  If two domain changes overlap on the same live version, an older `rerenderLive` can finish writing HTML for the previous origin after the newer change has rendered the correct origin. Checking only `published_version_id` still reports success, and `afterPrimaryChange` clears `origin_pending`, leaving stale canonical and OG URLs indefinitely because subsequent domain polls do not rerender unchanged statuses. Serialize origin renders per site or fence completion against an origin-change generation, retaining the pending marker when it changes.
+Domain lifecycle handling has recovery and concurrency defects that can leave domains disabled, resurrect removed mappings, or retain stale canonical origins. The API's 70 tests and type check pass, but do not cover these scenarios.
+
+Full review comments:
+
+- [P2] Continue polling previously active domains after transient validation — /Users/steve/Projects/daniworks-sites-platform/apps/api/src/domains.ts:210-212
+  If a domain registered more than 14 days ago temporarily loses active SSL or hostname status, `refreshDomain` changes it to `pending`. This query then excludes it permanently because of its original `created_at`, so even after Cloudflare recovers, the domain remains disabled and the site stays on its platform subdomain until someone manually refreshes it. Apply the onboarding timeout only to domains that have never activated, or track when the pending state began.
+
+- [P2] Fence refresh updates against concurrent domain removal — /Users/steve/Projects/daniworks-sites-platform/apps/api/src/domains.ts:140-145
+  When a refresh reads an active Cloudflare response just before a concurrent removal deletes the Cloudflare hostname and marks the row `removing`, this unconditional update can change the row back to `active`. The removal's final conditional DELETE then removes nothing but still reports success, leaving a domain row that can redirect the platform subdomain to the now-deleted hostname. Guard updates using the expected status and Cloudflare ID, and prevent refreshes from reviving removing rows.
+
+- [P2] Verify the origin as well as the version before clearing pending — /Users/steve/Projects/daniworks-sites-platform/apps/api/src/publish.ts:108-112
+  If two domain changes overlap on the same live version, an older `rerenderLive` can finish writing HTML for the previous origin after the newer change has rendered the correct origin. Checking only `published_version_id` still reports success, and `afterPrimaryChange` clears `origin_pending`, leaving stale canonical and OG URLs indefinitely because subsequent domain polls do not rerender unchanged statuses. Serialize origin renders per site or fence completion against an origin-change generation, retaining the pending marker when it changes.

@@ -1,0 +1,1775 @@
+OpenAI Codex v0.167.0
+--------
+workdir: /Users/steve/Projects/daniworks-sites-platform
+model: gpt-6.1-sol
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: low
+reasoning summaries: none
+session id: 01a1efe9-b4d7-7ab2-b8c7-f7a7b5669d9b
+--------
+user
+current changes
+exec
+/bin/zsh -lc 'git status --short; find .. -name AGENTS.md -o -name AGENTS.override.md' in /Users/steve/Projects/daniworks-sites-platform
+exec
+/bin/zsh -lc 'pwd; ls -a; find . -name AGENTS.md -o -name AGENTS.override.md; git diff --stat; git diff' in /Users/steve/Projects/daniworks-sites-platform
+ succeeded in 568ms:
+/Users/steve/Projects/daniworks-sites-platform
+.
+..
+.dockerignore
+.git
+.gitignore
+README.md
+apps
+docker
+docker-compose.yml
+docs
+evidence
+node_modules
+package.json
+packages
+pnpm-lock.yaml
+pnpm-workspace.yaml
+scripts
+tsconfig.base.json
+./node_modules/.pnpm/@dani-builder+strapi-client@2.5.0/node_modules/@dani-builder/strapi-client/AGENTS.md
+./node_modules/.pnpm/next@16.4.6_react-dom@19.3.1_react@19.3.1__react@19.3.1/node_modules/next/AGENTS.md
+./node_modules/.pnpm/next@16.4.6_@opentelemetry+api@1.10.0_@types+node@26.6.6_react-dom@19.3.1_react@19.3.1__react@19.3.1/node_modules/next/AGENTS.md
+ apps/api/src/index.ts             | 19 ++++++++--
+ apps/api/src/keys.ts              | 14 ++++++++
+ apps/api/src/publish.ts           |  5 ++-
+ apps/api/src/store.ts             | 75 +++++++++++++++++++++++++++++++++++++--
+ apps/api/wrangler.toml            |  7 ++++
+ apps/router/src/index.ts          | 56 ++++++++++++++++++++---------
+ apps/router/src/keys.ts           | 14 ++++++++
+ docker-compose.yml                |  2 ++
+ docker/workers.sh                 |  2 +-
+ evidence/m2-assets/results.json   | 20 +++++------
+ evidence/m2-template/results.json | 70 ++++++++++++++++++------------------
+ scripts/lib/verify.mjs            | 17 +++++++++
+ 12 files changed, 231 insertions(+), 70 deletions(-)
+diff --git a/apps/api/src/index.ts b/apps/api/src/index.ts
+index 426fc5e..bd0ebf9 100644
+--- a/apps/api/src/index.ts
++++ b/apps/api/src/index.ts
+@@ -2,13 +2,15 @@ import { parseSiteConfig, renderSite, SiteConfigError, type SiteConfig } from "@
+ import { listAssets, uploadAsset } from "./assets.js";
+ import type { Env } from "./env.js";
+ import { HttpError, json, readJson, requireAdmin } from "./http.js";
+-import { kvHostKey, MEDIA_PATH, r2MediaKey, r2SharedKey } from "./keys.js";
++import { MEDIA_PATH, r2MediaKey, r2SharedKey } from "./keys.js";
++import { reconcileHostRecords, syncHostRecordsNow } from "./routes.js";
+ import { assetBase, publish, rollback, siteOrigin } from "./publish.js";
+ import {
+   addVersion,
+   createSite,
+   getSite,
+   listVersions,
++  setSiteStatus,
+   versionByPreviewToken,
+   type CreatedBy,
+ } from "./store.js";
+@@ -90,7 +92,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
+     const config = validated(body.config);
+     const hostname = `${config.slug}.${env.BASE_DOMAIN}`;
+     const { siteId, versionId } = await createSite(env.DB, config, creator(body.createdBy), hostname);
+-    await env.ROUTES.put(kvHostKey(hostname), siteId);
++    await syncHostRecordsNow(env, siteId);
+     return json({ siteId, versionId, hostname }, 201);
+   }
+ 
+@@ -119,6 +121,15 @@ async function handle(request: Request, env: Env): Promise<Response> {
+     return json(await publish(env, site, body.versionId));
+   }
+ 
++  // POST /sites/:id/suspend | /resume: stop or restart public serving (non-payment, requests).
++  if (method === "POST" && (parts[2] === "suspend" || parts[2] === "resume") && parts.length === 3) {
++    if (site.cancelled_at) throw new HttpError(409, "해지된 사이트입니다");
++    const status = parts[2] === "suspend" ? "suspended" : "active";
++    await setSiteStatus(env.DB, site.id, status);
++    await syncHostRecordsNow(env, site.id);
++    return json({ siteId: site.id, status });
++  }
++
+   // POST /sites/:id/rollback {versionId}
+   if (method === "POST" && parts[2] === "rollback") {
+     const body = await readJson<{ versionId: string }>(request);
+@@ -130,6 +141,10 @@ async function handle(request: Request, env: Env): Promise<Response> {
+ }
+ 
+ export default {
++  async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext) {
++    ctx.waitUntil(reconcileHostRecords(env).then((result) => console.log("[routes] reconcile", JSON.stringify(result))));
++  },
++
+   async fetch(request: Request, env: Env): Promise<Response> {
+     try {
+       return await handle(request, env);
+diff --git a/apps/api/src/keys.ts b/apps/api/src/keys.ts
+index 62a908f..4858c27 100644
+--- a/apps/api/src/keys.ts
++++ b/apps/api/src/keys.ts
+@@ -16,3 +16,17 @@ export interface PublishedPointer {
+   /** Routes rendered for this version. Missing on M1 pointers, which only had `/`. */
+   pages?: string[];
+ }
++
++/**
++ * Value of kvHostKey since M2: everything the router needs in one read. M1 stored the bare
++ * siteId string there and the pointer under kvSiteKey; the router still accepts that form.
++ */
++export interface HostRecord {
++  siteId: string;
++  /** `suspended`: 503 (temporary). `cancelled`: 410. */
++  status: "active" | "suspended" | "cancelled";
++  /** Missing until the first publish. */
++  pointer: PublishedPointer | null;
++  /** 301 target host, e.g. the default subdomain once a custom domain is active. */
++  redirectTo: string | null;
++}
+diff --git a/apps/api/src/publish.ts b/apps/api/src/publish.ts
+index 175f8df..7259c46 100644
+--- a/apps/api/src/publish.ts
++++ b/apps/api/src/publish.ts
+@@ -2,6 +2,7 @@ import { ASSET_VERSION, renderSite, type SiteConfig } from "@sites/renderer";
+ import type { Env } from "./env.js";
+ import { HttpError } from "./http.js";
+ import { kvSiteKey, r2PageKey, r2SharedKey, type PublishedPointer } from "./keys.js";
++import { routesOf, syncHostRecordsNow } from "./routes.js";
+ import {
+   getVersion,
+   latestVersion,
+@@ -27,9 +28,6 @@ async function requireSharedAssets(env: Env) {
+   }
+ }
+ 
+-/** Routes a stored version renders to. M1 versions (v1 configs) have only the home page. */
+-const routesOf = (config: SiteConfig) => (config.version === 2 ? ["/", "/privacy"] : ["/"]);
+-
+ /**
+  * Renders every page of a version to R2 unless it is already rendered against the current
+  * shared assets and origin.
+@@ -53,6 +51,7 @@ async function pointTo(env: Env, site: SiteRow, version: VersionRow, pages: stri
+   const publishedAt = await markPublished(env.DB, site.id, version.id, ASSET_VERSION);
+   const pointer: PublishedPointer = { versionId: version.id, number: version.number, publishedAt, pages };
+   await env.ROUTES.put(kvSiteKey(site.id), JSON.stringify(pointer));
++  await syncHostRecordsNow(env, site.id);
+   return pointer;
+ }
+ 
+diff --git a/apps/api/src/store.ts b/apps/api/src/store.ts
+index e3f2b06..97b0e05 100644
+--- a/apps/api/src/store.ts
++++ b/apps/api/src/store.ts
+@@ -11,6 +11,8 @@ export interface SiteRow {
+   notify_email: string | null;
+   template_version: string | null;
+   cancelled_at: string | null;
++  published_at: string | null;
++  routes_synced_at: string | null;
+   created_at: string;
+   updated_at: string;
+ }
+@@ -127,8 +129,10 @@ export async function markPublished(db: D1Database, siteId: string, versionId: s
+       .prepare("UPDATE site_versions SET first_published_at = COALESCE(first_published_at, ?) WHERE id = ?")
+       .bind(at, versionId),
+     db
+-      .prepare("UPDATE sites SET published_version_id = ?, template_version = ?, updated_at = ? WHERE id = ?")
+-      .bind(versionId, templateVersion, at, siteId),
++      .prepare(
++        "UPDATE sites SET published_version_id = ?, published_at = ?, template_version = ?, updated_at = ? WHERE id = ?",
++      )
++      .bind(versionId, at, templateVersion, at, siteId),
+   ]);
+   return at;
+ }
+@@ -150,3 +154,70 @@ export async function versionByPreviewToken(db: D1Database, previewToken: string
+   if (!row) throw new HttpError(404, "프리뷰가 없습니다");
+   return row;
+ }
++
++export async function setSiteStatus(db: D1Database, siteId: string, status: "active" | "suspended") {
++  await db.prepare("UPDATE sites SET status = ?, updated_at = ? WHERE id = ?").bind(status, now(), siteId).run();
++}
++
++/** Authoritative serving state from D1: site row plus the published version, if any. */
++export async function servingState(db: D1Database, siteId: string) {
++  const site = await getSite(db, siteId);
++  const version = site.published_version_id
++    ? await db
++        .prepare("SELECT id, number, config FROM site_versions WHERE id = ?")
++        .bind(site.published_version_id)
++        .first<{ id: string; number: number; config: string }>()
++    : null;
++  return { site, version };
++}
++
++/** Records that KV host records reflect the site as of `updatedAt` (no-op if the row moved on). */
++export async function markRoutesSynced(db: D1Database, siteId: string, updatedAt: string) {
++  await db
++    .prepare("UPDATE sites SET routes_synced_at = ? WHERE id = ? AND updated_at = ?")
++    .bind(updatedAt, siteId, updatedAt)
++    .run();
++}
++
++/** Sites whose KV host records may lag D1. */
++export async function sitesNeedingRouteSync(db: D1Database, limit = 100) {
++  const { results } = await db
++    .prepare("SELECT id FROM sites WHERE routes_synced_at IS NULL OR routes_synced_at < updated_at ORDER BY updated_at LIMIT ?")
++    .bind(limit)
++    .all<{ id: string }>();
++  return results.map((row) => row.id);
++}
++
++export async function clearRoutesSynced(db: D1Database, siteId: string) {
++  await db.prepare("UPDATE sites SET routes_synced_at = NULL WHERE id = ?").bind(siteId).run();
++}
++
++const LEASE_MS = 60_000;
++
++/** Takes the per-site route-sync lease; null when another writer holds it. */
++export async function acquireRoutesLease(db: D1Database, siteId: string): Promise<string | null> {
++  const token = crypto.randomUUID();
++  const now = new Date();
++  const result = await db
++    .prepare(
++      "UPDATE sites SET routes_lock_token = ?, routes_lock_until = ? WHERE id = ? AND (routes_lock_until IS NULL OR routes_lock_until < ?)",
++    )
++    .bind(token, new Date(now.getTime() + LEASE_MS).toISOString(), siteId, now.toISOString())
++    .run();
++  return result.meta.changes === 1 ? token : null;
++}
++
++export async function holdsRoutesLease(db: D1Database, siteId: string, token: string) {
++  const row = await db
++    .prepare("SELECT 1 AS held FROM sites WHERE id = ? AND routes_lock_token = ? AND routes_lock_until >= ?")
++    .bind(siteId, token, new Date().toISOString())
++    .first<{ held: number }>();
++  return Boolean(row);
++}
++
++export async function releaseRoutesLease(db: D1Database, siteId: string, token: string) {
++  await db
++    .prepare("UPDATE sites SET routes_lock_token = NULL, routes_lock_until = NULL WHERE id = ? AND routes_lock_token = ?")
++    .bind(siteId, token)
++    .run();
++}
+diff --git a/apps/api/wrangler.toml b/apps/api/wrangler.toml
+index 850fcbb..b812e51 100644
+--- a/apps/api/wrangler.toml
++++ b/apps/api/wrangler.toml
+@@ -6,6 +6,10 @@ account_id = "358a1b6caabcf91741109efca1ec0547"
+ compatibility_date = "2026-11-01"
+ compatibility_flags = ["nodejs_compat"]
+ 
++# Safety net: re-sync router KV records that lag D1 (see src/routes.ts).
++[triggers]
++crons = ["*/5 * * * *"]
++
+ [vars]
+ # Public sites are served at <slug>.<BASE_DOMAIN>. Local dev uses *.localhost.
+ BASE_DOMAIN = "localhost"
+@@ -35,6 +39,9 @@ preview_urls = false
+ # More specific than the router's `*/*`, so it wins for this host.
+ routes = [{ pattern = "api.dsites.kr/*", zone_name = "dsites.kr" }]
+ 
++[env.staging.triggers]
++crons = ["*/5 * * * *"]
++
+ [env.staging.vars]
+ BASE_DOMAIN = "dsites.kr"
+ PUBLIC_SCHEME = "https"
+diff --git a/apps/router/src/index.ts b/apps/router/src/index.ts
+index 042f32d..e675afb 100644
+--- a/apps/router/src/index.ts
++++ b/apps/router/src/index.ts
+@@ -1,4 +1,13 @@
+-import { kvHostKey, kvSiteKey, MEDIA_PATH, r2MediaKey, r2PageKey, r2SharedKey, type PublishedPointer } from "./keys.js";
++import {
++  kvHostKey,
++  kvSiteKey,
++  MEDIA_PATH,
++  r2MediaKey,
++  r2PageKey,
++  r2SharedKey,
++  type HostRecord,
++  type PublishedPointer,
++} from "./keys.js";
+ 
+ interface Env {
+   SITES: R2Bucket;
+@@ -6,13 +15,13 @@ interface Env {
+   BASE_DOMAIN: string;
+ }
+ 
+-// KV values are cached at the edge for this long; publish/rollback propagate within about a minute.
+-const KV_CACHE_TTL = 60;
++// KV values are cached at the edge for this long (KV minimum); publish/rollback propagate within it.
++const KV_CACHE_TTL = 30;
+ 
+-function notFound(message: string) {
++function page(status: number, message: string, headers: Record<string, string> = {}) {
+   return new Response(
+-    `<!doctype html><html lang="ko"><meta charset="utf-8"><title>페이지 없음</title><body style="font-family:system-ui;padding:48px"><p>${message}</p></body></html>`,
+-    { status: 404, headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } },
++    `<!doctype html><html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>${message}</title><body style="font-family:system-ui;padding:48px"><p>${message}</p></body></html>`,
++    { status, headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", ...headers } },
+   );
+ }
+ 
+@@ -26,6 +35,15 @@ async function serveObject(env: Env, key: string, cacheControl: string) {
+   return new Response(object.body, { headers });
+ }
+ 
++/** One KV read for M2 records; M1 records (bare siteId) need a second read for the pointer. */
++async function resolveHost(env: Env, hostname: string): Promise<HostRecord | null> {
++  const raw = await env.ROUTES.get(kvHostKey(hostname), { cacheTtl: KV_CACHE_TTL });
++  if (!raw) return null;
++  if (raw.startsWith("{")) return JSON.parse(raw) as HostRecord;
++  const pointer = await env.ROUTES.get<PublishedPointer>(kvSiteKey(raw), { type: "json", cacheTtl: KV_CACHE_TTL });
++  return { siteId: raw, status: "active", pointer, redirectTo: null };
++}
++
+ export default {
+   async fetch(request: Request, env: Env): Promise<Response> {
+     if (request.method !== "GET" && request.method !== "HEAD") {
+@@ -41,7 +59,6 @@ export default {
+         new Response("not found", { status: 404 })
+       );
+     }
+-
+     // Uploaded photos are public and content-addressed.
+     const media = MEDIA_PATH.exec(url.pathname);
+     if (media) {
+@@ -51,10 +68,15 @@ export default {
+       );
+     }
+ 
+-    const siteId = await env.ROUTES.get(kvHostKey(hostname), { cacheTtl: KV_CACHE_TTL });
+-    if (!siteId) return notFound("연결된 사이트가 없습니다.");
+-    const pointer = await env.ROUTES.get<PublishedPointer>(kvSiteKey(siteId), { type: "json", cacheTtl: KV_CACHE_TTL });
+-    if (!pointer) return notFound("아직 공개되지 않은 사이트입니다.");
++    const host = await resolveHost(env, hostname);
++    if (!host) return page(404, "연결된 사이트가 없습니다.");
++    if (host.status === "cancelled") return page(410, "운영이 종료된 사이트입니다.");
++    if (host.status === "suspended") return page(503, "잠시 운영을 멈춘 사이트입니다.", { "retry-after": "86400" });
++    if (host.redirectTo) {
++      return Response.redirect(`${url.protocol}//${host.redirectTo}${url.pathname}${url.search}`, 301);
++    }
++    const pointer = host.pointer;
++    if (!pointer) return page(404, "아직 공개되지 않은 사이트입니다.");
+ 
+     if (url.pathname === "/robots.txt") {
+       return new Response(`User-agent: *\nAllow: /\nSitemap: https://${hostname}/sitemap.xml\n`, {
+@@ -75,13 +97,13 @@ export default {
+     const route = url.pathname === "/index.html" ? "/" : url.pathname.replace(/\/(index\.html)?$/, "") || "/";
+     if (pages.includes(route)) {
+       const path = route === "/" ? "index.html" : `${route.slice(1)}/index.html`;
+-      const page = await serveObject(env, r2PageKey(siteId, pointer.versionId, path), "public, max-age=60");
+-      if (page) {
+-        page.headers.set("x-site-version", String(pointer.number));
+-        return page;
++      const response = await serveObject(env, r2PageKey(host.siteId, pointer.versionId, path), "public, max-age=60");
++      if (response) {
++        response.headers.set("x-site-version", String(pointer.number));
++        return response;
+       }
+-      return notFound("페이지 파일을 찾지 못했습니다.");
++      return page(404, "페이지 파일을 찾지 못했습니다.");
+     }
+-    return notFound("없는 주소입니다.");
++    return page(404, "없는 주소입니다.");
+   },
+ };
+diff --git a/apps/router/src/keys.ts b/apps/router/src/keys.ts
+index 2308590..dadc805 100644
+--- a/apps/router/src/keys.ts
++++ b/apps/router/src/keys.ts
+@@ -16,3 +16,17 @@ export interface PublishedPointer {
+   /** Routes rendered for this version. Missing on M1 pointers, which only had `/`. */
+   pages?: string[];
+ }
++
++/**
++ * Value of kvHostKey since M2: everything the router needs in one read. M1 stored the bare
++ * siteId string there and the pointer under kvSiteKey; the router still accepts that form.
++ */
++export interface HostRecord {
++  siteId: string;
++  /** `suspended`: 503 (temporary). `cancelled`: 410. */
++  status: "active" | "suspended" | "cancelled";
++  /** Missing until the first publish. */
++  pointer: PublishedPointer | null;
++  /** 301 target host, e.g. the default subdomain once a custom domain is active. */
++  redirectTo: string | null;
++}
+diff --git a/docker-compose.yml b/docker-compose.yml
+index e568ffa..d6a096b 100644
+--- a/docker-compose.yml
++++ b/docker-compose.yml
+@@ -49,6 +49,8 @@ services:
+       MAILPIT_URL: http://mailpit:8025
+     volumes:
+       - ./evidence:/app/evidence
++      # Same local D1/R2/KV state as the workers, for checks that read or seed storage directly.
++      - state:/state
+ 
+ volumes:
+   state:
+diff --git a/docker/workers.sh b/docker/workers.sh
+index 1ac6b43..c988e5f 100644
+--- a/docker/workers.sh
++++ b/docker/workers.sh
+@@ -11,7 +11,7 @@ env | grep -E '^(ADMIN_TOKEN|TURNSTILE_SECRET|MAIL_|CF_|ACCESS_)' > apps/api/.de
+ 
+ (cd apps/api && pnpm exec wrangler d1 migrations apply DB --local --persist-to "$STATE")
+ 
+-(cd apps/api && exec pnpm exec wrangler dev --port 8788 --inspector-port 9230 --ip 0.0.0.0 --persist-to "$STATE" --show-interactive-dev-session=false) &
++(cd apps/api && exec pnpm exec wrangler dev --port 8788 --inspector-port 9230 --ip 0.0.0.0 --persist-to "$STATE" --test-scheduled --show-interactive-dev-session=false) &
+ (cd apps/router && exec pnpm exec wrangler dev --port 8787 --inspector-port 9231 --ip 0.0.0.0 --persist-to "$STATE" --show-interactive-dev-session=false) &
+ 
+ wait -n
+diff --git a/evidence/m2-assets/results.json b/evidence/m2-assets/results.json
+index 0feadc7..f23f474 100644
+--- a/evidence/m2-assets/results.json
++++ b/evidence/m2-assets/results.json
+@@ -1,5 +1,5 @@
+ {
+-  "siteId": "dc8f4917-bccc-4537-96a4-be78ba047533",
++  "siteId": "750339d6-f55a-48cc-b455-63f0ee2e30af",
+   "results": [
+     {
+       "name": "사이트 생성",
+@@ -8,8 +8,8 @@
+     {
+       "name": "EXIF 회전 사진: 201, 세로 1200×1600으로 줄임",
+       "pass": true,
+-      "key": "m:dc8f4917-bccc-4537-96a4-be78ba047533/9fe9b1b39f4c0f3c9841.jpg",
+-      "url": "/_media/dc8f4917-bccc-4537-96a4-be78ba047533/9fe9b1b39f4c0f3c9841.jpg",
++      "key": "m:750339d6-f55a-48cc-b455-63f0ee2e30af/9fe9b1b39f4c0f3c9841.jpg",
++      "url": "/_media/750339d6-f55a-48cc-b455-63f0ee2e30af/9fe9b1b39f4c0f3c9841.jpg",
+       "width": 1200,
+       "height": 1600,
+       "bytes": 59575
+@@ -55,8 +55,8 @@
+     {
+       "name": "PNG 입력 → JPEG 800×600",
+       "pass": true,
+-      "key": "m:dc8f4917-bccc-4537-96a4-be78ba047533/fd01cdfe411e6ef75a87.jpg",
+-      "url": "/_media/dc8f4917-bccc-4537-96a4-be78ba047533/fd01cdfe411e6ef75a87.jpg",
++      "key": "m:750339d6-f55a-48cc-b455-63f0ee2e30af/fd01cdfe411e6ef75a87.jpg",
++      "url": "/_media/750339d6-f55a-48cc-b455-63f0ee2e30af/fd01cdfe411e6ef75a87.jpg",
+       "width": 800,
+       "height": 600,
+       "bytes": 17252
+@@ -76,8 +76,8 @@
+     {
+       "name": "WebP 입력 → 1000×500",
+       "pass": true,
+-      "key": "m:dc8f4917-bccc-4537-96a4-be78ba047533/958920e45667d042dd7e.jpg",
+-      "url": "/_media/dc8f4917-bccc-4537-96a4-be78ba047533/958920e45667d042dd7e.jpg",
++      "key": "m:750339d6-f55a-48cc-b455-63f0ee2e30af/958920e45667d042dd7e.jpg",
++      "url": "/_media/750339d6-f55a-48cc-b455-63f0ee2e30af/958920e45667d042dd7e.jpg",
+       "width": 1000,
+       "height": 500,
+       "bytes": 19366
+@@ -112,8 +112,8 @@
+     {
+       "name": "1×4000 같은 좁은 사진도 처리(폭 최소 1px)",
+       "pass": true,
+-      "key": "m:dc8f4917-bccc-4537-96a4-be78ba047533/72fd6769060abbcfbd08.jpg",
+-      "url": "/_media/dc8f4917-bccc-4537-96a4-be78ba047533/72fd6769060abbcfbd08.jpg",
++      "key": "m:750339d6-f55a-48cc-b455-63f0ee2e30af/72fd6769060abbcfbd08.jpg",
++      "url": "/_media/750339d6-f55a-48cc-b455-63f0ee2e30af/72fd6769060abbcfbd08.jpg",
+       "width": 1,
+       "height": 1600,
+       "bytes": 978
+@@ -146,7 +146,7 @@
+     {
+       "name": "브라우저: 이미지 모두 로드, 히어로는 WebP 변형",
+       "pass": true,
+-      "heroSrc": "http://assets-mwmfpa4r.localhost:8787/_media/dc8f4917-bccc-4537-96a4-be78ba047533/9fe9b1b39f4c0f3c9841.w480.webp",
++      "heroSrc": "http://assets-mwmgdxpa.localhost:8787/_media/750339d6-f55a-48cc-b455-63f0ee2e30af/9fe9b1b39f4c0f3c9841.w480.webp",
+       "failed": [],
+       "errors": []
+     }
+diff --git a/evidence/m2-template/results.json b/evidence/m2-template/results.json
+index c946e06..4ea5af6 100644
+--- a/evidence/m2-template/results.json
++++ b/evidence/m2-template/results.json
+@@ -1,38 +1,38 @@
+ {
+   "sites": {
+     "lesson": {
+-      "siteId": "3607154c-b75c-481f-bf93-6970adb43be8",
+-      "versionId": "cdbf04a4-f28c-46f2-a158-742bb227f052",
+-      "hostname": "jefes-mwmf3e7u.localhost",
+-      "slug": "jefes-mwmf3e7u",
+-      "token": "41cec816de7b4a88aa40053914613d52"
++      "siteId": "f6f1d385-dc95-4df7-8f2a-be7af7284bb7",
++      "versionId": "1a6be5ae-14a1-450e-9ac8-2a76a47d1de2",
++      "hostname": "jefes-mwmgdc5b.localhost",
++      "slug": "jefes-mwmgdc5b",
++      "token": "930a8fe4535447429974d9d76a75bba3"
+     },
+     "field": {
+-      "siteId": "c891dc91-95be-48f8-8f6d-da03b25fc208",
+-      "versionId": "07766dc1-8861-4e28-b14e-f36f70c6f52b",
+-      "hostname": "sangkwae-mwmf3e7u.localhost",
+-      "slug": "sangkwae-mwmf3e7u",
+-      "token": "f3af5fe96d3a449da8dc8cf830d5f754"
++      "siteId": "f068cb88-cb92-4dad-8bf3-c00ed1429ba3",
++      "versionId": "ed07efca-4618-44e5-b274-d76a1d441e73",
++      "hostname": "sangkwae-mwmgdc5b.localhost",
++      "slug": "sangkwae-mwmgdc5b",
++      "token": "2f5bf146c1474171bc2664e79d7e4699"
+     }
+   },
+   "scores": {
+     "lesson": {
+-      "performance": 100,
++      "performance": 99,
+       "accessibility": 100,
+       "bestPractices": 96,
+       "seo": 92,
+-      "lcpMs": 1066,
++      "lcpMs": 2027,
+       "cls": 0,
+-      "tbtMs": 13
++      "tbtMs": 8
+     },
+     "field": {
+-      "performance": 98,
++      "performance": 100,
+       "accessibility": 100,
+       "bestPractices": 96,
+       "seo": 92,
+-      "lcpMs": 2276,
++      "lcpMs": 1365,
+       "cls": 0,
+-      "tbtMs": 0
++      "tbtMs": 79
+     }
+   },
+   "results": [
+@@ -47,7 +47,7 @@
+     {
+       "name": "lesson: 사이트 생성 201",
+       "pass": true,
+-      "hostname": "jefes-mwmf3e7u.localhost"
++      "hostname": "jefes-mwmgdc5b.localhost"
+     },
+     {
+       "name": "lesson: 저장된 설정은 v2",
+@@ -64,9 +64,9 @@
+     {
+       "name": "lesson: 게시 200",
+       "pass": true,
+-      "versionId": "cdbf04a4-f28c-46f2-a158-742bb227f052",
++      "versionId": "1a6be5ae-14a1-450e-9ac8-2a76a47d1de2",
+       "number": 1,
+-      "publishedAt": "2026-11-18T17:50:54.196Z",
++      "publishedAt": "2026-11-18T18:26:37.609Z",
+       "pages": [
+         "/",
+         "/privacy"
+@@ -91,7 +91,7 @@
+     {
+       "name": "field: 사이트 생성 201",
+       "pass": true,
+-      "hostname": "sangkwae-mwmf3e7u.localhost"
++      "hostname": "sangkwae-mwmgdc5b.localhost"
+     },
+     {
+       "name": "field: 저장된 설정은 v2",
+@@ -108,9 +108,9 @@
+     {
+       "name": "field: 게시 200",
+       "pass": true,
+-      "versionId": "07766dc1-8861-4e28-b14e-f36f70c6f52b",
++      "versionId": "ed07efca-4618-44e5-b274-d76a1d441e73",
+       "number": 1,
+-      "publishedAt": "2026-11-18T17:50:54.430Z",
++      "publishedAt": "2026-11-18T18:26:37.796Z",
+       "pages": [
+         "/",
+         "/privacy"
+@@ -136,7 +136,7 @@
+       "name": "프리뷰: 하이드레이션 오류 없음, 링크가 프리뷰 안, 문의 전송 차단",
+       "pass": true,
+       "errors": [],
+-      "privacyHref": "/preview/41cec816de7b4a88aa40053914613d52/privacy",
++      "privacyHref": "/preview/930a8fe4535447429974d9d76a75bba3/privacy",
+       "blocked": "프리뷰에서는 문의가 전송되지 않습니다."
+     },
+     {
+@@ -178,46 +178,46 @@
+     {
+       "name": "lesson: Lighthouse 모바일 성능 90 이상, LCP 2.5초 이하",
+       "pass": true,
+-      "performance": 100,
++      "performance": 99,
+       "accessibility": 100,
+       "bestPractices": 96,
+       "seo": 92,
+-      "lcpMs": 1066,
++      "lcpMs": 2027,
+       "cls": 0,
+-      "tbtMs": 13
++      "tbtMs": 8
+     },
+     {
+       "name": "lesson: Lighthouse SEO 90 이상, 접근성 90 이상",
+       "pass": true,
+-      "performance": 100,
++      "performance": 99,
+       "accessibility": 100,
+       "bestPractices": 96,
+       "seo": 92,
+-      "lcpMs": 1066,
++      "lcpMs": 2027,
+       "cls": 0,
+-      "tbtMs": 13
++      "tbtMs": 8
+     },
+     {
+       "name": "field: Lighthouse 모바일 성능 90 이상, LCP 2.5초 이하",
+       "pass": true,
+-      "performance": 98,
++      "performance": 100,
+       "accessibility": 100,
+       "bestPractices": 96,
+       "seo": 92,
+-      "lcpMs": 2276,
++      "lcpMs": 1365,
+       "cls": 0,
+-      "tbtMs": 0
++      "tbtMs": 79
+     },
+     {
+       "name": "field: Lighthouse SEO 90 이상, 접근성 90 이상",
+       "pass": true,
+-      "performance": 98,
++      "performance": 100,
+       "accessibility": 100,
+       "bestPractices": 96,
+       "seo": 92,
+-      "lcpMs": 2276,
++      "lcpMs": 1365,
+       "cls": 0,
+-      "tbtMs": 0
++      "tbtMs": 79
+     }
+   ]
+ }
+\ No newline at end of file
+diff --git a/scripts/lib/verify.mjs b/scripts/lib/verify.mjs
+index a805508..e0a4f34 100644
+--- a/scripts/lib/verify.mjs
++++ b/scripts/lib/verify.mjs
+@@ -149,3 +149,20 @@ export async function lighthouse(url) {
+     await chrome.kill();
+   }
+ }
++
++/** Reads or writes the router's local KV namespace (Docker: shared /state volume). */
++export function localKv(action, key, value) {
++  const args = ["exec", "wrangler", "kv", "key", action, key, ...(value !== undefined ? [value] : []), "--binding", "ROUTES", "--local", "--persist-to", process.env.STATE_DIR ?? "/state"];
++  if (action === "get") args.push("--text");
++  return execFileSync("pnpm", args, { cwd: "apps/router", encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
++}
++
++/** Runs SQL against the API's local D1 (Docker: shared /state volume). Returns result rows. */
++export function localD1(sql) {
++  const out = execFileSync(
++    "pnpm",
++    ["exec", "wrangler", "d1", "execute", "DB", "--local", "--persist-to", process.env.STATE_DIR ?? "/state", "--command", sql, "--json"],
++    { cwd: "apps/api", encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
++  );
++  return JSON.parse(out)[0]?.results ?? [];
++}
+
+exec
+/bin/zsh -lc 'cat /Users/steve/.codex/skills/workers-best-practices/SKILL.md' in /Users/steve/Projects/daniworks-sites-platform
+ succeeded in 0ms:
+---
+name: workers-best-practices
+description: Cloudflare Workers best practices for production applications. Use when writing, reviewing, or configuring Workers.
+---
+
+Your knowledge of Cloudflare Workers APIs, types, and configuration may be outdated. **Prefer retrieval over pre-training** when writing or reviewing Workers code.
+
+Use the project's installed versions, generated types, and Wrangler compatibility settings as the baseline for existing code. Retrieve relevant Cloudflare documentation to verify API, configuration, runtime behavior, and limit claims.
+
+## References
+
+Read the sections relevant to the task:
+
+| Reference | When to use it |
+|-----------|----------------|
+| [Configuration and observability](references/configuration.md) | Compatibility dates, bindings, generated types, secrets, logs, and traces |
+| [Runtime patterns](references/runtime-patterns.md) | Streaming, promise lifetime, request state, service calls, security, and runtime tests |
+| [Platform API checks](references/platform-apis.md) | Handler signatures, platform classes, binding access, and serialization |
+
+For missing evidence, consult [Workers best practices](https://developers.cloudflare.com/workers/best-practices/workers-best-practices/index.md) or find the affected product in the [Cloudflare docs directory](https://developers.cloudflare.com/directory/index.md). Use the installed Wrangler schema for config fields. A newer type package does not supersede the project's configured target.
+
+## Keep Compatibility Dates Current
+
+Use today's date for new Workers. Encourage periodic updates for existing Workers, reviewing compatibility changes and running relevant tests. Assess existing behavior against its configured date and flags; see [compatibility guidance](references/configuration.md#keep-compatibility_date-current).
+
+## Enable Observability
+
+Enable [Workers Logs](https://developers.cloudflare.com/workers/observability/logs/workers-logs/index.md) and [Traces](https://developers.cloudflare.com/workers/observability/traces/index.md) when creating or preparing a Worker for production. Set `observability.enabled` and `observability.traces.enabled` to `true`; the top-level setting alone does not enable traces. Use structured JSON logging and configure sampling for the workload. During reviews, flag missing logs or traces. See the [configuration example](references/configuration.md#enable-workers-logs-and-traces).
+
+## Anti-Patterns to Flag
+
+| Anti-pattern | Consequence and preferred pattern |
+|-------------|-----------------------------------|
+| `await response.text()` or similar buffering on unbounded data | Can exhaust Worker memory; [stream large or unbounded bodies](references/runtime-patterns.md#stream-request-and-response-bodies). |
+| Hardcoded secrets in source or config | Leaks credentials through version control; use Wrangler secrets. |
+| `Math.random()` for security-sensitive tokens or IDs | Predictable values; use `crypto.randomUUID()` or `crypto.getRandomValues()`. |
+| Async work started without awaiting, returning, or attaching it to `ctx.waitUntil()` | Work can be dropped and errors missed; tie it to the request or background-work lifetime. |
+| Module-level mutable request state | Leaks data across requests and can cause I/O ownership errors; pass request state explicitly. |
+| Cloudflare REST API calls for operations available through Worker bindings | Adds network and authentication overhead; use the available binding. |
+| `ctx.passThroughOnException()` used as general error handling | Can conceal Worker failures by forwarding to the origin; use explicit error handling and structured error responses. |
+| Hand-written `Env` that duplicates Wrangler bindings | Can drift from configuration; generate binding types with `wrangler types`. |
+| Direct string comparison of secret values | Can expose timing differences; use the [Web Crypto comparison pattern](references/runtime-patterns.md#use-web-crypto-for-secure-token-generation). |
+| Destructuring `ctx` methods, such as `const { waitUntil } = ctx` | Loses the receiver; call `ctx.waitUntil(...)`. |
+| `any` on `Env` or handler parameters | Hides binding and handler contract errors; use the project's generated and platform types. |
+| `as unknown as T` to force a platform type match | Hides incompatibilities; fix the underlying contract. |
+| `implements` used in place of extending a platform base class | Does not inherit runtime behavior, `this.ctx`, or `this.env`; use the appropriate base class. |
+| Unbound `env.X` in a platform class method | Bindings are available through `this.env.X`; see [binding access patterns](references/platform-apis.md#binding-access--the-most-common-error). |
+| Applying one serialization rule across Queues, Workflow steps, storage, and WebSockets | Can reject valid payloads or accept unsupported ones; check the [specific API and encoding](references/platform-apis.md#serialization-boundaries). |
+
+## Validation
+
+Use the project's existing checks for affected Workers behavior: type-check binding or handler contract changes, and run relevant runtime tests for behavior changes. Preserve required repository checks; a narrow edit does not require a full Workers audit.
+
+## Scope
+
+This skill covers Workers-specific best practices and code review. For related topics:
+
+- **Durable Objects**: load the `durable-objects` skill
+- **Workflows**: see [Rules of Workflows](https://developers.cloudflare.com/workflows/build/rules-of-workflows/index.md)
+- **Wrangler CLI commands**: load the `wrangler` skill
+
+exec
+/bin/zsh -lc 'cat apps/api/src/routes.ts apps/api/migrations/0003_sites_published_at.sql; cat apps/api/src/store.ts; cat scripts/verify-m2-router.mjs' in /Users/steve/Projects/daniworks-sites-platform
+ succeeded in 0ms:
+import type { Env } from "./env.js";
+import { kvHostKey, type HostRecord, type PublishedPointer } from "./keys.js";
+import {
+  acquireRoutesLease,
+  clearRoutesSynced,
+  holdsRoutesLease,
+  markRoutesSynced,
+  primaryHostname,
+  releaseRoutesLease,
+  servingState,
+  sitesNeedingRouteSync,
+  type SiteRow,
+} from "./store.js";
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** KV allows one write per key per second; retry rate-limited writes a few times. */
+async function kvWrite(op: () => Promise<void>) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await op();
+    } catch (error) {
+      const limited = /429|too many/i.test(String(error));
+      if (!limited || attempt >= 3) throw error;
+      await sleep(1100);
+    }
+  }
+}
+
+/** Public status of a site as the router sees it. */
+export function hostStatus(site: SiteRow): HostRecord["status"] {
+  if (site.cancelled_at) return "cancelled";
+  return site.status === "suspended" ? "suspended" : "active";
+}
+
+/** Routes a stored config renders to (v2 adds the privacy page). */
+export const routesOf = (config: { version?: unknown }) => (config.version === 2 ? ["/", "/privacy"] : ["/"]);
+
+async function snapshot(env: Env, siteId: string) {
+  const { site, version } = await servingState(env.DB, siteId);
+  const pointer: PublishedPointer | null =
+    version
+      ? {
+          versionId: version.id,
+          number: version.number,
+          // Rows from before migration 0003 are backfilled; never drop a live pointer over a missing time.
+          publishedAt: site.published_at ?? site.updated_at,
+          pages: routesOf(JSON.parse(version.config) as { version?: unknown }),
+        }
+      : null;
+  const primary = await primaryHostname(env.DB, site, env.BASE_DOMAIN);
+  const { results: domains } = await env.DB.prepare("SELECT hostname, kind, status FROM domains WHERE site_id = ?")
+    .bind(site.id)
+    .all<{ hostname: string; kind: string; status: string }>();
+  const status = hostStatus(site);
+  const key = JSON.stringify([status, pointer?.versionId, pointer?.publishedAt, primary, domains]);
+  return { site, pointer, primary, domains, status, key };
+}
+
+/**
+ * Rewrites the KV record of every hostname of a site from D1, the source of truth: status,
+ * published pointer and redirect. One writer per site at a time (D1 lease). A caller that
+ * cannot take the lease leaves the site marked unsynced; the holder re-reads D1 after writing
+ * and catches up, and the reconcile cron covers anything left. Returns whether KV now matches.
+ */
+export async function syncHostRecords(env: Env, siteId: string): Promise<boolean> {
+  await clearRoutesSynced(env.DB, siteId);
+  const token = await acquireRoutesLease(env.DB, siteId);
+  if (!token) return false;
+  try {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const state = await snapshot(env, siteId);
+      for (const domain of state.domains) {
+        // Fence: a holder whose lease expired must not overwrite a newer writer.
+        if (!(await holdsRoutesLease(env.DB, siteId, token))) return false;
+        // Custom hostnames that are not active yet must not serve the site.
+        if (domain.kind === "custom" && domain.status !== "active") {
+          await kvWrite(() => env.ROUTES.delete(kvHostKey(domain.hostname)));
+          continue;
+        }
+        const record: HostRecord = {
+          siteId: state.site.id,
+          status: state.status,
+          pointer: state.pointer,
+          redirectTo: domain.hostname === state.primary ? null : state.primary,
+        };
+        await kvWrite(() => env.ROUTES.put(kvHostKey(domain.hostname), JSON.stringify(record)));
+      }
+      if ((await snapshot(env, siteId)).key === state.key) {
+        await markRoutesSynced(env.DB, siteId, state.site.updated_at);
+        return true;
+      }
+    }
+    return false;
+  } finally {
+    await releaseRoutesLease(env.DB, siteId, token);
+  }
+}
+
+/**
+ * For request handlers: syncs now, retrying briefly while another writer holds the lease, so
+ * the caller's change is live when it responds. The cron catches anything still pending.
+ */
+export async function syncHostRecordsNow(env: Env, siteId: string) {
+  for (let attempt = 0; attempt < 4; attempt++) {
+    if (await syncHostRecords(env, siteId)) return true;
+    await sleep(1000);
+  }
+  return false;
+}
+
+/**
+ * Cron safety net: re-syncs sites whose host records may lag D1 (a request failed after D1
+ * committed, or KV kept rejecting writes). Guarantees serving converges to D1 within minutes.
+ */
+export async function reconcileHostRecords(env: Env) {
+  const ids = await sitesNeedingRouteSync(env.DB);
+  let synced = 0;
+  for (const id of ids) {
+    try {
+      if (await syncHostRecords(env, id)) synced++;
+    } catch (error) {
+      console.error("[routes] reconcile failed", id, error);
+    }
+  }
+  return { pending: ids.length, synced };
+}
+-- When published_version_id last changed (publish or rollback); the router pointer is built from it.
+ALTER TABLE sites ADD COLUMN published_at TEXT;
+
+-- Sites published before this column existed: best available time, so their pointer survives.
+UPDATE sites
+SET published_at = COALESCE(
+  (SELECT first_published_at FROM site_versions WHERE site_versions.id = sites.published_version_id),
+  updated_at
+)
+WHERE published_version_id IS NOT NULL AND published_at IS NULL;
+
+-- Last sites.updated_at whose state was written to the router's KV host records. A cron
+-- re-syncs rows where this lags updated_at (e.g. a KV write was rate limited).
+ALTER TABLE sites ADD COLUMN routes_synced_at TEXT;
+
+-- Per-site lease so only one writer updates the KV host records at a time.
+ALTER TABLE sites ADD COLUMN routes_lock_token TEXT;
+ALTER TABLE sites ADD COLUMN routes_lock_until TEXT;
+import type { SiteConfig } from "@sites/renderer";
+import { HttpError } from "./http.js";
+
+export interface SiteRow {
+  id: string;
+  slug: string;
+  template_id: string;
+  published_version_id: string | null;
+  status: string;
+  customer_id: string | null;
+  notify_email: string | null;
+  template_version: string | null;
+  cancelled_at: string | null;
+  published_at: string | null;
+  routes_synced_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface VersionRow {
+  id: string;
+  site_id: string;
+  number: number;
+  config: string;
+  created_by: string;
+  note: string | null;
+  preview_token: string;
+  asset_version: string | null;
+  rendered_at: string | null;
+  rendered_origin: string | null;
+  first_published_at: string | null;
+  created_at: string;
+}
+
+export type CreatedBy = "ai" | "operator" | "customer";
+
+const now = () => new Date().toISOString();
+const token = () => crypto.randomUUID().replace(/-/g, "");
+
+export async function getSite(db: D1Database, id: string): Promise<SiteRow> {
+  const site = await db.prepare("SELECT * FROM sites WHERE id = ?").bind(id).first<SiteRow>();
+  if (!site) throw new HttpError(404, `사이트가 없습니다: ${id}`);
+  return site;
+}
+
+export async function getVersion(db: D1Database, siteId: string, versionId: string): Promise<VersionRow> {
+  const row = await db
+    .prepare("SELECT * FROM site_versions WHERE id = ? AND site_id = ?")
+    .bind(versionId, siteId)
+    .first<VersionRow>();
+  if (!row) throw new HttpError(404, `버전이 없습니다: ${versionId}`);
+  return row;
+}
+
+export async function latestVersion(db: D1Database, siteId: string): Promise<VersionRow> {
+  const row = await db
+    .prepare("SELECT * FROM site_versions WHERE site_id = ? ORDER BY number DESC LIMIT 1")
+    .bind(siteId)
+    .first<VersionRow>();
+  if (!row) throw new HttpError(409, "버전이 없습니다");
+  return row;
+}
+
+export async function listVersions(db: D1Database, siteId: string) {
+  const { results } = await db
+    .prepare(
+      "SELECT id, number, created_by, note, preview_token, asset_version, rendered_at, first_published_at, created_at FROM site_versions WHERE site_id = ? ORDER BY number DESC",
+    )
+    .bind(siteId)
+    .all();
+  return results;
+}
+
+export async function createSite(db: D1Database, config: SiteConfig, createdBy: CreatedBy, hostname: string) {
+  const exists = await db.prepare("SELECT id FROM sites WHERE slug = ?").bind(config.slug).first();
+  if (exists) throw new HttpError(409, `이미 쓰는 slug입니다: ${config.slug}`);
+  const siteId = crypto.randomUUID();
+  const versionId = crypto.randomUUID();
+  const at = now();
+  await db.batch([
+    db
+      .prepare("INSERT INTO sites (id, slug, template_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?)")
+      .bind(siteId, config.slug, config.templateId, at, at),
+    db
+      .prepare(
+        "INSERT INTO site_versions (id, site_id, number, config, created_by, note, preview_token, created_at) VALUES (?, ?, 1, ?, ?, ?, ?, ?)",
+      )
+      .bind(versionId, siteId, JSON.stringify(config), createdBy, "최초 생성", token(), at),
+    db
+      .prepare("INSERT INTO domains (hostname, site_id, kind, created_at) VALUES (?, ?, 'subdomain', ?)")
+      .bind(hostname, siteId, at),
+  ]);
+  return { siteId, versionId };
+}
+
+export async function addVersion(
+  db: D1Database,
+  site: SiteRow,
+  config: SiteConfig,
+  createdBy: CreatedBy,
+  note: string | null,
+) {
+  if (config.slug !== site.slug) throw new HttpError(422, "slug는 바꿀 수 없습니다", [`slug: ${site.slug}`]);
+  const latest = await latestVersion(db, site.id);
+  const versionId = crypto.randomUUID();
+  const at = now();
+  await db.batch([
+    db
+      .prepare(
+        "INSERT INTO site_versions (id, site_id, number, config, created_by, note, preview_token, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      )
+      .bind(versionId, site.id, latest.number + 1, JSON.stringify(config), createdBy, note, token(), at),
+    db.prepare("UPDATE sites SET updated_at = ? WHERE id = ?").bind(at, site.id),
+  ]);
+  return { versionId, number: latest.number + 1 };
+}
+
+export async function markRendered(db: D1Database, versionId: string, assetVersion: string, origin: string) {
+  await db
+    .prepare("UPDATE site_versions SET rendered_at = ?, asset_version = ?, rendered_origin = ? WHERE id = ?")
+    .bind(now(), assetVersion, origin, versionId)
+    .run();
+}
+
+export async function markPublished(db: D1Database, siteId: string, versionId: string, templateVersion: string) {
+  const at = now();
+  await db.batch([
+    db
+      .prepare("UPDATE site_versions SET first_published_at = COALESCE(first_published_at, ?) WHERE id = ?")
+      .bind(at, versionId),
+    db
+      .prepare(
+        "UPDATE sites SET published_version_id = ?, published_at = ?, template_version = ?, updated_at = ? WHERE id = ?",
+      )
+      .bind(versionId, at, templateVersion, at, siteId),
+  ]);
+  return at;
+}
+
+/** Active custom domain if any, else the default subdomain. */
+export async function primaryHostname(db: D1Database, site: SiteRow, baseDomain: string): Promise<string> {
+  const custom = await db
+    .prepare("SELECT hostname FROM domains WHERE site_id = ? AND kind = 'custom' AND status = 'active' ORDER BY created_at LIMIT 1")
+    .bind(site.id)
+    .first<{ hostname: string }>();
+  return custom?.hostname ?? `${site.slug}.${baseDomain}`;
+}
+
+export async function versionByPreviewToken(db: D1Database, previewToken: string): Promise<VersionRow> {
+  const row = await db
+    .prepare("SELECT * FROM site_versions WHERE preview_token = ?")
+    .bind(previewToken)
+    .first<VersionRow>();
+  if (!row) throw new HttpError(404, "프리뷰가 없습니다");
+  return row;
+}
+
+export async function setSiteStatus(db: D1Database, siteId: string, status: "active" | "suspended") {
+  await db.prepare("UPDATE sites SET status = ?, updated_at = ? WHERE id = ?").bind(status, now(), siteId).run();
+}
+
+/** Authoritative serving state from D1: site row plus the published version, if any. */
+export async function servingState(db: D1Database, siteId: string) {
+  const site = await getSite(db, siteId);
+  const version = site.published_version_id
+    ? await db
+        .prepare("SELECT id, number, config FROM site_versions WHERE id = ?")
+        .bind(site.published_version_id)
+        .first<{ id: string; number: number; config: string }>()
+    : null;
+  return { site, version };
+}
+
+/** Records that KV host records reflect the site as of `updatedAt` (no-op if the row moved on). */
+export async function markRoutesSynced(db: D1Database, siteId: string, updatedAt: string) {
+  await db
+    .prepare("UPDATE sites SET routes_synced_at = ? WHERE id = ? AND updated_at = ?")
+    .bind(updatedAt, siteId, updatedAt)
+    .run();
+}
+
+/** Sites whose KV host records may lag D1. */
+export async function sitesNeedingRouteSync(db: D1Database, limit = 100) {
+  const { results } = await db
+    .prepare("SELECT id FROM sites WHERE routes_synced_at IS NULL OR routes_synced_at < updated_at ORDER BY updated_at LIMIT ?")
+    .bind(limit)
+    .all<{ id: string }>();
+  return results.map((row) => row.id);
+}
+
+export async function clearRoutesSynced(db: D1Database, siteId: string) {
+  await db.prepare("UPDATE sites SET routes_synced_at = NULL WHERE id = ?").bind(siteId).run();
+}
+
+const LEASE_MS = 60_000;
+
+/** Takes the per-site route-sync lease; null when another writer holds it. */
+export async function acquireRoutesLease(db: D1Database, siteId: string): Promise<string | null> {
+  const token = crypto.randomUUID();
+  const now = new Date();
+  const result = await db
+    .prepare(
+      "UPDATE sites SET routes_lock_token = ?, routes_lock_until = ? WHERE id = ? AND (routes_lock_until IS NULL OR routes_lock_until < ?)",
+    )
+    .bind(token, new Date(now.getTime() + LEASE_MS).toISOString(), siteId, now.toISOString())
+    .run();
+  return result.meta.changes === 1 ? token : null;
+}
+
+export async function holdsRoutesLease(db: D1Database, siteId: string, token: string) {
+  const row = await db
+    .prepare("SELECT 1 AS held FROM sites WHERE id = ? AND routes_lock_token = ? AND routes_lock_until >= ?")
+    .bind(siteId, token, new Date().toISOString())
+    .first<{ held: number }>();
+  return Boolean(row);
+}
+
+export async function releaseRoutesLease(db: D1Database, siteId: string, token: string) {
+  await db
+    .prepare("UPDATE sites SET routes_lock_token = NULL, routes_lock_until = NULL WHERE id = ? AND routes_lock_token = ?")
+    .bind(siteId, token)
+    .run();
+}
+// M2 step 2-4: router reads one KV record per host (status, pointer, redirect); M1 records
+// (bare siteId) still work; suspended sites answer 503, resumed sites serve again.
+import { execFileSync } from "node:child_process";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { API, api, evidence, localD1, localKv, routerRequest, uploadShared } from "./lib/verify.mjs";
+
+const { fieldFixture } = await import("../packages/renderer/src/templates/service-local/fixtures.ts");
+const ev = evidence("m2-router");
+const { check } = ev;
+const run = Date.now().toString(36);
+
+uploadShared();
+const config = { ...structuredClone(fieldFixture), slug: `router-${run}` };
+const host = `${config.slug}.localhost`;
+const created = await api("POST", "/sites", { config, createdBy: "operator" });
+const siteId = created.data.siteId;
+
+const before = JSON.parse(localKv("get", `host:${host}`));
+check("생성 직후 호스트 레코드: 상태 active, 포인터 없음", before.siteId === siteId && before.status === "active" && before.pointer === null, before);
+const unpublished = await routerRequest(host, "/");
+check("게시 전 404", unpublished.status === 404 && unpublished.body.includes("아직 공개되지 않은"));
+
+const pub = await api("POST", `/sites/${siteId}/publish`);
+const record = JSON.parse(localKv("get", `host:${host}`));
+check("게시 후 호스트 레코드에 포인터·페이지 목록", record.pointer?.versionId === pub.data.versionId && record.pointer.pages.join() === "/,/privacy", record);
+check("게시 후 200", (await routerRequest(host, "/")).status === 200);
+
+// suspend / resume
+const suspended = await api("POST", `/sites/${siteId}/suspend`);
+const down = await routerRequest(host, "/");
+check("정지: 503 + Retry-After + noindex", suspended.status === 200 && down.status === 503 && down.headers["retry-after"] === "86400" && down.body.includes("noindex"));
+check("정지 중에도 레코드에 포인터 유지", JSON.parse(localKv("get", `host:${host}`)).pointer?.versionId === pub.data.versionId);
+await api("POST", `/sites/${siteId}/resume`);
+check("재개: 다시 200", (await routerRequest(host, "/")).status === 200);
+
+// publish and suspend at the same time: the host record must end equal to D1, never active
+const draft = await api("POST", `/sites/${siteId}/versions`, { config, createdBy: "operator" });
+await Promise.all([
+  api("POST", `/sites/${siteId}/publish`, { versionId: draft.data.versionId }),
+  api("POST", `/sites/${siteId}/suspend`),
+]);
+const d1 = (await api("GET", `/sites/${siteId}`)).data.site;
+const final = JSON.parse(localKv("get", `host:${host}`));
+check(
+  "게시·정지 동시 요청 후 호스트 레코드 = D1 (상태·게시 버전)",
+  final.status === d1.status && final.pointer?.versionId === d1.published_version_id && d1.status === "suspended",
+  { d1: { status: d1.status, published: d1.published_version_id }, kv: { status: final.status, pointer: final.pointer?.versionId } },
+);
+await api("POST", `/sites/${siteId}/resume`);
+
+// A KV write lost after D1 committed: the cron re-syncs from D1.
+await api("POST", `/sites/${siteId}/suspend`);
+const stale = { ...JSON.parse(localKv("get", `host:${host}`)), status: "active" };
+localKv("put", `host:${host}`, JSON.stringify(stale));
+localD1(`UPDATE sites SET routes_synced_at = NULL WHERE id = '${siteId}'`);
+const cron = await fetch(`${API}/__scheduled?cron=*/5+*+*+*+*`);
+let healed;
+for (let i = 0; i < 20; i++) {
+  healed = JSON.parse(localKv("get", `host:${host}`));
+  if (healed.status === "suspended") break;
+  await new Promise((r) => setTimeout(r, 250));
+}
+const synced = localD1(`SELECT routes_synced_at, updated_at FROM sites WHERE id = '${siteId}'`)[0];
+check("cron 재조정: 틀린 KV 레코드를 D1 상태(정지)로 복구, 동기화 표시 갱신", cron.ok && healed.status === "suspended" && synced.routes_synced_at === synced.updated_at, {
+  kv: healed.status,
+  synced,
+});
+await api("POST", `/sites/${siteId}/resume`);
+
+// M1-format record: bare siteId under host:, pointer under site:
+const legacyHost = `legacy-${run}.localhost`;
+localKv("put", `host:${legacyHost}`, siteId);
+// A write from another process reaches the running workerd shortly after; poll briefly.
+let legacy;
+for (let i = 0; i < 20; i++) {
+  legacy = await routerRequest(legacyHost, "/");
+  if (legacy.status === 200) break;
+  await new Promise((r) => setTimeout(r, 250));
+}
+check("M1 형식 레코드(문자열 siteId)도 서빙", legacy.status === 200 && legacy.headers["x-site-version"] === String(final.pointer.number), {
+  version: legacy.headers["x-site-version"],
+});
+
+// methods
+check("POST /는 405", (await routerRequest(host, "/", { method: "POST", body: "" })).status === 405);
+
+// Upgrade path: a database migrated to 0002 with a published site gets published_at backfilled by 0003.
+{
+  const dir = mkdtempSync(join(tmpdir(), "d1-upgrade-"));
+  const d1 = (args) =>
+    execFileSync("pnpm", ["exec", "wrangler", "d1", "execute", "DB", "--local", "--persist-to", dir, ...args], {
+      cwd: "apps/api",
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+  d1(["--file", "migrations/0001_init.sql"]);
+  d1(["--file", "migrations/0002_m2_first_customer.sql"]);
+  d1([
+    "--command",
+    "INSERT INTO sites (id, slug, template_id, published_version_id, created_at, updated_at) VALUES ('s1','old','service-local','v1','2026-01-01','2026-01-02');" +
+      "INSERT INTO site_versions (id, site_id, number, config, created_by, preview_token, first_published_at, created_at) VALUES ('v1','s1',1,'{}','operator','t1','2026-01-01T10:00:00Z','2026-01-01');",
+  ]);
+  d1(["--file", "migrations/0003_sites_published_at.sql"]);
+  const out = d1(["--command", "SELECT published_at FROM sites WHERE id = 's1'", "--json"]);
+  const value = JSON.parse(out)[0].results[0].published_at;
+  check("0002까지 적용된 DB에 0003: 게시된 사이트 published_at 채움", value === "2026-01-01T10:00:00Z", { value });
+}
+
+ev.finish({ siteId });
+
+exec
+/bin/zsh -lc 'for p in /AGENTS.md /Users/AGENTS.md /Users/steve/AGENTS.md /Users/steve/Projects/AGENTS.md; do test ! -f "$p" || cat "$p"; done; cat package.json; cat apps/api/migrations/0001*; cat apps/api/src/publish.ts' in /Users/steve/Projects/daniworks-sites-platform
+ succeeded in 0ms:
+{
+  "name": "daniworks-sites-platform",
+  "private": true,
+  "packageManager": "pnpm@10.28.0",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "build": "pnpm --filter @sites/renderer build",
+    "test": "pnpm -r test",
+    "check-types": "pnpm -r check-types",
+    "dev:api": "pnpm --filter api dev",
+    "dev:router": "pnpm --filter router dev",
+    "upload:shared": "node scripts/upload-shared.mjs",
+    "verify:m1": "node scripts/verify-m1.mjs",
+    "deploy:staging": "pnpm build && pnpm --filter api migrate:staging && pnpm --filter api deploy:staging && pnpm --filter router deploy:staging",
+    "verify:staging": "node scripts/verify-staging.mjs"
+  },
+  "devDependencies": {
+    "chrome-launcher": "1.2.3",
+    "lighthouse": "13.6.0",
+    "playwright": "1.65.1"
+  }
+}
+-- Sites, their append-only versions, and the hostnames that route to them.
+CREATE TABLE sites (
+  id TEXT PRIMARY KEY,
+  slug TEXT NOT NULL UNIQUE,
+  template_id TEXT NOT NULL,
+  published_version_id TEXT,
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'suspended')),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE site_versions (
+  id TEXT PRIMARY KEY,
+  site_id TEXT NOT NULL REFERENCES sites(id),
+  number INTEGER NOT NULL,
+  config TEXT NOT NULL,
+  created_by TEXT NOT NULL CHECK (created_by IN ('ai', 'operator', 'customer')),
+  note TEXT,
+  preview_token TEXT NOT NULL UNIQUE,
+  asset_version TEXT,
+  rendered_at TEXT,
+  first_published_at TEXT,
+  created_at TEXT NOT NULL,
+  UNIQUE (site_id, number)
+);
+
+CREATE TABLE domains (
+  hostname TEXT PRIMARY KEY,
+  site_id TEXT NOT NULL REFERENCES sites(id),
+  kind TEXT NOT NULL CHECK (kind IN ('subdomain', 'custom')),
+  status TEXT NOT NULL DEFAULT 'active',
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX site_versions_site ON site_versions(site_id, number DESC);
+CREATE INDEX domains_site ON domains(site_id);
+import { ASSET_VERSION, renderSite, type SiteConfig } from "@sites/renderer";
+import type { Env } from "./env.js";
+import { HttpError } from "./http.js";
+import { kvSiteKey, r2PageKey, r2SharedKey, type PublishedPointer } from "./keys.js";
+import { routesOf, syncHostRecordsNow } from "./routes.js";
+import {
+  getVersion,
+  latestVersion,
+  markPublished,
+  markRendered,
+  primaryHostname,
+  type SiteRow,
+  type VersionRow,
+} from "./store.js";
+
+export const assetBase = () => `/_shared/${ASSET_VERSION}`;
+
+/** Public origin a site is served from: its active custom domain, else `<slug>.<BASE_DOMAIN>`. */
+export async function siteOrigin(env: Env, site: SiteRow) {
+  const host = await primaryHostname(env.DB, site, env.BASE_DOMAIN);
+  return `${env.PUBLIC_SCHEME ?? "https"}://${host}`;
+}
+
+async function requireSharedAssets(env: Env) {
+  const head = await env.SITES.head(r2SharedKey(`${ASSET_VERSION}/_assets/site.css`));
+  if (!head) {
+    throw new HttpError(409, `공용 에셋 ${ASSET_VERSION}이 R2에 없습니다. scripts/upload-shared.mjs를 먼저 실행하세요`);
+  }
+}
+
+/**
+ * Renders every page of a version to R2 unless it is already rendered against the current
+ * shared assets and origin.
+ */
+async function ensureRendered(env: Env, version: VersionRow, origin: string) {
+  const config = JSON.parse(version.config) as SiteConfig;
+  if (version.rendered_at && version.asset_version === ASSET_VERSION && version.rendered_origin === origin) {
+    return routesOf(config);
+  }
+  const { pages } = await renderSite(config, { assetBase: assetBase(), origin });
+  for (const page of pages) {
+    await env.SITES.put(r2PageKey(version.site_id, version.id, page.path), page.html, {
+      httpMetadata: { contentType: "text/html; charset=utf-8" },
+    });
+  }
+  await markRendered(env.DB, version.id, ASSET_VERSION, origin);
+  return pages.map((page) => page.route);
+}
+
+async function pointTo(env: Env, site: SiteRow, version: VersionRow, pages: string[]) {
+  const publishedAt = await markPublished(env.DB, site.id, version.id, ASSET_VERSION);
+  const pointer: PublishedPointer = { versionId: version.id, number: version.number, publishedAt, pages };
+  await env.ROUTES.put(kvSiteKey(site.id), JSON.stringify(pointer));
+  await syncHostRecordsNow(env, site.id);
+  return pointer;
+}
+
+/** Publish = render (if needed) → R2 → move the KV pointer. Visible worldwide within about a minute. */
+export async function publish(env: Env, site: SiteRow, versionId?: string) {
+  await requireSharedAssets(env);
+  const version = versionId ? await getVersion(env.DB, site.id, versionId) : await latestVersion(env.DB, site.id);
+  const pages = await ensureRendered(env, version, await siteOrigin(env, site));
+  return pointTo(env, site, version, pages);
+}
+
+/** Rollback = move the pointer back to a version that was published before. No re-render. */
+export async function rollback(env: Env, site: SiteRow, versionId: string) {
+  const version = await getVersion(env.DB, site.id, versionId);
+  if (!version.first_published_at) throw new HttpError(409, "게시된 적 없는 버전으로는 롤백할 수 없습니다");
+  const exists = await env.SITES.head(r2PageKey(site.id, version.id));
+  if (!exists) throw new HttpError(409, "렌더된 파일이 R2에 없습니다. publish로 다시 게시하세요");
+  return pointTo(env, site, version, routesOf(JSON.parse(version.config) as SiteConfig));
+}
+
+exec
+/bin/zsh -lc 'pnpm check-types; pnpm test' in /Users/steve/Projects/daniworks-sites-platform
+exec
+/bin/zsh -lc "cat apps/api/src/index.ts; cat docs/* | grep -n -E 'cancel|해지|domain|도메인' | head -45; nl -ba apps/api/src/routes.ts | tail -85; cat apps/api/wrangler.toml" in /Users/steve/Projects/daniworks-sites-platform
+ succeeded in 0ms:
+import { parseSiteConfig, renderSite, SiteConfigError, type SiteConfig } from "@sites/renderer";
+import { listAssets, uploadAsset } from "./assets.js";
+import type { Env } from "./env.js";
+import { HttpError, json, readJson, requireAdmin } from "./http.js";
+import { MEDIA_PATH, r2MediaKey, r2SharedKey } from "./keys.js";
+import { reconcileHostRecords, syncHostRecordsNow } from "./routes.js";
+import { assetBase, publish, rollback, siteOrigin } from "./publish.js";
+import {
+  addVersion,
+  createSite,
+  getSite,
+  listVersions,
+  setSiteStatus,
+  versionByPreviewToken,
+  type CreatedBy,
+} from "./store.js";
+
+const CREATORS: CreatedBy[] = ["ai", "operator", "customer"];
+
+/** Parsed config with defaults filled; what gets stored. */
+function validated(input: unknown): SiteConfig {
+  const result = parseSiteConfig(input);
+  if (!result.ok) throw new HttpError(422, "설정 검증 실패", result.errors);
+  return result.config;
+}
+
+function creator(value: unknown): CreatedBy {
+  return CREATORS.includes(value as CreatedBy) ? (value as CreatedBy) : "operator";
+}
+
+async function serveImmutable(env: Env, key: string) {
+  const object = await env.SITES.get(key);
+  if (!object) return new Response("not found", { status: 404 });
+  const headers = new Headers();
+  object.writeHttpMetadata(headers);
+  headers.set("cache-control", "public, max-age=31536000, immutable");
+  return new Response(object.body, { headers });
+}
+
+async function handle(request: Request, env: Env): Promise<Response> {
+  const url = new URL(request.url);
+  const parts = url.pathname.split("/").filter(Boolean);
+  const method = request.method;
+
+  if (method === "GET" && url.pathname === "/health") return json({ ok: true });
+
+  // Shared assets are public and immutable; previews load them from here.
+  if (method === "GET" && parts[0] === "_shared") return serveImmutable(env, r2SharedKey(parts.slice(1).join("/")));
+  // Uploaded photos (public, content-addressed) so previews show them before publishing.
+  const media = method === "GET" ? MEDIA_PATH.exec(url.pathname) : null;
+  if (media) return serveImmutable(env, r2MediaKey(media[1]!, media[2]!));
+
+  // Preview: anyone with the token can view a version. Never indexed. /preview/<token>[/privacy]
+  if (method === "GET" && parts[0] === "preview" && (parts.length === 2 || parts.length === 3)) {
+    const version = await versionByPreviewToken(env.DB, parts[1]!);
+    const site = await getSite(env.DB, version.site_id);
+    const { pages } = await renderSite(JSON.parse(version.config) as SiteConfig, {
+      assetBase: assetBase(),
+      origin: await siteOrigin(env, site),
+      preview: true,
+      // Site links are root-relative (`/#inquiry`, `/privacy`); keep them inside this preview.
+      linkPrefix: `/preview/${parts[1]}`,
+    });
+    const route = parts[2] ? `/${parts[2]}` : "/";
+    const page = pages.find((entry) => entry.route === route);
+    if (!page) throw new HttpError(404, "없는 페이지입니다");
+    return new Response(page.html, {
+      headers: {
+        "content-type": "text/html; charset=utf-8",
+        "x-robots-tag": "noindex, nofollow",
+        "cache-control": "no-store",
+      },
+    });
+  }
+
+  requireAdmin(request, env.ADMIN_TOKEN);
+
+  // PUT /admin/shared/<version>/<path>: upload one shared asset file.
+  if (method === "PUT" && parts[0] === "admin" && parts[1] === "shared" && parts.length > 3) {
+    const key = r2SharedKey(parts.slice(2).join("/"));
+    await env.SITES.put(key, request.body, {
+      httpMetadata: { contentType: request.headers.get("content-type") ?? "application/octet-stream" },
+    });
+    return json({ key }, 201);
+  }
+
+  if (parts[0] !== "sites") throw new HttpError(404, "없는 경로입니다");
+
+  // POST /sites {config, createdBy}
+  if (method === "POST" && parts.length === 1) {
+    const body = await readJson<{ config: unknown; createdBy?: CreatedBy }>(request);
+    const config = validated(body.config);
+    const hostname = `${config.slug}.${env.BASE_DOMAIN}`;
+    const { siteId, versionId } = await createSite(env.DB, config, creator(body.createdBy), hostname);
+    await syncHostRecordsNow(env, siteId);
+    return json({ siteId, versionId, hostname }, 201);
+  }
+
+  const site = await getSite(env.DB, parts[1]!);
+
+  if (method === "GET" && parts.length === 2) {
+    return json({ site, versions: await listVersions(env.DB, site.id) });
+  }
+
+  // POST /sites/:id/versions {config, createdBy, note}: new draft version
+  if (method === "POST" && parts[2] === "versions") {
+    const body = await readJson<{ config: unknown; createdBy?: CreatedBy; note?: string }>(request);
+    const result = await addVersion(env.DB, site, validated(body.config), creator(body.createdBy), body.note ?? null);
+    return json(result, 201);
+  }
+
+  // POST /sites/:id/assets: raw image body, or JSON {url}. GET lists them.
+  if (parts[2] === "assets" && parts.length === 3) {
+    if (method === "POST") return json(await uploadAsset(env, site, request), 201);
+    if (method === "GET") return json({ assets: await listAssets(env, site) });
+  }
+
+  // POST /sites/:id/publish {versionId?}: latest version when omitted
+  if (method === "POST" && parts[2] === "publish") {
+    const body = await readJson<{ versionId?: string }>(request).catch(() => ({}) as { versionId?: string });
+    return json(await publish(env, site, body.versionId));
+  }
+
+  // POST /sites/:id/suspend | /resume: stop or restart public serving (non-payment, requests).
+  if (method === "POST" && (parts[2] === "suspend" || parts[2] === "resume") && parts.length === 3) {
+    if (site.cancelled_at) throw new HttpError(409, "해지된 사이트입니다");
+    const status = parts[2] === "suspend" ? "suspended" : "active";
+    await setSiteStatus(env.DB, site.id, status);
+    await syncHostRecordsNow(env, site.id);
+    return json({ siteId: site.id, status });
+  }
+
+  // POST /sites/:id/rollback {versionId}
+  if (method === "POST" && parts[2] === "rollback") {
+    const body = await readJson<{ versionId: string }>(request);
+    if (!body.versionId) throw new HttpError(400, "versionId가 필요합니다");
+    return json(await rollback(env, site, body.versionId));
+  }
+
+  throw new HttpError(404, "없는 경로입니다");
+}
+
+export default {
+  async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext) {
+    ctx.waitUntil(reconcileHostRecords(env).then((result) => console.log("[routes] reconcile", JSON.stringify(result))));
+  },
+
+  async fetch(request: Request, env: Env): Promise<Response> {
+    try {
+      return await handle(request, env);
+    } catch (error) {
+      if (error instanceof HttpError) return json({ error: error.message, details: error.details }, error.status);
+      if (error instanceof SiteConfigError) return json({ error: "설정 검증 실패", details: error.errors }, 422);
+      console.error(error);
+      return json({ error: "서버 오류" }, 500);
+    }
+  },
+};
+97:| D1 | `sites`, `site_versions`, `domains` | 설정 원본과 버전 이력(추가만 함) |
+191:4. 고객이 콘솔에서 커스텀 도메인을 직접 연결한다.
+205:| 운영자(다니웍스) | 시안 검수, 게시, 수정 요청 처리, 도메인 문제 대응 | 운영자 콘솔, AI 도구(MCP) |
+207:| 고객(사장님) | 시안 확인, 도메인 연결, 문의 확인, 리포트 열람, 수정 요청 | 시안 링크, 고객 콘솔 |
+217:6. 도메인: 고객이 콘솔에서 커스텀 도메인 등록 → DNS 안내 → 연결 확인
+224:- 형식: `@dani-builder/site-templates`의 `TemplateSeed` + 플랫폼 메타(연락처, 업종, 도메인, RSS URL 등).
+247:### 4-4. 라우팅·도메인
+249:- 기본 도메인: `*.dsites.kr` 와일드카드. slug는 사이트 생성 시 확정.
+250:- 커스텀 도메인: Cloudflare for SaaS 커스텀 호스트네임. 콘솔에서 등록하면 API로 호스트네임을 만들고, 고객에게 CNAME·TXT 값을 보여주고, 상태를 확인해 표시한다.
+251:- 루트 도메인(example.com)은 국내 등록업체 대부분이 CNAME/ALIAS를 지원하지 않는 것으로 보인다. 고정 IP로 연결하는 Apex Proxying은 Enterprise 전용이다. 안내 기본값은 `www` CNAME 연결 + 등록업체 루트 포워딩(`customer.kr` → `https://www.customer.kr`).
+253:- 비용: 호스트네임 100개 포함, 이후 개당 월 $0.10. 해지 시 호스트네임을 즉시 삭제하고, quota API로 사용량을 점검한다.
+254:- 라우터 Worker: Host → siteId(KV) → 게시 버전 포인터(KV) → R2 객체. 커스텀 도메인 연결 후 기본 도메인은 커스텀 도메인으로 리다이렉트.
+271:- 네이버 이미지: 외부 도메인 Referer가 붙으면 403, Referer가 없으면 200이다(2026-11-19 실측). `<img referrerpolicy="no-referrer">`로 표시하고 프록시는 두지 않는다.
+277:- 기능: 사이트 목록·생성, 버전·프리뷰·검증 오류 확인, 업체 정보 수정, 게시·롤백, 사진, 커스텀 도메인 등록·상태, 문의 열람·내보내기, 방문·클릭 통계, 분기 리포트, 전체 재게시, 해지.
+286:- 기능: 사이트 상태, 커스텀 도메인 연결, 문의 목록, 분기 리포트 열람, 수정 요청 접수, 정적 파일 다운로드(게시 버전 zip).
+294:- 해지: 공개 중단(라우터에서 차단), 데이터·정적 파일은 보관 후 인출 가능.
+301:                       ├→ apps/api (Worker) ─→ D1: customers, sites, site_versions, domains, inquiries, metrics_daily
+305:방문자 → <slug>.dsites.kr | 커스텀 도메인 → apps/router (Worker) → R2
+333:| `domains` | id, site_id, hostname, cf_hostname_id, 검증 상태, 인증서 상태 |
+356:| 도메인 `dsites.kr` | 약 $1 | 약 $1 |
+368:| 국내 등록업체 도메인 연결 실패 | 가비아·후이즈·카페24 등에서 www CNAME 연결 실측, 업체별 안내 문서 작성 |
+369:| 등록업체 루트 포워딩이 https를 지원하지 않음 (`https://customer.kr` 접속 시 인증서 오류) | 같은 업체들에서 http·https 포워딩 각각 실측. 미지원 업체는 네임서버 Cloudflare 이전 안내 또는 도메인 대행 옵션으로 처리 |
+382:| M1 게시 PoC (완료, [로컬](m1-publish-poc.md)·[스테이징](staging-deploy.md)) | `apps/api` 사이트·버전 CRUD, 게시·롤백, `apps/router` 서브도메인 서빙 | `<slug>.dsites.kr`에서 게시·롤백 동작 |
+383:| M2 첫 고객 | 업종 템플릿 1번(레슨·교육·출장), 문의, 측정, MCP 도구, 사진, 커스텀 도메인(내부 등록), 운영자 콘솔 v1 | 실제 리드 1곳 오픈 |
+384:| M3 운영 | 나머지 업종 템플릿, RSS, 분기 리포트 집계, 전체 재게시, 해지·인출 | 10곳 운영 |
+385:| M4 고객 콘솔(보류) | 도메인 셀프 연결, 문의, 리포트, 수정 요청, zip 다운로드 | 고객이 도움 없이 도메인 연결 |
+392:- 해지 후 데이터 보관 기간 (구현은 설정값, 기본 90일)
+410:결론: M1 흐름(생성 → 프리뷰 → 게시 → 수정 → 재게시 → 롤백)이 실제 도메인 `https://<slug>.dsites.kr`에서 동작한다. `verify-staging` 18/18을 두 번 통과했다. 게시·롤백의 전 세계 반영은 최대 60.2초로 PRD 목표(1분)의 경계에 있다. 한국 방문자 응답 속도에는 KV 콜드 조회와 통신사 라우팅이라는 두 가지 문제가 있다.
+431:| `*.dsites.kr` | AAAA `100::`, 프록시 | `*/*` → router | 고객 서브도메인 |
+466:두 번 실행해 18/18 모두 통과했다(`stg-mwmc19ni`, `stg-mwmc46r2`). 항목은 `verify:m1`과 같고, Host 헤더 트릭 없이 실제 도메인으로 요청한다. 공용 CSS가 `immutable`로 서빙되는지도 확인한다.
+468:브라우저 검사는 이 머신에 Playwright가 없어 건너뛰었다(스크립트는 Playwright가 있으면 실행한다). 하이드레이션·콘솔 오류는 실제 도메인에서 확인하지 못했다.
+546:- 실제 도메인에서 브라우저 하이드레이션·콘솔 오류(Playwright 없음)
+    43	      ? {
+    44	          versionId: version.id,
+    45	          number: version.number,
+    46	          // Rows from before migration 0003 are backfilled; never drop a live pointer over a missing time.
+    47	          publishedAt: site.published_at ?? site.updated_at,
+    48	          pages: routesOf(JSON.parse(version.config) as { version?: unknown }),
+    49	        }
+    50	      : null;
+    51	  const primary = await primaryHostname(env.DB, site, env.BASE_DOMAIN);
+    52	  const { results: domains } = await env.DB.prepare("SELECT hostname, kind, status FROM domains WHERE site_id = ?")
+    53	    .bind(site.id)
+    54	    .all<{ hostname: string; kind: string; status: string }>();
+    55	  const status = hostStatus(site);
+    56	  const key = JSON.stringify([status, pointer?.versionId, pointer?.publishedAt, primary, domains]);
+    57	  return { site, pointer, primary, domains, status, key };
+    58	}
+    59	
+    60	/**
+    61	 * Rewrites the KV record of every hostname of a site from D1, the source of truth: status,
+    62	 * published pointer and redirect. One writer per site at a time (D1 lease). A caller that
+    63	 * cannot take the lease leaves the site marked unsynced; the holder re-reads D1 after writing
+    64	 * and catches up, and the reconcile cron covers anything left. Returns whether KV now matches.
+    65	 */
+    66	export async function syncHostRecords(env: Env, siteId: string): Promise<boolean> {
+    67	  await clearRoutesSynced(env.DB, siteId);
+    68	  const token = await acquireRoutesLease(env.DB, siteId);
+    69	  if (!token) return false;
+    70	  try {
+    71	    for (let attempt = 0; attempt < 3; attempt++) {
+    72	      const state = await snapshot(env, siteId);
+    73	      for (const domain of state.domains) {
+    74	        // Fence: a holder whose lease expired must not overwrite a newer writer.
+    75	        if (!(await holdsRoutesLease(env.DB, siteId, token))) return false;
+    76	        // Custom hostnames that are not active yet must not serve the site.
+    77	        if (domain.kind === "custom" && domain.status !== "active") {
+    78	          await kvWrite(() => env.ROUTES.delete(kvHostKey(domain.hostname)));
+    79	          continue;
+    80	        }
+    81	        const record: HostRecord = {
+    82	          siteId: state.site.id,
+    83	          status: state.status,
+    84	          pointer: state.pointer,
+    85	          redirectTo: domain.hostname === state.primary ? null : state.primary,
+    86	        };
+    87	        await kvWrite(() => env.ROUTES.put(kvHostKey(domain.hostname), JSON.stringify(record)));
+    88	      }
+    89	      if ((await snapshot(env, siteId)).key === state.key) {
+    90	        await markRoutesSynced(env.DB, siteId, state.site.updated_at);
+    91	        return true;
+    92	      }
+    93	    }
+    94	    return false;
+    95	  } finally {
+    96	    await releaseRoutesLease(env.DB, siteId, token);
+    97	  }
+    98	}
+    99	
+   100	/**
+   101	 * For request handlers: syncs now, retrying briefly while another writer holds the lease, so
+   102	 * the caller's change is live when it responds. The cron catches anything still pending.
+   103	 */
+   104	export async function syncHostRecordsNow(env: Env, siteId: string) {
+   105	  for (let attempt = 0; attempt < 4; attempt++) {
+   106	    if (await syncHostRecords(env, siteId)) return true;
+   107	    await sleep(1000);
+   108	  }
+   109	  return false;
+   110	}
+   111	
+   112	/**
+   113	 * Cron safety net: re-syncs sites whose host records may lag D1 (a request failed after D1
+   114	 * committed, or KV kept rejecting writes). Guarantees serving converges to D1 within minutes.
+   115	 */
+   116	export async function reconcileHostRecords(env: Env) {
+   117	  const ids = await sitesNeedingRouteSync(env.DB);
+   118	  let synced = 0;
+   119	  for (const id of ids) {
+   120	    try {
+   121	      if (await syncHostRecords(env, id)) synced++;
+   122	    } catch (error) {
+   123	      console.error("[routes] reconcile failed", id, error);
+   124	    }
+   125	  }
+   126	  return { pending: ids.length, synced };
+   127	}
+# Platform API: site/version CRUD, preview, publish (render → R2 → KV), rollback.
+name = "sites-api"
+main = "src/index.ts"
+# Daniworks account (owns the dsites.kr zone). Local dev ignores it.
+account_id = "358a1b6caabcf91741109efca1ec0547"
+compatibility_date = "2026-11-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Safety net: re-sync router KV records that lag D1 (see src/routes.ts).
+[triggers]
+crons = ["*/5 * * * *"]
+
+[vars]
+# Public sites are served at <slug>.<BASE_DOMAIN>. Local dev uses *.localhost.
+BASE_DOMAIN = "localhost"
+PUBLIC_SCHEME = "http"
+# ADMIN_TOKEN comes from .dev.vars locally and a secret in production.
+
+[[d1_databases]]
+binding = "DB"
+database_name = "daniworks-sites"
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "migrations"
+
+[[r2_buckets]]
+binding = "SITES"
+bucket_name = "daniworks-sites"
+
+[[kv_namespaces]]
+binding = "ROUTES"
+id = "00000000000000000000000000000000"
+
+# Staging on the real zone: `pnpm --filter api deploy:staging`. Until launch dsites.kr doubles as staging.
+# Bindings and vars are not inherited by environments, so every one is repeated here.
+[env.staging]
+name = "sites-api-staging"
+workers_dev = false
+preview_urls = false
+# More specific than the router's `*/*`, so it wins for this host.
+routes = [{ pattern = "api.dsites.kr/*", zone_name = "dsites.kr" }]
+
+[env.staging.triggers]
+crons = ["*/5 * * * *"]
+
+[env.staging.vars]
+BASE_DOMAIN = "dsites.kr"
+PUBLIC_SCHEME = "https"
+# ADMIN_TOKEN: `wrangler secret put ADMIN_TOKEN --env staging`
+
+[[env.staging.d1_databases]]
+binding = "DB"
+database_name = "daniworks-sites-staging"
+database_id = "fc09d755-f8b2-43e1-9bcf-55a00786d15a"
+migrations_dir = "migrations"
+
+[[env.staging.r2_buckets]]
+binding = "SITES"
+bucket_name = "daniworks-sites-staging"
+
+[[env.staging.kv_namespaces]]
+binding = "ROUTES"
+id = "81f56d8264ab431ab7ca5da79add2496"
+
+ succeeded in 2024ms:
+
+> daniworks-sites-platform@ check-types /Users/steve/Projects/daniworks-sites-platform
+> pnpm -r check-types
+
+Scope: 4 of 5 workspace projects
+apps/router check-types$ tsc -p tsconfig.json
+packages/schema check-types$ tsc -p tsconfig.json
+apps/router check-types: Done
+packages/schema check-types: Done
+packages/renderer check-types$ tsc -p tsconfig.json
+packages/renderer check-types: Done
+apps/api check-types$ tsc -p tsconfig.json
+apps/api check-types: Done
+
+> daniworks-sites-platform@ test /Users/steve/Projects/daniworks-sites-platform
+> pnpm -r test
+
+Scope: 4 of 5 workspace projects
+packages/schema test$ vitest run
+packages/schema test:  RUN  v5.1.1 /Users/steve/Projects/daniworks-sites-platform/packages/schema
+packages/schema test:  Test Files  1 passed (1)
+packages/schema test:       Tests  22 passed (22)
+packages/schema test:    Start at  03:27:48
+packages/schema test:    Duration  145ms (import 78%, tests 9%, transform 9%, worker 4%)
+packages/schema test: Done
+packages/renderer test$ vitest run
+packages/renderer test:  RUN  v5.1.1 /Users/steve/Projects/daniworks-sites-platform/packages/renderer
+packages/renderer test:  Test Files  2 passed (2)
+packages/renderer test:       Tests  16 passed (16)
+packages/renderer test:    Start at  03:27:48
+packages/renderer test:    Duration  254ms (import 57%, tests 32%, transform 10%, worker 1%)
+packages/renderer test: Done
+apps/api test$ vitest run
+apps/api test:  RUN  v5.1.1 /Users/steve/Projects/daniworks-sites-platform/apps/api
+apps/api test:  Test Files  1 passed (1)
+apps/api test:       Tests  20 passed (20)
+apps/api test:    Start at  03:27:49
+apps/api test:    Duration  136ms (import 70%, tests 25%, transform 4%, worker 2%)
+apps/api test: Done
+
+codex
+The route-sync lease does not prevent a delayed, expired writer from overwriting newer serving state without subsequent reconciliation. Type checks and all 58 existing tests pass.
+
+Review comment:
+
+- [P2] Prevent expired lease holders from overwriting newer records — /Users/steve/Projects/daniworks-sites-platform/apps/api/src/routes.ts:87-90
+  If a writer pauses after checking the lease, or its KV write remains pending beyond the 60-second lease, another writer can acquire the lease, write the latest state, and mark it synced before the original write completes. The original write can then overwrite that record with stale state. Checking the lease before the write does not fence the write itself, and the newer `routes_synced_at` can prevent cron from repairing the stale record. Use serialized writes with enforceable fencing, or ensure an expired writer leaves the site dirty after any potentially stale write.
+The route-sync lease does not prevent a delayed, expired writer from overwriting newer serving state without subsequent reconciliation. Type checks and all 58 existing tests pass.
+
+Review comment:
+
+- [P2] Prevent expired lease holders from overwriting newer records — /Users/steve/Projects/daniworks-sites-platform/apps/api/src/routes.ts:87-90
+  If a writer pauses after checking the lease, or its KV write remains pending beyond the 60-second lease, another writer can acquire the lease, write the latest state, and mark it synced before the original write completes. The original write can then overwrite that record with stale state. Checking the lease before the write does not fence the write itself, and the newer `routes_synced_at` can prevent cron from repairing the stale record. Use serialized writes with enforceable fencing, or ensure an expired writer leaves the site dirty after any potentially stale write.

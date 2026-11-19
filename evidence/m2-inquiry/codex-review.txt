@@ -1,0 +1,2091 @@
+OpenAI Codex v0.167.0
+--------
+workdir: /Users/steve/Projects/daniworks-sites-platform
+model: gpt-6.1-sol
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: low
+reasoning summaries: none
+session id: 01a1eff5-9486-7af2-a2df-675f14885b57
+--------
+user
+current changes
+exec
+/bin/zsh -lc 'git status --short; find .. -name AGENTS.md -o -name AGENTS.override.md' in /Users/steve/Projects/daniworks-sites-platform
+exec
+/bin/zsh -lc 'cat AGENTS.md 2>/dev/null; git diff --stat; git diff' in /Users/steve/Projects/daniworks-sites-platform
+ succeeded in 0ms:
+ apps/api/.dev.vars.example                      |  3 ++
+ apps/api/src/assets.ts                          |  3 +-
+ apps/api/src/env.ts                             | 12 +++++
+ apps/api/src/index.ts                           | 47 ++++++++++++++++
+ apps/api/src/media.ts                           |  5 --
+ apps/api/src/publish.ts                         |  6 ++-
+ apps/api/src/store.ts                           | 14 +++++
+ apps/api/wrangler.toml                          | 14 +++++
+ apps/router/src/index.ts                        | 72 ++++++++++++++++++++++++-
+ apps/router/wrangler.toml                       | 11 ++++
+ docker-compose.yml                              |  3 ++
+ docker/workers.sh                               |  2 +-
+ evidence/m2-router/results.json                 | 20 +++----
+ evidence/m2-template/results.json               | 70 ++++++++++++------------
+ packages/renderer/src/platform/inquiry-form.tsx | 65 ++++++++++++++++++++--
+ packages/renderer/src/render-context.tsx        | 11 +++-
+ packages/renderer/src/render.tsx                |  8 ++-
+ packages/renderer/src/view.tsx                  |  6 ++-
+ packages/schema/src/index.ts                    |  1 +
+ 19 files changed, 311 insertions(+), 62 deletions(-)
+diff --git a/apps/api/.dev.vars.example b/apps/api/.dev.vars.example
+index d004c3a..6f69859 100644
+--- a/apps/api/.dev.vars.example
++++ b/apps/api/.dev.vars.example
+@@ -1 +1,4 @@
+ ADMIN_TOKEN=dev-admin-token
++# Cloudflare Turnstile test secret: always passes (pairs with the test site key in wrangler.toml).
++TURNSTILE_SECRET=1x0000000000000000000000000000000AA
++HASH_PEPPER=dev-pepper
+diff --git a/apps/api/src/assets.ts b/apps/api/src/assets.ts
+index da9a2ee..40e4667 100644
+--- a/apps/api/src/assets.ts
++++ b/apps/api/src/assets.ts
+@@ -2,7 +2,8 @@ import { variantUrl } from "@sites/renderer";
+ import type { Env } from "./env.js";
+ import { HttpError } from "./http.js";
+ import { r2MediaKey } from "./keys.js";
+-import { MAX_INPUT_BYTES, processPhotoExclusive, sha256Hex } from "./media.js";
++import { sha256Hex } from "./hash.js";
++import { MAX_INPUT_BYTES, processPhotoExclusive } from "./media.js";
+ import type { SiteRow } from "./store.js";
+ 
+ export interface AssetResult {
+diff --git a/apps/api/src/env.ts b/apps/api/src/env.ts
+index b9c0a47..ad5ef50 100644
+--- a/apps/api/src/env.ts
++++ b/apps/api/src/env.ts
+@@ -6,4 +6,16 @@ export interface Env {
+   ADMIN_TOKEN: string;
+   /** `https` in deployed environments, `http` locally. Used for canonical and OG URLs. */
+   PUBLIC_SCHEME?: string;
++  /** Public origin of this API (`https://api.dsites.kr`); hosts the Turnstile frame sites embed. */
++  API_ORIGIN?: string;
++  /** Turnstile widget key (public) and secret. Without a secret the check is skipped. */
++  TURNSTILE_SITE_KEY?: string;
++  TURNSTILE_SECRET?: string;
++  /** `binding` (Cloudflare Email Service), `mailpit` (local inbox) or `off`. */
++  MAIL_MODE?: "binding" | "mailpit" | "off";
++  MAIL_FROM?: string;
++  MAIL_PIT_URL?: string;
++  EMAIL?: SendEmail;
++  /** Pepper for hashing visitor IPs (rate limiting without storing addresses). */
++  HASH_PEPPER?: string;
+ }
+diff --git a/apps/api/src/index.ts b/apps/api/src/index.ts
+index e00f545..2a20731 100644
+--- a/apps/api/src/index.ts
++++ b/apps/api/src/index.ts
+@@ -1,5 +1,7 @@
+ import { parseSiteConfig, renderSite, SiteConfigError, type SiteConfig } from "@sites/renderer";
+ import { listAssets, uploadAsset } from "./assets.js";
++import { inquiriesCsv, listInquiries, requireEmail } from "./inquiries.js";
++import { turnstileFrame } from "./turnstile.js";
+ import type { Env } from "./env.js";
+ import { HttpError, json, readJson, requireAdmin } from "./http.js";
+ import { MEDIA_PATH, r2MediaKey, r2SharedKey } from "./keys.js";
+@@ -12,6 +14,7 @@ import {
+   addVersion,
+   createSite,
+   getSite,
++  listSites,
+   listVersions,
+   setSiteStatus,
+   versionByPreviewToken,
+@@ -53,6 +56,16 @@ async function handle(request: Request, env: Env): Promise<Response> {
+   const media = method === "GET" ? MEDIA_PATH.exec(url.pathname) : null;
+   if (media) return serveImmutable(env, r2MediaKey(media[1]!, media[2]!));
+ 
++  // Turnstile widget frame embedded by public sites (see turnstile.ts).
++  if (method === "GET" && url.pathname === "/turnstile-frame") {
++    if (!env.TURNSTILE_SITE_KEY) return new Response("turnstile not configured", { status: 404 });
++    const parent = url.searchParams.get("parent") ?? "";
++    if (!/^https?:\/\/[a-z0-9.-]+(:\d+)?$/i.test(parent)) return new Response("bad parent", { status: 400 });
++    return new Response(turnstileFrame(env.TURNSTILE_SITE_KEY, parent), {
++      headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "x-robots-tag": "noindex" },
++    });
++  }
++
+   // Preview: anyone with the token can view a version. Never indexed. /preview/<token>[/privacy]
+   if (method === "GET" && parts[0] === "preview" && (parts.length === 2 || parts.length === 3)) {
+     const version = await versionByPreviewToken(env.DB, parts[1]!);
+@@ -61,6 +74,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
+       assetBase: assetBase(),
+       origin: await siteOrigin(env, site),
+       preview: true,
++      turnstileFrame: null,
+       // Site links are root-relative (`/#inquiry`, `/privacy`); keep them inside this preview.
+       linkPrefix: `/preview/${parts[1]}`,
+     });
+@@ -99,12 +113,43 @@ async function handle(request: Request, env: Env): Promise<Response> {
+     return json({ siteId, versionId, hostname }, 201);
+   }
+ 
++  // GET /sites: every site with its published version number and primary hostname.
++  if (method === "GET" && parts.length === 1) {
++    return json({ sites: await listSites(env.DB, env.BASE_DOMAIN) });
++  }
++  if (parts.length < 2) throw new HttpError(404, "없는 경로입니다");
++
+   const site = await getSite(env.DB, parts[1]!);
+ 
+   if (method === "GET" && parts.length === 2) {
+     return json({ site, versions: await listVersions(env.DB, site.id) });
+   }
+ 
++  // PATCH /sites/:id {notifyEmail}: operational settings outside the versioned config.
++  if (method === "PATCH" && parts.length === 2) {
++    const body = await readJson<{ notifyEmail?: unknown }>(request);
++    if ("notifyEmail" in body) {
++      await env.DB.prepare("UPDATE sites SET notify_email = ? WHERE id = ?").bind(requireEmail(body.notifyEmail), site.id).run();
++    }
++    return json({ site: await getSite(env.DB, site.id) });
++  }
++
++  // GET /sites/:id/inquiries[.csv]?from=&to= (ISO dates)
++  if (method === "GET" && (parts[2] === "inquiries" || parts[2] === "inquiries.csv") && parts.length === 3) {
++    const rows = await listInquiries(env, site.id, {
++      from: url.searchParams.get("from") ?? undefined,
++      to: url.searchParams.get("to") ?? undefined,
++      limit: Number(url.searchParams.get("limit") ?? 200),
++    });
++    if (parts[2] === "inquiries") return json({ inquiries: rows });
++    return new Response(inquiriesCsv(rows), {
++      headers: {
++        "content-type": "text/csv; charset=utf-8",
++        "content-disposition": `attachment; filename="inquiries-${site.slug}.csv"`,
++      },
++    });
++  }
++
+   // POST /sites/:id/versions {config, createdBy, note}: new draft version
+   if (method === "POST" && parts[2] === "versions") {
+     const body = await readJson<{ config: unknown; createdBy?: CreatedBy; note?: string }>(request);
+@@ -143,6 +188,8 @@ async function handle(request: Request, env: Env): Promise<Response> {
+   throw new HttpError(404, "없는 경로입니다");
+ }
+ 
++export { PublicApi } from "./public.js";
++
+ export default {
+   async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext) {
+     ctx.waitUntil(
+diff --git a/apps/api/src/media.ts b/apps/api/src/media.ts
+index 0f521f2..925a7f0 100644
+--- a/apps/api/src/media.ts
++++ b/apps/api/src/media.ts
+@@ -103,8 +103,3 @@ export function processPhotoExclusive(input: Uint8Array): Promise<ProcessedPhoto
+   queue = run.catch(() => undefined);
+   return run;
+ }
+-
+-export async function sha256Hex(bytes: Uint8Array, length = 20) {
+-  const digest = await crypto.subtle.digest("SHA-256", bytes as Uint8Array<ArrayBuffer>);
+-  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("").slice(0, length);
+-}
+diff --git a/apps/api/src/publish.ts b/apps/api/src/publish.ts
+index 7259c46..7a2ab1e 100644
+--- a/apps/api/src/publish.ts
++++ b/apps/api/src/publish.ts
+@@ -15,6 +15,10 @@ import {
+ 
+ export const assetBase = () => `/_shared/${ASSET_VERSION}`;
+ 
++/** Turnstile frame URL baked into published pages; null when Turnstile is not configured. */
++export const turnstileFrameUrl = (env: Env) =>
++  env.TURNSTILE_SITE_KEY && env.API_ORIGIN ? `${env.API_ORIGIN}/turnstile-frame` : null;
++
+ /** Public origin a site is served from: its active custom domain, else `<slug>.<BASE_DOMAIN>`. */
+ export async function siteOrigin(env: Env, site: SiteRow) {
+   const host = await primaryHostname(env.DB, site, env.BASE_DOMAIN);
+@@ -37,7 +41,7 @@ async function ensureRendered(env: Env, version: VersionRow, origin: string) {
+   if (version.rendered_at && version.asset_version === ASSET_VERSION && version.rendered_origin === origin) {
+     return routesOf(config);
+   }
+-  const { pages } = await renderSite(config, { assetBase: assetBase(), origin });
++  const { pages } = await renderSite(config, { assetBase: assetBase(), origin, turnstileFrame: turnstileFrameUrl(env) });
+   for (const page of pages) {
+     await env.SITES.put(r2PageKey(version.site_id, version.id, page.path), page.html, {
+       httpMetadata: { contentType: "text/html; charset=utf-8" },
+diff --git a/apps/api/src/store.ts b/apps/api/src/store.ts
+index 97b0e05..6471c74 100644
+--- a/apps/api/src/store.ts
++++ b/apps/api/src/store.ts
+@@ -221,3 +221,17 @@ export async function releaseRoutesLease(db: D1Database, siteId: string, token:
+     .bind(siteId, token)
+     .run();
+ }
++
++export async function listSites(db: D1Database, baseDomain: string) {
++  const { results } = await db
++    .prepare(
++      `SELECT s.id, s.slug, s.template_id, s.status, s.cancelled_at, s.published_version_id, s.published_at,
++              s.notify_email, s.created_at, s.updated_at,
++              (SELECT number FROM site_versions WHERE id = s.published_version_id) AS published_number,
++              (SELECT MAX(number) FROM site_versions WHERE site_id = s.id) AS latest_number,
++              (SELECT hostname FROM domains WHERE site_id = s.id AND kind = 'custom' AND status = 'active' ORDER BY created_at LIMIT 1) AS custom_hostname
++       FROM sites s ORDER BY s.updated_at DESC`,
++    )
++    .all<{ slug: string; custom_hostname: string | null }>();
++  return results.map((row) => ({ ...row, hostname: row.custom_hostname ?? `${row.slug}.${baseDomain}` }));
++}
+diff --git a/apps/api/wrangler.toml b/apps/api/wrangler.toml
+index 1b66e08..471445f 100644
+--- a/apps/api/wrangler.toml
++++ b/apps/api/wrangler.toml
+@@ -14,6 +14,11 @@ crons = ["*/5 * * * *", "17 * * * *"]
+ # Public sites are served at <slug>.<BASE_DOMAIN>. Local dev uses *.localhost.
+ BASE_DOMAIN = "localhost"
+ PUBLIC_SCHEME = "http"
++API_ORIGIN = "http://127.0.0.1:8788"
++# Cloudflare's always-pass test key; the matching test secret goes in .dev.vars.
++TURNSTILE_SITE_KEY = "1x00000000000000000000AA"
++MAIL_MODE = "mailpit"
++MAIL_FROM = "noreply@dsites.kr"
+ # ADMIN_TOKEN comes from .dev.vars locally and a secret in production.
+ 
+ [[d1_databases]]
+@@ -45,8 +50,17 @@ crons = ["*/5 * * * *", "17 * * * *"]
+ [env.staging.vars]
+ BASE_DOMAIN = "dsites.kr"
+ PUBLIC_SCHEME = "https"
++API_ORIGIN = "https://api.dsites.kr"
++# TURNSTILE_SITE_KEY: widget whose hostnames include api.dsites.kr (the frame host).
++# TURNSTILE_SECRET, HASH_PEPPER: `wrangler secret put ... --env staging`
++MAIL_MODE = "binding"
++MAIL_FROM = "noreply@dsites.kr"
+ # ADMIN_TOKEN: `wrangler secret put ADMIN_TOKEN --env staging`
+ 
++# Cloudflare Email Service; dsites.kr must be onboarded for sending (wrangler email sending enable).
++[[env.staging.send_email]]
++name = "EMAIL"
++
+ [[env.staging.d1_databases]]
+ binding = "DB"
+ database_name = "daniworks-sites-staging"
+diff --git a/apps/router/src/index.ts b/apps/router/src/index.ts
+index e675afb..41dea73 100644
+--- a/apps/router/src/index.ts
++++ b/apps/router/src/index.ts
+@@ -9,10 +9,52 @@ import {
+   type PublishedPointer,
+ } from "./keys.js";
+ 
++/** RPC surface of the api Worker's `PublicApi` entrypoint (apps/api/src/public.ts). */
++interface PublicApi {
++  submitInquiry(request: { siteId: string; hostname: string; ip: string | null; body: unknown }): Promise<{
++    status: number;
++    body: unknown;
++  }>;
++}
++
+ interface Env {
+   SITES: R2Bucket;
+   ROUTES: KVNamespace;
+   BASE_DOMAIN: string;
++  API: PublicApi;
++}
++
++const MAX_FORM_BYTES = 16 * 1024;
++
++const jsonResponse = (status: number, body: unknown) =>
++  new Response(JSON.stringify(body), {
++    status,
++    headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" },
++  });
++
++/** Reads a small JSON body, refusing anything larger than the limit while streaming. */
++async function readSmallJson(request: Request, limit: number): Promise<unknown> {
++  const reader = request.body?.getReader();
++  if (!reader) return null;
++  const chunks: Uint8Array[] = [];
++  let total = 0;
++  for (;;) {
++    const { done, value } = await reader.read();
++    if (done) break;
++    total += value.byteLength;
++    if (total > limit) {
++      await reader.cancel();
++      throw new Error("too large");
++    }
++    chunks.push(value);
++  }
++  const bytes = new Uint8Array(total);
++  let offset = 0;
++  for (const chunk of chunks) {
++    bytes.set(chunk, offset);
++    offset += chunk.byteLength;
++  }
++  return JSON.parse(new TextDecoder().decode(bytes));
+ }
+ 
+ // KV values are cached at the edge for this long (KV minimum); publish/rollback propagate within it.
+@@ -46,11 +88,37 @@ async function resolveHost(env: Env, hostname: string): Promise<HostRecord | nul
+ 
+ export default {
+   async fetch(request: Request, env: Env): Promise<Response> {
++    const url = new URL(request.url);
++    const hostname = url.hostname.toLowerCase();
++
++    // Visitor inquiry: the site is identified by Host here, then handed to the api by RPC.
++    if (url.pathname === "/api/inquiry") {
++      if (request.method !== "POST") return jsonResponse(405, { ok: false, error: "method not allowed" });
++      const host = await resolveHost(env, hostname);
++      if (!host || host.status !== "active" || !host.pointer) {
++        return jsonResponse(404, { ok: false, error: "문의를 받을 수 없는 사이트입니다" });
++      }
++      if (!(request.headers.get("content-type") ?? "").startsWith("application/json")) {
++        return jsonResponse(415, { ok: false, error: "JSON으로 보내 주세요" });
++      }
++      let body: unknown;
++      try {
++        body = await readSmallJson(request, MAX_FORM_BYTES);
++      } catch {
++        return jsonResponse(400, { ok: false, error: "요청을 읽지 못했습니다" });
++      }
++      const result = await env.API.submitInquiry({
++        siteId: host.siteId,
++        hostname,
++        ip: request.headers.get("cf-connecting-ip"),
++        body,
++      });
++      return jsonResponse(result.status, result.body);
++    }
++
+     if (request.method !== "GET" && request.method !== "HEAD") {
+       return new Response("method not allowed", { status: 405 });
+     }
+-    const url = new URL(request.url);
+-    const hostname = url.hostname.toLowerCase();
+ 
+     // Shared assets are content-addressed by version, so any host may serve them.
+     if (url.pathname.startsWith("/_shared/")) {
+diff --git a/apps/router/wrangler.toml b/apps/router/wrangler.toml
+index 1e78be0..b42c000 100644
+--- a/apps/router/wrangler.toml
++++ b/apps/router/wrangler.toml
+@@ -10,6 +10,12 @@ compatibility_date = "2026-11-01"
+ [vars]
+ BASE_DOMAIN = "localhost"
+ 
++# api Worker's RPC entrypoint (inquiry, tracking). Not reachable over HTTP.
++[[services]]
++binding = "API"
++service = "sites-api"
++entrypoint = "PublicApi"
++
+ [[r2_buckets]]
+ binding = "SITES"
+ bucket_name = "daniworks-sites"
+@@ -30,6 +36,11 @@ routes = [{ pattern = "*/*", zone_name = "dsites.kr" }]
+ [env.staging.vars]
+ BASE_DOMAIN = "dsites.kr"
+ 
++[[env.staging.services]]
++binding = "API"
++service = "sites-api-staging"
++entrypoint = "PublicApi"
++
+ [[env.staging.r2_buckets]]
+ binding = "SITES"
+ bucket_name = "daniworks-sites-staging"
+diff --git a/docker-compose.yml b/docker-compose.yml
+index d6a096b..49793fa 100644
+--- a/docker-compose.yml
++++ b/docker-compose.yml
+@@ -14,6 +14,9 @@ services:
+     command: ["bash", "docker/workers.sh"]
+     environment:
+       ADMIN_TOKEN: dev-admin-token
++      TURNSTILE_SECRET: 1x0000000000000000000000000000000AA
++      HASH_PEPPER: dev-pepper
++      MAIL_PIT_URL: http://mailpit:8025
+     ports:
+       - "8787:8787" # router: http://<slug>.localhost:8787
+       - "8788:8788" # api
+diff --git a/docker/workers.sh b/docker/workers.sh
+index c988e5f..9a728c3 100644
+--- a/docker/workers.sh
++++ b/docker/workers.sh
+@@ -7,7 +7,7 @@ STATE=/state
+ : "${ADMIN_TOKEN:=dev-admin-token}"
+ 
+ # wrangler reads secrets from .dev.vars; generate it from the container environment.
+-env | grep -E '^(ADMIN_TOKEN|TURNSTILE_SECRET|MAIL_|CF_|ACCESS_)' > apps/api/.dev.vars || true
++env | grep -E '^(ADMIN_TOKEN|TURNSTILE_SECRET|HASH_PEPPER|MAIL_|CF_|ACCESS_)' > apps/api/.dev.vars || true
+ 
+ (cd apps/api && pnpm exec wrangler d1 migrations apply DB --local --persist-to "$STATE")
+ 
+diff --git a/evidence/m2-router/results.json b/evidence/m2-router/results.json
+index 39b7cc9..7f4e2f1 100644
+--- a/evidence/m2-router/results.json
++++ b/evidence/m2-router/results.json
+@@ -1,10 +1,10 @@
+ {
+-  "siteId": "90f7b40e-2087-40f3-ba01-b4ef86afef76",
++  "siteId": "31802c87-1236-4603-8c27-a3cc133c173d",
+   "results": [
+     {
+       "name": "생성 직후 호스트 레코드: 상태 active, 포인터 없음",
+       "pass": true,
+-      "siteId": "90f7b40e-2087-40f3-ba01-b4ef86afef76",
++      "siteId": "31802c87-1236-4603-8c27-a3cc133c173d",
+       "status": "active",
+       "pointer": null,
+       "redirectTo": null
+@@ -16,12 +16,12 @@
+     {
+       "name": "게시 후 호스트 레코드에 포인터·페이지 목록",
+       "pass": true,
+-      "siteId": "90f7b40e-2087-40f3-ba01-b4ef86afef76",
++      "siteId": "31802c87-1236-4603-8c27-a3cc133c173d",
+       "status": "active",
+       "pointer": {
+-        "versionId": "e456921e-42bf-48bd-97cf-2f62f244a0f6",
++        "versionId": "2ba265d8-9ee7-4a2b-adf9-49b7526622fd",
+         "number": 1,
+-        "publishedAt": "2026-11-18T18:29:25.347Z",
++        "publishedAt": "2026-11-18T18:37:01.637Z",
+         "pages": [
+           "/",
+           "/privacy"
+@@ -50,11 +50,11 @@
+       "pass": true,
+       "d1": {
+         "status": "suspended",
+-        "published": "c4b85ad9-2c29-4be2-a2c0-8d88923014d3"
++        "published": "be9a143e-81a9-4be6-8cee-407da5461d4f"
+       },
+       "kv": {
+         "status": "suspended",
+-        "pointer": "c4b85ad9-2c29-4be2-a2c0-8d88923014d3"
++        "pointer": "be9a143e-81a9-4be6-8cee-407da5461d4f"
+       }
+     },
+     {
+@@ -62,14 +62,14 @@
+       "pass": true,
+       "kv": "suspended",
+       "synced": {
+-        "routes_synced_at": "2026-11-18T18:29:27.766Z",
+-        "updated_at": "2026-11-18T18:29:27.766Z"
++        "routes_synced_at": "2026-11-18T18:37:03.636Z",
++        "updated_at": "2026-11-18T18:37:03.636Z"
+       }
+     },
+     {
+       "name": "매시간 점검: 동기화 표시가 있어도 KV가 틀리면 찾아서 복구",
+       "pass": true,
+-      "marker": "2026-11-18T18:29:31.263Z",
++      "marker": "2026-11-18T18:37:07.008Z",
+       "kv": "active"
+     },
+     {
+diff --git a/evidence/m2-template/results.json b/evidence/m2-template/results.json
+index 4ea5af6..cdfb30f 100644
+--- a/evidence/m2-template/results.json
++++ b/evidence/m2-template/results.json
+@@ -1,38 +1,38 @@
+ {
+   "sites": {
+     "lesson": {
+-      "siteId": "f6f1d385-dc95-4df7-8f2a-be7af7284bb7",
+-      "versionId": "1a6be5ae-14a1-450e-9ac8-2a76a47d1de2",
+-      "hostname": "jefes-mwmgdc5b.localhost",
+-      "slug": "jefes-mwmgdc5b",
+-      "token": "930a8fe4535447429974d9d76a75bba3"
++      "siteId": "d1040799-7f05-40ca-92b8-3eea60575096",
++      "versionId": "fe15b53c-8c1a-4cb6-ab52-67174b06e05f",
++      "hostname": "jefes-mwmgq44v.localhost",
++      "slug": "jefes-mwmgq44v",
++      "token": "556ec8d18bb54af6938cb87cd7fc5ae8"
+     },
+     "field": {
+-      "siteId": "f068cb88-cb92-4dad-8bf3-c00ed1429ba3",
+-      "versionId": "ed07efca-4618-44e5-b274-d76a1d441e73",
+-      "hostname": "sangkwae-mwmgdc5b.localhost",
+-      "slug": "sangkwae-mwmgdc5b",
+-      "token": "2f5bf146c1474171bc2664e79d7e4699"
++      "siteId": "0051701c-6043-4cd6-88d5-42d26b90354e",
++      "versionId": "aa34c519-ca54-4d60-bc7b-05e2173df856",
++      "hostname": "sangkwae-mwmgq44v.localhost",
++      "slug": "sangkwae-mwmgq44v",
++      "token": "4a1ea069ce134aeba47236492ff9df9a"
+     }
+   },
+   "scores": {
+     "lesson": {
+-      "performance": 99,
++      "performance": 100,
+       "accessibility": 100,
+       "bestPractices": 96,
+       "seo": 92,
+-      "lcpMs": 2027,
++      "lcpMs": 1285,
+       "cls": 0,
+-      "tbtMs": 8
++      "tbtMs": 0
+     },
+     "field": {
+-      "performance": 100,
++      "performance": 99,
+       "accessibility": 100,
+       "bestPractices": 96,
+       "seo": 92,
+-      "lcpMs": 1365,
++      "lcpMs": 2098,
+       "cls": 0,
+-      "tbtMs": 79
++      "tbtMs": 0
+     }
+   },
+   "results": [
+@@ -47,7 +47,7 @@
+     {
+       "name": "lesson: 사이트 생성 201",
+       "pass": true,
+-      "hostname": "jefes-mwmgdc5b.localhost"
++      "hostname": "jefes-mwmgq44v.localhost"
+     },
+     {
+       "name": "lesson: 저장된 설정은 v2",
+@@ -64,9 +64,9 @@
+     {
+       "name": "lesson: 게시 200",
+       "pass": true,
+-      "versionId": "1a6be5ae-14a1-450e-9ac8-2a76a47d1de2",
++      "versionId": "fe15b53c-8c1a-4cb6-ab52-67174b06e05f",
+       "number": 1,
+-      "publishedAt": "2026-11-18T18:26:37.609Z",
++      "publishedAt": "2026-11-18T18:36:33.604Z",
+       "pages": [
+         "/",
+         "/privacy"
+@@ -91,7 +91,7 @@
+     {
+       "name": "field: 사이트 생성 201",
+       "pass": true,
+-      "hostname": "sangkwae-mwmgdc5b.localhost"
++      "hostname": "sangkwae-mwmgq44v.localhost"
+     },
+     {
+       "name": "field: 저장된 설정은 v2",
+@@ -108,9 +108,9 @@
+     {
+       "name": "field: 게시 200",
+       "pass": true,
+-      "versionId": "ed07efca-4618-44e5-b274-d76a1d441e73",
++      "versionId": "aa34c519-ca54-4d60-bc7b-05e2173df856",
+       "number": 1,
+-      "publishedAt": "2026-11-18T18:26:37.796Z",
++      "publishedAt": "2026-11-18T18:36:33.786Z",
+       "pages": [
+         "/",
+         "/privacy"
+@@ -136,7 +136,7 @@
+       "name": "프리뷰: 하이드레이션 오류 없음, 링크가 프리뷰 안, 문의 전송 차단",
+       "pass": true,
+       "errors": [],
+-      "privacyHref": "/preview/930a8fe4535447429974d9d76a75bba3/privacy",
++      "privacyHref": "/preview/556ec8d18bb54af6938cb87cd7fc5ae8/privacy",
+       "blocked": "프리뷰에서는 문의가 전송되지 않습니다."
+     },
+     {
+@@ -178,46 +178,46 @@
+     {
+       "name": "lesson: Lighthouse 모바일 성능 90 이상, LCP 2.5초 이하",
+       "pass": true,
+-      "performance": 99,
++      "performance": 100,
+       "accessibility": 100,
+       "bestPractices": 96,
+       "seo": 92,
+-      "lcpMs": 2027,
++      "lcpMs": 1285,
+       "cls": 0,
+-      "tbtMs": 8
++      "tbtMs": 0
+     },
+     {
+       "name": "lesson: Lighthouse SEO 90 이상, 접근성 90 이상",
+       "pass": true,
+-      "performance": 99,
++      "performance": 100,
+       "accessibility": 100,
+       "bestPractices": 96,
+       "seo": 92,
+-      "lcpMs": 2027,
++      "lcpMs": 1285,
+       "cls": 0,
+-      "tbtMs": 8
++      "tbtMs": 0
+     },
+     {
+       "name": "field: Lighthouse 모바일 성능 90 이상, LCP 2.5초 이하",
+       "pass": true,
+-      "performance": 100,
++      "performance": 99,
+       "accessibility": 100,
+       "bestPractices": 96,
+       "seo": 92,
+-      "lcpMs": 1365,
++      "lcpMs": 2098,
+       "cls": 0,
+-      "tbtMs": 79
++      "tbtMs": 0
+     },
+     {
+       "name": "field: Lighthouse SEO 90 이상, 접근성 90 이상",
+       "pass": true,
+-      "performance": 100,
++      "performance": 99,
+       "accessibility": 100,
+       "bestPractices": 96,
+       "seo": 92,
+-      "lcpMs": 1365,
++      "lcpMs": 2098,
+       "cls": 0,
+-      "tbtMs": 79
++      "tbtMs": 0
+     }
+   ]
+ }
+\ No newline at end of file
+diff --git a/packages/renderer/src/platform/inquiry-form.tsx b/packages/renderer/src/platform/inquiry-form.tsx
+index 926db74..608cf8e 100644
+--- a/packages/renderer/src/platform/inquiry-form.tsx
++++ b/packages/renderer/src/platform/inquiry-form.tsx
+@@ -1,6 +1,6 @@
+-import { useState, type FormEvent } from "react";
++import { useEffect, useRef, useState, type FormEvent } from "react";
+ import type { InquiryFormBlock } from "@dani-builder/strapi-client/types";
+-import { useIsPreview, useSiteHref } from "../render-context.js";
++import { useIsPreview, useSiteHref, useTurnstileFrame } from "../render-context.js";
+ 
+ export const INQUIRY_ENDPOINT = "/api/inquiry";
+ 
+@@ -9,6 +9,35 @@ type Status = "idle" | "sending" | "done" | "error";
+ const field =
+   "w-full rounded-lg border border-black/15 bg-white px-4 py-3 text-base text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]";
+ 
++/**
++ * Turnstile token from the platform-hosted frame. The frame loads only after the visitor starts
++ * filling the form, so the challenge script never weighs on page load.
++ */
++function useTurnstile(frameUrl: string | null, active: boolean) {
++  const [token, setToken] = useState<string | null>(null);
++  const [failed, setFailed] = useState(false);
++  const [round, setRound] = useState(0);
++  useEffect(() => {
++    if (!frameUrl || !active) return;
++    const frameOrigin = new URL(frameUrl, location.href).origin;
++    function onMessage(event: MessageEvent) {
++      if (event.origin !== frameOrigin || event.data?.type !== "dsites-turnstile") return;
++      if (event.data.error) setFailed(true);
++      else setToken(event.data.token ?? null);
++    }
++    window.addEventListener("message", onMessage);
++    return () => window.removeEventListener("message", onMessage);
++  }, [frameUrl, active]);
++  const src = frameUrl && active ? `${frameUrl}?parent=${encodeURIComponent(location.origin)}&round=${round}` : null;
++  // Tokens are single-use: reloading the frame issues a fresh one.
++  const reset = () => {
++    setToken(null);
++    setFailed(false);
++    setRound((n) => n + 1);
++  };
++  return { token, failed, src, required: Boolean(frameUrl), reset };
++}
++
+ /**
+  * Platform inquiry form for local businesses: name, phone and message. It posts to the shared
+  * `/api/inquiry` endpoint on the site's own host, which identifies the site by Host header.
+@@ -16,9 +45,16 @@ const field =
+ export function InquiryForm({ block }: { block: InquiryFormBlock }) {
+   const [status, setStatus] = useState<Status>("idle");
+   const [error, setError] = useState<string | null>(null);
++  const [touched, setTouched] = useState(false);
++  const mountedAt = useRef<number>(0);
+   const section = block.section;
+   const siteHref = useSiteHref();
+   const preview = useIsPreview();
++  const turnstile = useTurnstile(useTurnstileFrame(), touched && !preview);
++
++  useEffect(() => {
++    mountedAt.current = Date.now();
++  }, []);
+ 
+   async function submit(event: FormEvent<HTMLFormElement>) {
+     event.preventDefault();
+@@ -27,6 +63,11 @@ export function InquiryForm({ block }: { block: InquiryFormBlock }) {
+       setStatus("error");
+       return;
+     }
++    if (turnstile.required && !turnstile.token) {
++      setError(turnstile.failed ? "스팸 방지 확인을 불러오지 못했습니다. 전화로 문의해 주세요." : "스팸 방지 확인이 끝나면 다시 눌러 주세요.");
++      setStatus("error");
++      return;
++    }
+     const form = event.currentTarget;
+     const data = Object.fromEntries(new FormData(form).entries());
+     setStatus("sending");
+@@ -35,7 +76,13 @@ export function InquiryForm({ block }: { block: InquiryFormBlock }) {
+       const res = await fetch(INQUIRY_ENDPOINT, {
+         method: "POST",
+         headers: { "content-type": "application/json" },
+-        body: JSON.stringify({ ...data, consent: data.consent === "on", page: location.pathname }),
++        body: JSON.stringify({
++          ...data,
++          consent: data.consent === "on",
++          page: location.pathname,
++          elapsedMs: Date.now() - mountedAt.current,
++          turnstileToken: turnstile.token ?? undefined,
++        }),
+       });
+       if (!res.ok) {
+         const body = (await res.json().catch(() => null)) as { error?: string } | null;
+@@ -44,6 +91,8 @@ export function InquiryForm({ block }: { block: InquiryFormBlock }) {
+       form.reset();
+       setStatus("done");
+     } catch (e) {
++      // A Turnstile token is single-use; the frame issues a new one.
++      turnstile.reset();
+       setError(e instanceof Error ? e.message : String(e));
+       setStatus("error");
+     }
+@@ -62,7 +111,7 @@ export function InquiryForm({ block }: { block: InquiryFormBlock }) {
+             {block.successMessage ?? "문의가 접수되었습니다."}
+           </p>
+         ) : (
+-          <form onSubmit={submit} className="mt-8 grid gap-4" noValidate={false}>
++          <form onSubmit={submit} onFocus={() => setTouched(true)} className="mt-8 grid gap-4">
+             <label className="grid gap-1.5 text-sm font-medium">
+               이름
+               <input name="name" required maxLength={30} autoComplete="name" className={field} />
+@@ -94,6 +143,14 @@ export function InquiryForm({ block }: { block: InquiryFormBlock }) {
+                 </a>
+               </span>
+             </label>
++            {turnstile.src ? (
++              <iframe
++                title="스팸 방지 확인"
++                src={turnstile.src}
++                className="h-[70px] w-full max-w-[320px] border-0"
++                data-turnstile-frame=""
++              />
++            ) : null}
+             {status === "error" && error ? (
+               <p role="alert" className="text-sm text-red-700">
+                 {error}
+diff --git a/packages/renderer/src/render-context.tsx b/packages/renderer/src/render-context.tsx
+index 3193fa6..3a6fe78 100644
+--- a/packages/renderer/src/render-context.tsx
++++ b/packages/renderer/src/render-context.tsx
+@@ -1,6 +1,13 @@
+ import { createContext, useContext } from "react";
+ 
+-export const RenderContext = createContext<{ linkPrefix: string; preview: boolean }>({ linkPrefix: "", preview: false });
++export interface RenderContextValue {
++  linkPrefix: string;
++  preview: boolean;
++  /** Platform-hosted Turnstile frame URL; null when spam checks are not configured. */
++  turnstileFrame: string | null;
++}
++
++export const RenderContext = createContext<RenderContextValue>({ linkPrefix: "", preview: false, turnstileFrame: null });
+ 
+ /** Applies the page's link prefix to a root-relative site link; asset paths stay untouched. */
+ export function useSiteHref() {
+@@ -12,3 +19,5 @@ export function useSiteHref() {
+ }
+ 
+ export const useIsPreview = () => useContext(RenderContext).preview;
++
++export const useTurnstileFrame = () => useContext(RenderContext).turnstileFrame;
+diff --git a/packages/renderer/src/render.tsx b/packages/renderer/src/render.tsx
+index d593bf9..2c70480 100644
+--- a/packages/renderer/src/render.tsx
++++ b/packages/renderer/src/render.tsx
+@@ -15,6 +15,8 @@ export interface RenderOptions {
+   preview?: boolean;
+   /** Prefix for root-relative site links (previews: `/preview/<token>`). */
+   linkPrefix?: string;
++  /** Turnstile frame the inquiry form embeds (`https://api.dsites.kr/turnstile-frame`). */
++  turnstileFrame?: string | null;
+ }
+ 
+ export interface RenderedPage {
+@@ -81,7 +83,11 @@ function structuredData(config: SiteConfig, origin: string | undefined, heroImag
+ 
+ async function renderPage(config: SiteConfig, sitePage: SitePage, options: RenderOptions): Promise<RenderedPage> {
+   // Serialized for hydration too, so server and client agree on every link.
+-  const page = { ...sitePage, data: { ...sitePage.data, linkPrefix: options.linkPrefix, preview: options.preview } };
++  const site = sitePage.data.site ? { ...sitePage.data.site, turnstileFrame: options.turnstileFrame ?? null } : sitePage.data.site;
++  const page = {
++    ...sitePage,
++    data: { ...sitePage.data, site, linkPrefix: options.linkPrefix, preview: options.preview },
++  };
+   const stream = await renderToReadableStream(<SiteView data={page.data} />);
+   await stream.allReady;
+   const body = await new Response(stream).text();
+diff --git a/packages/renderer/src/view.tsx b/packages/renderer/src/view.tsx
+index 1243425..d1e742b 100644
+--- a/packages/renderer/src/view.tsx
++++ b/packages/renderer/src/view.tsx
+@@ -27,6 +27,8 @@ export interface SiteChrome {
+   mapUrl: string | null;
+   bookingUrl: string | null;
+   inquiryLabel: string;
++  /** Platform-hosted Turnstile frame; null when spam checks are not configured. */
++  turnstileFrame?: string | null;
+ }
+ 
+ /** Everything the page needs at render and hydration time. Serialized into the HTML. */
+@@ -98,7 +100,9 @@ export function SiteView({ data }: { data: PageData }) {
+   const route = data.route ?? "/";
+   const linkPrefix = data.linkPrefix ?? "";
+   return (
+-    <RenderContext.Provider value={{ linkPrefix, preview: data.preview ?? false }}>
++    <RenderContext.Provider
++      value={{ linkPrefix, preview: data.preview ?? false, turnstileFrame: site?.turnstileFrame ?? null }}
++    >
+     <BlocksProvider value={adapters}>
+       <SiteShell
+         navigation={navigation}
+diff --git a/packages/schema/src/index.ts b/packages/schema/src/index.ts
+index 1d8b59c..be5cb18 100644
+--- a/packages/schema/src/index.ts
++++ b/packages/schema/src/index.ts
+@@ -1 +1,2 @@
+ export * from "./site-config.js";
++export * from "./inquiry.js";
+
+exec
+/bin/zsh -lc 'cat /Users/steve/.codex/skills/workers-best-practices/SKILL.md' in /Users/steve/Projects/daniworks-sites-platform
+ succeeded in 0ms:
+---
+name: workers-best-practices
+description: Cloudflare Workers best practices for production applications. Use when writing, reviewing, or configuring Workers.
+---
+
+Your knowledge of Cloudflare Workers APIs, types, and configuration may be outdated. **Prefer retrieval over pre-training** when writing or reviewing Workers code.
+
+Use the project's installed versions, generated types, and Wrangler compatibility settings as the baseline for existing code. Retrieve relevant Cloudflare documentation to verify API, configuration, runtime behavior, and limit claims.
+
+## References
+
+Read the sections relevant to the task:
+
+| Reference | When to use it |
+|-----------|----------------|
+| [Configuration and observability](references/configuration.md) | Compatibility dates, bindings, generated types, secrets, logs, and traces |
+| [Runtime patterns](references/runtime-patterns.md) | Streaming, promise lifetime, request state, service calls, security, and runtime tests |
+| [Platform API checks](references/platform-apis.md) | Handler signatures, platform classes, binding access, and serialization |
+
+For missing evidence, consult [Workers best practices](https://developers.cloudflare.com/workers/best-practices/workers-best-practices/index.md) or find the affected product in the [Cloudflare docs directory](https://developers.cloudflare.com/directory/index.md). Use the installed Wrangler schema for config fields. A newer type package does not supersede the project's configured target.
+
+## Keep Compatibility Dates Current
+
+Use today's date for new Workers. Encourage periodic updates for existing Workers, reviewing compatibility changes and running relevant tests. Assess existing behavior against its configured date and flags; see [compatibility guidance](references/configuration.md#keep-compatibility_date-current).
+
+## Enable Observability
+
+Enable [Workers Logs](https://developers.cloudflare.com/workers/observability/logs/workers-logs/index.md) and [Traces](https://developers.cloudflare.com/workers/observability/traces/index.md) when creating or preparing a Worker for production. Set `observability.enabled` and `observability.traces.enabled` to `true`; the top-level setting alone does not enable traces. Use structured JSON logging and configure sampling for the workload. During reviews, flag missing logs or traces. See the [configuration example](references/configuration.md#enable-workers-logs-and-traces).
+
+## Anti-Patterns to Flag
+
+| Anti-pattern | Consequence and preferred pattern |
+|-------------|-----------------------------------|
+| `await response.text()` or similar buffering on unbounded data | Can exhaust Worker memory; [stream large or unbounded bodies](references/runtime-patterns.md#stream-request-and-response-bodies). |
+| Hardcoded secrets in source or config | Leaks credentials through version control; use Wrangler secrets. |
+| `Math.random()` for security-sensitive tokens or IDs | Predictable values; use `crypto.randomUUID()` or `crypto.getRandomValues()`. |
+| Async work started without awaiting, returning, or attaching it to `ctx.waitUntil()` | Work can be dropped and errors missed; tie it to the request or background-work lifetime. |
+| Module-level mutable request state | Leaks data across requests and can cause I/O ownership errors; pass request state explicitly. |
+| Cloudflare REST API calls for operations available through Worker bindings | Adds network and authentication overhead; use the available binding. |
+| `ctx.passThroughOnException()` used as general error handling | Can conceal Worker failures by forwarding to the origin; use explicit error handling and structured error responses. |
+| Hand-written `Env` that duplicates Wrangler bindings | Can drift from configuration; generate binding types with `wrangler types`. |
+| Direct string comparison of secret values | Can expose timing differences; use the [Web Crypto comparison pattern](references/runtime-patterns.md#use-web-crypto-for-secure-token-generation). |
+| Destructuring `ctx` methods, such as `const { waitUntil } = ctx` | Loses the receiver; call `ctx.waitUntil(...)`. |
+| `any` on `Env` or handler parameters | Hides binding and handler contract errors; use the project's generated and platform types. |
+| `as unknown as T` to force a platform type match | Hides incompatibilities; fix the underlying contract. |
+| `implements` used in place of extending a platform base class | Does not inherit runtime behavior, `this.ctx`, or `this.env`; use the appropriate base class. |
+| Unbound `env.X` in a platform class method | Bindings are available through `this.env.X`; see [binding access patterns](references/platform-apis.md#binding-access--the-most-common-error). |
+| Applying one serialization rule across Queues, Workflow steps, storage, and WebSockets | Can reject valid payloads or accept unsupported ones; check the [specific API and encoding](references/platform-apis.md#serialization-boundaries). |
+
+## Validation
+
+Use the project's existing checks for affected Workers behavior: type-check binding or handler contract changes, and run relevant runtime tests for behavior changes. Preserve required repository checks; a narrow edit does not require a full Workers audit.
+
+## Scope
+
+This skill covers Workers-specific best practices and code review. For related topics:
+
+- **Durable Objects**: load the `durable-objects` skill
+- **Workflows**: see [Rules of Workflows](https://developers.cloudflare.com/workflows/build/rules-of-workflows/index.md)
+- **Wrangler CLI commands**: load the `wrangler` skill
+
+exec
+/bin/zsh -lc 'find . -name AGENTS.md -o -name AGENTS.override.md; for f in apps/api/src/{hash,inquiries,mail,metrics,public,turnstile}.ts packages/schema/src/inquiry.ts apps/api/test/inquiries.test.ts; do echo ==== $f; cat $f; done' in /Users/steve/Projects/daniworks-sites-platform
+ exited 1 in 474ms:
+./node_modules/.pnpm/@dani-builder+strapi-client@2.5.0/node_modules/@dani-builder/strapi-client/AGENTS.md
+./node_modules/.pnpm/next@16.4.6_react-dom@19.3.1_react@19.3.1__react@19.3.1/node_modules/next/AGENTS.md
+./node_modules/.pnpm/next@16.4.6_@opentelemetry+api@1.10.0_@types+node@26.6.6_react-dom@19.3.1_react@19.3.1__react@19.3.1/node_modules/next/AGENTS.md
+zsh:1: === not found
+
+exec
+/bin/zsh -lc "for f in apps/api/src/{hash,inquiries,mail,metrics,public,turnstile}.ts packages/schema/src/inquiry.ts apps/api/test/inquiries.test.ts; do printf '\\n==== %s\\n' \""'$f"; cat "$f"; done' in /Users/steve/Projects/daniworks-sites-platform
+ succeeded in 0ms:
+
+==== apps/api/src/hash.ts
+export async function sha256Hex(bytes: Uint8Array, length = 20) {
+  const digest = await crypto.subtle.digest("SHA-256", bytes as Uint8Array<ArrayBuffer>);
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("").slice(0, length);
+}
+
+==== apps/api/src/inquiries.ts
+import { formatIssues, inquirySubmissionSchema } from "@sites/schema";
+import type { Env } from "./env.js";
+import { HttpError } from "./http.js";
+import { sendMail } from "./mail.js";
+import { sha256Hex } from "./hash.js";
+import { bumpMetric } from "./metrics.js";
+import { verifyTurnstile } from "./turnstile.js";
+
+export const LIMITS = {
+  /** Per visitor (hashed IP) within 10 minutes. */
+  perClient: 5,
+  /** Per site per day. */
+  perSiteDay: 100,
+  /** Faster than this is a bot. */
+  minElapsedMs: 2000,
+};
+
+export interface InquiryRequest {
+  siteId: string;
+  hostname: string;
+  ip: string | null;
+  body: unknown;
+}
+
+export interface InquiryResponse {
+  status: number;
+  body: { ok: boolean; id?: string; error?: string; details?: string[] };
+}
+
+const escape = (value: string) =>
+  value.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
+
+const kst = (iso: string) =>
+  new Date(new Date(iso).getTime() + 9 * 3600_000).toISOString().replace("T", " ").slice(0, 16);
+
+/** 02 (Seoul), 050x (safe numbers), then three-digit prefixes (mobile 01x, regions 0xx). */
+export const displayPhone = (digits: string) =>
+  digits.replace(/^(02|050\d|0\d{2})(\d{3,4})(\d{4})$/, "$1-$2-$3");
+
+async function siteName(env: Env, siteId: string) {
+  const row = await env.DB.prepare(
+    "SELECT s.slug, v.config FROM sites s LEFT JOIN site_versions v ON v.id = s.published_version_id WHERE s.id = ?",
+  )
+    .bind(siteId)
+    .first<{ slug: string; config: string | null }>();
+  const config = row?.config ? (JSON.parse(row.config) as { business?: { name?: string }; meta?: { title?: string } }) : null;
+  return config?.business?.name ?? config?.meta?.title ?? row?.slug ?? siteId;
+}
+
+/**
+ * Handles a visitor inquiry routed from the public router (via RPC, never from the internet):
+ * validation, spam checks (honeypot, timing, Turnstile, rate limits), storage, then mail.
+ */
+export async function submitInquiry(
+  env: Env,
+  request: InquiryRequest,
+  waitUntil: (promise: Promise<unknown>) => void,
+): Promise<InquiryResponse> {
+  const parsed = inquirySubmissionSchema.safeParse(request.body);
+  if (!parsed.success) {
+    return { status: 422, body: { ok: false, error: "입력 내용을 확인해 주세요", details: formatIssues(parsed.error) } };
+  }
+  const input = parsed.data;
+  // Bots: answer like a success so they learn nothing, store nothing.
+  if (input.website || (input.elapsedMs !== undefined && input.elapsedMs < LIMITS.minElapsedMs)) {
+    return { status: 200, body: { ok: true } };
+  }
+
+  const site = await env.DB.prepare("SELECT id, status, cancelled_at, notify_email FROM sites WHERE id = ?")
+    .bind(request.siteId)
+    .first<{ id: string; status: string; cancelled_at: string | null; notify_email: string | null }>();
+  if (!site || site.status !== "active" || site.cancelled_at) {
+    return { status: 404, body: { ok: false, error: "문의를 받을 수 없는 사이트입니다" } };
+  }
+
+  const turnstile = await verifyTurnstile(env.TURNSTILE_SECRET, input.turnstileToken, request.ip);
+  if (!turnstile.ok) {
+    return { status: 403, body: { ok: false, error: "스팸 방지 확인에 실패했습니다. 다시 시도해 주세요." } };
+  }
+
+  const now = new Date();
+  const day = now.toISOString().slice(0, 10);
+  const clientHash = request.ip ? await sha256Hex(new TextEncoder().encode(`${env.HASH_PEPPER ?? "dsites"}:${day}:${request.ip}`), 32) : null;
+  if (clientHash) {
+    const since = new Date(now.getTime() - 10 * 60_000).toISOString();
+    const recent = await env.DB.prepare("SELECT COUNT(*) AS n FROM inquiries WHERE client_hash = ? AND created_at >= ?")
+      .bind(clientHash, since)
+      .first<{ n: number }>();
+    if ((recent?.n ?? 0) >= LIMITS.perClient) {
+      return { status: 429, body: { ok: false, error: "잠시 뒤 다시 시도해 주세요" } };
+    }
+  }
+  const today = await env.DB.prepare("SELECT COUNT(*) AS n FROM inquiries WHERE site_id = ? AND created_at >= ?")
+    .bind(site.id, `${day}T00:00:00.000Z`)
+    .first<{ n: number }>();
+  if ((today?.n ?? 0) >= LIMITS.perSiteDay) {
+    return { status: 429, body: { ok: false, error: "오늘은 더 이상 문의를 받을 수 없습니다. 전화로 연락해 주세요." } };
+  }
+
+  const id = crypto.randomUUID();
+  const createdAt = now.toISOString();
+  const notify = site.notify_email ? "pending" : "skipped";
+  await env.DB.prepare(
+    "INSERT INTO inquiries (id, site_id, name, phone, message, page, client_hash, notify_status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+  )
+    .bind(id, site.id, input.name, input.phone, input.message, input.page ?? null, clientHash, notify, createdAt)
+    .run();
+  await bumpMetric(env.DB, site.id, "inquiry", now);
+
+  if (site.notify_email) {
+    waitUntil(notifyOwner(env, site.id, site.notify_email, { id, ...input, createdAt, hostname: request.hostname }));
+  }
+  return { status: 201, body: { ok: true, id } };
+}
+
+async function notifyOwner(
+  env: Env,
+  siteId: string,
+  to: string,
+  inquiry: { id: string; name: string; phone: string; message: string; page?: string; createdAt: string; hostname: string },
+) {
+  const name = await siteName(env, siteId);
+  const phone = displayPhone(inquiry.phone);
+  const lines = [
+    `${name} 홈페이지로 새 문의가 들어왔습니다.`,
+    "",
+    `이름: ${inquiry.name}`,
+    `연락처: ${phone}`,
+    `접수: ${kst(inquiry.createdAt)} (한국 시간)`,
+    "",
+    inquiry.message,
+    "",
+    `보낸 곳: https://${inquiry.hostname}${inquiry.page ?? "/"}`,
+  ];
+  try {
+    await sendMail(env, {
+      to,
+      subject: `[${name}] 홈페이지 문의 - ${inquiry.name}`,
+      text: lines.join("\n"),
+      html: `<p>${escape(lines[0]!)}</p><table cellpadding="4"><tr><th align="left">이름</th><td>${escape(inquiry.name)}</td></tr><tr><th align="left">연락처</th><td><a href="tel:${inquiry.phone}">${escape(phone)}</a></td></tr><tr><th align="left">접수</th><td>${escape(kst(inquiry.createdAt))} (한국 시간)</td></tr></table><p style="white-space:pre-line">${escape(inquiry.message)}</p><p style="color:#666">보낸 곳: ${escape(`https://${inquiry.hostname}${inquiry.page ?? "/"}`)}</p>`,
+    });
+    await env.DB.prepare("UPDATE inquiries SET notify_status = 'sent' WHERE id = ?").bind(inquiry.id).run();
+  } catch (error) {
+    console.error("[inquiry] notify failed", inquiry.id, error);
+    await env.DB.prepare("UPDATE inquiries SET notify_status = 'failed', notify_error = ? WHERE id = ?")
+      .bind(String(error).slice(0, 500), inquiry.id)
+      .run();
+  }
+}
+
+export interface InquiryRow {
+  id: string;
+  name: string;
+  phone: string;
+  message: string;
+  page: string | null;
+  notify_status: string;
+  created_at: string;
+}
+
+export async function listInquiries(env: Env, siteId: string, { from, to, limit = 200 }: { from?: string; to?: string; limit?: number }) {
+  const { results } = await env.DB.prepare(
+    "SELECT id, name, phone, message, page, notify_status, created_at FROM inquiries WHERE site_id = ? AND created_at >= ? AND created_at < ? ORDER BY created_at DESC LIMIT ?",
+  )
+    .bind(siteId, from ?? "0000", to ?? "9999", Math.min(Math.max(limit, 1), 1000))
+    .all<InquiryRow>();
+  return results;
+}
+
+/** Excel-friendly CSV (UTF-8 BOM, CRLF). */
+export function inquiriesCsv(rows: InquiryRow[]) {
+  const cell = (value: string | null) => {
+    const text = value ?? "";
+    // Neutralize spreadsheet formulas from visitor input.
+    const safe = /^[=+\-@\t\r]/.test(text) ? `'${text}` : text;
+    return `"${safe.replace(/"/g, '""')}"`;
+  };
+  const header = ["접수(한국 시간)", "이름", "연락처", "문의 내용", "페이지", "알림"].map(cell).join(",");
+  const lines = rows.map((row) =>
+    [kst(row.created_at), row.name, displayPhone(row.phone), row.message, row.page, row.notify_status].map(cell).join(","),
+  );
+  return `﻿${[header, ...lines].join("\r\n")}\r\n`;
+}
+
+export function requireEmail(value: unknown): string | null {
+  if (value === null || value === "") return null;
+  if (typeof value !== "string" || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(value) || value.length > 200) {
+    throw new HttpError(422, "알림 이메일 형식이 아닙니다");
+  }
+  return value.trim();
+}
+
+==== apps/api/src/mail.ts
+import type { Env } from "./env.js";
+
+export interface OutgoingMail {
+  to: string;
+  subject: string;
+  text: string;
+  html: string;
+}
+
+/**
+ * Sends a transactional mail. `binding`: Cloudflare Email Service (`send_email` binding, the
+ * sender domain must be onboarded). `mailpit`: local inbox for verification. `off`: skipped.
+ */
+export async function sendMail(env: Env, mail: OutgoingMail): Promise<{ id: string | null }> {
+  const mode = env.MAIL_MODE ?? "off";
+  const from = { email: env.MAIL_FROM ?? "noreply@dsites.kr", name: "홈페이지 알림" };
+  if (mode === "binding") {
+    if (!env.EMAIL) throw new Error("send_email 바인딩(EMAIL)이 없습니다");
+    const result = await env.EMAIL.send({ from, to: mail.to, subject: mail.subject, text: mail.text, html: mail.html });
+    return { id: result.messageId };
+  }
+  if (mode === "mailpit") {
+    const res = await fetch(`${env.MAIL_PIT_URL ?? "http://127.0.0.1:8025"}/api/v1/send`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        From: { Email: from.email, Name: from.name },
+        To: [{ Email: mail.to }],
+        Subject: mail.subject,
+        Text: mail.text,
+        HTML: mail.html,
+      }),
+    });
+    if (!res.ok) throw new Error(`mailpit ${res.status}: ${await res.text()}`);
+    const body = (await res.json()) as { ID?: string };
+    return { id: body.ID ?? null };
+  }
+  return { id: null };
+}
+
+==== apps/api/src/metrics.ts
+export const METRIC_EVENTS = ["pageview", "tel", "kakao", "map", "booking", "inquiry_cta", "inquiry"] as const;
+export type MetricEvent = (typeof METRIC_EVENTS)[number];
+
+/** Korean calendar day (UTC+9) for daily counters: reports are read in Korean days. */
+export const kstDay = (at: Date) => new Date(at.getTime() + 9 * 3600_000).toISOString().slice(0, 10);
+
+export async function bumpMetric(db: D1Database, siteId: string, event: MetricEvent, at = new Date()) {
+  await db
+    .prepare(
+      "INSERT INTO metrics_daily (site_id, date, event, count) VALUES (?, ?, ?, 1) ON CONFLICT (site_id, date, event) DO UPDATE SET count = count + 1",
+    )
+    .bind(siteId, kstDay(at), event)
+    .run();
+}
+
+==== apps/api/src/public.ts
+import { WorkerEntrypoint } from "cloudflare:workers";
+import type { Env } from "./env.js";
+import { submitInquiry, type InquiryRequest, type InquiryResponse } from "./inquiries.js";
+
+/**
+ * Methods the public router calls through its service binding (Workers RPC). Not reachable
+ * over HTTP, so api.dsites.kr cannot be used to submit for an arbitrary site id.
+ */
+export class PublicApi extends WorkerEntrypoint<Env> {
+  async submitInquiry(request: InquiryRequest): Promise<InquiryResponse> {
+    try {
+      return await submitInquiry(this.env, request, (promise) => this.ctx.waitUntil(promise));
+    } catch (error) {
+      console.error("[inquiry] failed", error);
+      return { status: 500, body: { ok: false, error: "잠시 뒤 다시 시도해 주세요" } };
+    }
+  }
+}
+
+==== apps/api/src/turnstile.ts
+const SITEVERIFY = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
+
+/** Server-side Turnstile check. A missing secret means Turnstile is not configured (allowed). */
+export async function verifyTurnstile(
+  secret: string | undefined,
+  token: string | undefined,
+  ip: string | null,
+  fetcher: typeof fetch = fetch,
+): Promise<{ ok: boolean; reason?: string }> {
+  if (!secret) return { ok: true, reason: "not-configured" };
+  if (!token) return { ok: false, reason: "missing-token" };
+  const form = new FormData();
+  form.append("secret", secret);
+  form.append("response", token);
+  if (ip) form.append("remoteip", ip);
+  try {
+    const res = await fetcher(SITEVERIFY, { method: "POST", body: form });
+    const body = (await res.json()) as { success?: boolean; "error-codes"?: string[] };
+    return body.success ? { ok: true } : { ok: false, reason: body["error-codes"]?.join(",") ?? "failed" };
+  } catch (error) {
+    return { ok: false, reason: `siteverify-unreachable: ${String(error)}` };
+  }
+}
+
+/**
+ * Page hosting the Turnstile widget on the platform's own hostname. Widgets accept a short
+ * hostname allowlist, so customer domains embed this frame and receive the token by
+ * postMessage instead of rendering the widget themselves.
+ */
+export function turnstileFrame(siteKey: string, parentOrigin: string) {
+  const parent = JSON.stringify(parentOrigin).replace(/</g, "\\u003c");
+  const key = JSON.stringify(siteKey).replace(/</g, "\\u003c");
+  return `<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="robots" content="noindex">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>html,body{margin:0;background:transparent}</style>
+<script src="https://challenges.cloudflare.com/turnstile/v0/api.js?onload=onTurnstileLoad&render=explicit" async defer></script>
+<script>
+var parentOrigin = ${parent};
+function send(message) { window.parent.postMessage(Object.assign({ type: "dsites-turnstile" }, message), parentOrigin); }
+function onTurnstileLoad() {
+  turnstile.render("#widget", {
+    sitekey: ${key},
+    language: "ko",
+    callback: function (token) { send({ token: token }); },
+    "expired-callback": function () { send({ token: null }); },
+    "error-callback": function () { send({ error: true }); }
+  });
+}
+</script></head><body><div id="widget"></div></body></html>`;
+}
+
+==== packages/schema/src/inquiry.ts
+import { z } from "zod";
+
+/** What a visitor's inquiry form posts to `/api/inquiry`. */
+export const inquirySubmissionSchema = z.object({
+  name: z.string().trim().min(1, "이름을 입력해 주세요").max(30),
+  phone: z
+    .string()
+    .trim()
+    .transform((value) => value.replace(/[\s-]/g, ""))
+    .pipe(z.string().regex(/^0\d{8,11}$/, "연락처를 확인해 주세요")),
+  message: z.string().trim().min(1, "문의 내용을 입력해 주세요").max(1000),
+  consent: z.literal(true, { error: "개인정보 수집·이용에 동의해 주세요" }),
+  page: z.string().max(200).optional(),
+  /** Honeypot: hidden from people, filled by bots. */
+  website: z.string().max(200).optional(),
+  /** Milliseconds between form render and submit; bots submit instantly. */
+  elapsedMs: z.number().int().nonnegative().optional(),
+  turnstileToken: z.string().max(4096).optional(),
+});
+
+export type InquirySubmission = z.infer<typeof inquirySubmissionSchema>;
+
+==== apps/api/test/inquiries.test.ts
+import { describe, expect, it, vi } from "vitest";
+import { inquirySubmissionSchema } from "@sites/schema";
+import { displayPhone, inquiriesCsv } from "../src/inquiries.js";
+import { verifyTurnstile } from "../src/turnstile.js";
+
+const valid = { name: "홍길동", phone: "010-1234-5678", message: "문의", consent: true };
+
+describe("inquirySubmissionSchema", () => {
+  it("normalizes the phone number", () => {
+    expect(inquirySubmissionSchema.parse(valid).phone).toBe("01012345678");
+  });
+  it.each([
+    [{ ...valid, consent: false }, "consent"],
+    [{ ...valid, phone: "12345" }, "phone"],
+    [{ ...valid, name: " " }, "name"],
+    [{ ...valid, message: "x".repeat(1001) }, "message"],
+  ])("rejects %j", (input, path) => {
+    const result = inquirySubmissionSchema.safeParse(input);
+    expect(result.success).toBe(false);
+    expect(result.error?.issues[0]?.path[0]).toBe(path);
+  });
+});
+
+describe("inquiriesCsv", () => {
+  it("writes an Excel-friendly CSV and neutralizes formulas", () => {
+    const csv = inquiriesCsv([
+      { id: "1", name: "=HYPERLINK(\"x\")", phone: "01012345678", message: 'say "hi"\nline2', page: "/", notify_status: "sent", created_at: "2026-11-18T15:30:00.000Z" },
+    ]);
+    expect(csv.startsWith("﻿")).toBe(true);
+    expect(csv).toContain('"2026-11-19 00:30"');
+    expect(csv).toContain(`"'=HYPERLINK(""x"")"`);
+    expect(csv).toContain('"010-1234-5678"');
+    expect(csv).toContain('"say ""hi""\nline2"');
+    expect(csv.endsWith("\r\n")).toBe(true);
+  });
+});
+
+describe("verifyTurnstile", () => {
+  it("skips when no secret is configured", async () => {
+    expect((await verifyTurnstile(undefined, undefined, null)).ok).toBe(true);
+  });
+  it("requires a token when configured", async () => {
+    expect(await verifyTurnstile("secret", undefined, null)).toEqual({ ok: false, reason: "missing-token" });
+  });
+  it("passes siteverify results through", async () => {
+    const ok = vi.fn(async () => Response.json({ success: true }));
+    const bad = vi.fn(async () => Response.json({ success: false, "error-codes": ["invalid-input-response"] }));
+    expect((await verifyTurnstile("s", "t", "1.2.3.4", ok as typeof fetch)).ok).toBe(true);
+    expect(await verifyTurnstile("s", "t", null, bad as typeof fetch)).toEqual({ ok: false, reason: "invalid-input-response" });
+  });
+  it("fails closed when siteverify is unreachable", async () => {
+    const down = vi.fn(async () => {
+      throw new Error("offline");
+    });
+    expect((await verifyTurnstile("s", "t", null, down as typeof fetch)).ok).toBe(false);
+  });
+});
+
+describe("displayPhone", () => {
+  it.each([
+    ["01012345678", "010-1234-5678"],
+    ["0212345678", "02-1234-5678"],
+    ["021234567", "02-123-4567"],
+    ["05071234567", "0507-123-4567"],
+    ["050712345678", "0507-1234-5678"],
+    ["0311234567", "031-123-4567"],
+  ])("%s → %s", (digits, shown) => {
+    expect(displayPhone(digits)).toBe(shown);
+  });
+});
+
+exec
+/bin/zsh -lc 'cat package.json apps/api/package.json; cat apps/api/migrations/*; cat apps/api/src/index.ts | head -115; cat docker/workers.sh; cat scripts/verify-m2-inquiry.mjs' in /Users/steve/Projects/daniworks-sites-platform
+ succeeded in 0ms:
+{
+  "name": "daniworks-sites-platform",
+  "private": true,
+  "packageManager": "pnpm@10.28.0",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "build": "pnpm --filter @sites/renderer build",
+    "test": "pnpm -r test",
+    "check-types": "pnpm -r check-types",
+    "dev:api": "pnpm --filter api dev",
+    "dev:router": "pnpm --filter router dev",
+    "upload:shared": "node scripts/upload-shared.mjs",
+    "verify:m1": "node scripts/verify-m1.mjs",
+    "deploy:staging": "pnpm build && pnpm --filter api migrate:staging && pnpm --filter api deploy:staging && pnpm --filter router deploy:staging",
+    "verify:staging": "node scripts/verify-staging.mjs"
+  },
+  "devDependencies": {
+    "chrome-launcher": "1.2.3",
+    "lighthouse": "13.6.0",
+    "playwright": "1.65.1"
+  }
+}
+{
+  "name": "api",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler d1 migrations apply DB --local --persist-to ../../.wrangler/state && wrangler dev --port 8788 --ip 127.0.0.1 --persist-to ../../.wrangler/state",
+    "check-types": "tsc -p tsconfig.json",
+    "deploy:staging": "wrangler deploy --env staging",
+    "migrate:staging": "wrangler d1 migrations apply DB --env staging --remote",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@cf-wasm/photon": "0.4.0",
+    "@sites/renderer": "workspace:*",
+    "@sites/schema": "workspace:*"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261118.1",
+    "typescript": "^7.0.2",
+    "wrangler": "^4.164.0",
+    "vitest": "^5.1.1"
+  }
+}
+-- Sites, their append-only versions, and the hostnames that route to them.
+CREATE TABLE sites (
+  id TEXT PRIMARY KEY,
+  slug TEXT NOT NULL UNIQUE,
+  template_id TEXT NOT NULL,
+  published_version_id TEXT,
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'suspended')),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE site_versions (
+  id TEXT PRIMARY KEY,
+  site_id TEXT NOT NULL REFERENCES sites(id),
+  number INTEGER NOT NULL,
+  config TEXT NOT NULL,
+  created_by TEXT NOT NULL CHECK (created_by IN ('ai', 'operator', 'customer')),
+  note TEXT,
+  preview_token TEXT NOT NULL UNIQUE,
+  asset_version TEXT,
+  rendered_at TEXT,
+  first_published_at TEXT,
+  created_at TEXT NOT NULL,
+  UNIQUE (site_id, number)
+);
+
+CREATE TABLE domains (
+  hostname TEXT PRIMARY KEY,
+  site_id TEXT NOT NULL REFERENCES sites(id),
+  kind TEXT NOT NULL CHECK (kind IN ('subdomain', 'custom')),
+  status TEXT NOT NULL DEFAULT 'active',
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX site_versions_site ON site_versions(site_id, number DESC);
+CREATE INDEX domains_site ON domains(site_id);
+-- M2: customers, custom domains, uploaded photos, inquiries and daily metrics.
+
+CREATE TABLE customers (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  contact_name TEXT,
+  phone TEXT,
+  email TEXT,
+  billing_cycle TEXT CHECK (billing_cycle IN ('monthly', 'yearly')),
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'cancelled')),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+-- Cancellation keeps sites.status = 'suspended' (public serving stops) and records when.
+ALTER TABLE sites ADD COLUMN customer_id TEXT REFERENCES customers(id);
+ALTER TABLE sites ADD COLUMN notify_email TEXT;
+ALTER TABLE sites ADD COLUMN template_version TEXT;
+ALTER TABLE sites ADD COLUMN cancelled_at TEXT;
+CREATE INDEX sites_customer ON sites(customer_id);
+
+-- Custom hostnames (Cloudflare for SaaS). Subdomain rows keep status 'active' and no cf fields.
+ALTER TABLE domains ADD COLUMN cf_hostname_id TEXT;
+ALTER TABLE domains ADD COLUMN ssl_status TEXT;
+ALTER TABLE domains ADD COLUMN verification_records TEXT;
+ALTER TABLE domains ADD COLUMN last_error TEXT;
+ALTER TABLE domains ADD COLUMN checked_at TEXT;
+
+CREATE TABLE assets (
+  key TEXT PRIMARY KEY,
+  site_id TEXT NOT NULL REFERENCES sites(id),
+  r2_key TEXT NOT NULL,
+  mime TEXT NOT NULL,
+  width INTEGER NOT NULL,
+  height INTEGER NOT NULL,
+  bytes INTEGER NOT NULL,
+  original_name TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX assets_site ON assets(site_id, created_at DESC);
+
+CREATE TABLE inquiries (
+  id TEXT PRIMARY KEY,
+  site_id TEXT NOT NULL REFERENCES sites(id),
+  name TEXT NOT NULL,
+  phone TEXT NOT NULL,
+  message TEXT NOT NULL,
+  page TEXT,
+  -- SHA-256 of IP + daily salt: rate limiting without storing the address.
+  client_hash TEXT,
+  notify_status TEXT NOT NULL DEFAULT 'pending' CHECK (notify_status IN ('pending', 'sent', 'failed', 'skipped')),
+  notify_error TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX inquiries_site ON inquiries(site_id, created_at DESC);
+CREATE INDEX inquiries_client ON inquiries(client_hash, created_at);
+
+CREATE TABLE metrics_daily (
+  site_id TEXT NOT NULL REFERENCES sites(id),
+  date TEXT NOT NULL,
+  event TEXT NOT NULL CHECK (event IN ('pageview', 'tel', 'kakao', 'map', 'booking', 'inquiry_cta', 'inquiry')),
+  count INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (site_id, date, event)
+);
+
+-- Origin the HTML was rendered for (canonical, OG). A domain change re-renders on publish.
+ALTER TABLE site_versions ADD COLUMN rendered_origin TEXT;
+-- When published_version_id last changed (publish or rollback); the router pointer is built from it.
+ALTER TABLE sites ADD COLUMN published_at TEXT;
+
+-- Sites published before this column existed: best available time, so their pointer survives.
+UPDATE sites
+SET published_at = COALESCE(
+  (SELECT first_published_at FROM site_versions WHERE site_versions.id = sites.published_version_id),
+  updated_at
+)
+WHERE published_version_id IS NOT NULL AND published_at IS NULL;
+
+-- Last sites.updated_at whose state was written to the router's KV host records. A cron
+-- re-syncs rows where this lags updated_at (e.g. a KV write was rate limited).
+ALTER TABLE sites ADD COLUMN routes_synced_at TEXT;
+
+-- Per-site lease so only one writer updates the KV host records at a time.
+ALTER TABLE sites ADD COLUMN routes_lock_token TEXT;
+ALTER TABLE sites ADD COLUMN routes_lock_until TEXT;
+import { parseSiteConfig, renderSite, SiteConfigError, type SiteConfig } from "@sites/renderer";
+import { listAssets, uploadAsset } from "./assets.js";
+import { inquiriesCsv, listInquiries, requireEmail } from "./inquiries.js";
+import { turnstileFrame } from "./turnstile.js";
+import type { Env } from "./env.js";
+import { HttpError, json, readJson, requireAdmin } from "./http.js";
+import { MEDIA_PATH, r2MediaKey, r2SharedKey } from "./keys.js";
+import { auditHostRecords, reconcileHostRecords, syncHostRecordsNow } from "./routes.js";
+
+/** Must match wrangler.toml [triggers]: the hourly audit; the 5-minute cron only reconciles. */
+const AUDIT_CRON = "17 * * * *";
+import { assetBase, publish, rollback, siteOrigin } from "./publish.js";
+import {
+  addVersion,
+  createSite,
+  getSite,
+  listSites,
+  listVersions,
+  setSiteStatus,
+  versionByPreviewToken,
+  type CreatedBy,
+} from "./store.js";
+
+const CREATORS: CreatedBy[] = ["ai", "operator", "customer"];
+
+/** Parsed config with defaults filled; what gets stored. */
+function validated(input: unknown): SiteConfig {
+  const result = parseSiteConfig(input);
+  if (!result.ok) throw new HttpError(422, "설정 검증 실패", result.errors);
+  return result.config;
+}
+
+function creator(value: unknown): CreatedBy {
+  return CREATORS.includes(value as CreatedBy) ? (value as CreatedBy) : "operator";
+}
+
+async function serveImmutable(env: Env, key: string) {
+  const object = await env.SITES.get(key);
+  if (!object) return new Response("not found", { status: 404 });
+  const headers = new Headers();
+  object.writeHttpMetadata(headers);
+  headers.set("cache-control", "public, max-age=31536000, immutable");
+  return new Response(object.body, { headers });
+}
+
+async function handle(request: Request, env: Env): Promise<Response> {
+  const url = new URL(request.url);
+  const parts = url.pathname.split("/").filter(Boolean);
+  const method = request.method;
+
+  if (method === "GET" && url.pathname === "/health") return json({ ok: true });
+
+  // Shared assets are public and immutable; previews load them from here.
+  if (method === "GET" && parts[0] === "_shared") return serveImmutable(env, r2SharedKey(parts.slice(1).join("/")));
+  // Uploaded photos (public, content-addressed) so previews show them before publishing.
+  const media = method === "GET" ? MEDIA_PATH.exec(url.pathname) : null;
+  if (media) return serveImmutable(env, r2MediaKey(media[1]!, media[2]!));
+
+  // Turnstile widget frame embedded by public sites (see turnstile.ts).
+  if (method === "GET" && url.pathname === "/turnstile-frame") {
+    if (!env.TURNSTILE_SITE_KEY) return new Response("turnstile not configured", { status: 404 });
+    const parent = url.searchParams.get("parent") ?? "";
+    if (!/^https?:\/\/[a-z0-9.-]+(:\d+)?$/i.test(parent)) return new Response("bad parent", { status: 400 });
+    return new Response(turnstileFrame(env.TURNSTILE_SITE_KEY, parent), {
+      headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "x-robots-tag": "noindex" },
+    });
+  }
+
+  // Preview: anyone with the token can view a version. Never indexed. /preview/<token>[/privacy]
+  if (method === "GET" && parts[0] === "preview" && (parts.length === 2 || parts.length === 3)) {
+    const version = await versionByPreviewToken(env.DB, parts[1]!);
+    const site = await getSite(env.DB, version.site_id);
+    const { pages } = await renderSite(JSON.parse(version.config) as SiteConfig, {
+      assetBase: assetBase(),
+      origin: await siteOrigin(env, site),
+      preview: true,
+      turnstileFrame: null,
+      // Site links are root-relative (`/#inquiry`, `/privacy`); keep them inside this preview.
+      linkPrefix: `/preview/${parts[1]}`,
+    });
+    const route = parts[2] ? `/${parts[2]}` : "/";
+    const page = pages.find((entry) => entry.route === route);
+    if (!page) throw new HttpError(404, "없는 페이지입니다");
+    return new Response(page.html, {
+      headers: {
+        "content-type": "text/html; charset=utf-8",
+        "x-robots-tag": "noindex, nofollow",
+        "cache-control": "no-store",
+      },
+    });
+  }
+
+  requireAdmin(request, env.ADMIN_TOKEN);
+
+  // PUT /admin/shared/<version>/<path>: upload one shared asset file.
+  if (method === "PUT" && parts[0] === "admin" && parts[1] === "shared" && parts.length > 3) {
+    const key = r2SharedKey(parts.slice(2).join("/"));
+    await env.SITES.put(key, request.body, {
+      httpMetadata: { contentType: request.headers.get("content-type") ?? "application/octet-stream" },
+    });
+    return json({ key }, 201);
+  }
+
+  if (parts[0] !== "sites") throw new HttpError(404, "없는 경로입니다");
+
+  // POST /sites {config, createdBy}
+  if (method === "POST" && parts.length === 1) {
+    const body = await readJson<{ config: unknown; createdBy?: CreatedBy }>(request);
+    const config = validated(body.config);
+    const hostname = `${config.slug}.${env.BASE_DOMAIN}`;
+    const { siteId, versionId } = await createSite(env.DB, config, creator(body.createdBy), hostname);
+    await syncHostRecordsNow(env, siteId);
+    return json({ siteId, versionId, hostname }, 201);
+  }
+
+#!/usr/bin/env bash
+# Starts the api and router Workers with shared local state (D1, R2, KV) for Docker verification.
+set -euo pipefail
+cd /app
+
+STATE=/state
+: "${ADMIN_TOKEN:=dev-admin-token}"
+
+# wrangler reads secrets from .dev.vars; generate it from the container environment.
+env | grep -E '^(ADMIN_TOKEN|TURNSTILE_SECRET|HASH_PEPPER|MAIL_|CF_|ACCESS_)' > apps/api/.dev.vars || true
+
+(cd apps/api && pnpm exec wrangler d1 migrations apply DB --local --persist-to "$STATE")
+
+(cd apps/api && exec pnpm exec wrangler dev --port 8788 --inspector-port 9230 --ip 0.0.0.0 --persist-to "$STATE" --test-scheduled --show-interactive-dev-session=false) &
+(cd apps/router && exec pnpm exec wrangler dev --port 8787 --inspector-port 9231 --ip 0.0.0.0 --persist-to "$STATE" --show-interactive-dev-session=false) &
+
+wait -n
+echo "a worker exited" >&2
+exit 1
+// M2 step 2-5: visitor inquiry end to end. Browser form (Turnstile frame, timing) → router →
+// api RPC → D1 → mail (Mailpit) → operator list/CSV; spam and abuse paths; metrics.
+import { API, ROUTER_PORT, TOKEN, api, chromium, evidence, inspectPage, localD1, routerRequest, uploadShared, viewports } from "./lib/verify.mjs";
+
+const { lessonFixture } = await import("../packages/renderer/src/templates/service-local/fixtures.ts");
+const MAILPIT = process.env.MAILPIT_URL ?? "http://127.0.0.1:8025";
+const ev = evidence("m2-inquiry");
+const { check } = ev;
+const run = Date.now().toString(36);
+const notify = `owner-${run}@example.test`;
+
+uploadShared();
+const config = { ...structuredClone(lessonFixture), slug: `inq-${run}` };
+const host = `${config.slug}.localhost`;
+const created = await api("POST", "/sites", { config, createdBy: "operator" });
+const siteId = created.data.siteId;
+const patched = await api("PATCH", `/sites/${siteId}`, { notifyEmail: notify });
+check("알림 이메일 설정", patched.status === 200 && patched.data.site.notify_email === notify);
+check("잘못된 알림 이메일은 422", (await api("PATCH", `/sites/${siteId}`, { notifyEmail: "nope" })).status === 422);
+await api("POST", `/sites/${siteId}/publish`);
+
+const post = (body, headers = {}) =>
+  routerRequest(host, "/api/inquiry", {
+    method: "POST",
+    body: JSON.stringify(body),
+    headers: { "content-type": "application/json", ...headers },
+  });
+const ok = { name: "API 시험", phone: "010-2222-3333", message: "API 경로 시험", consent: true, elapsedMs: 5000, turnstileToken: "XXXX.DUMMY.TOKEN.XXXX" };
+
+// 1. browser: the real form
+const browser = await chromium().launch();
+const r = await inspectPage(browser, `http://${host}:${ROUTER_PORT}/`, viewports.mobile, {
+  allowExternal: ["https://pf.kakao.com/", "https://challenges.cloudflare.com/"],
+});
+const turnstileBeforeInteraction = await r.page.locator("iframe[data-turnstile-frame]").count();
+check("페이지 로드 때는 Turnstile을 불러오지 않음", turnstileBeforeInteraction === 0 && !r.external.length, { external: r.external });
+const form = r.page.locator("form").filter({ has: r.page.locator("input[name=phone]") });
+await form.locator("input[name=name]").fill("브라우저 시험");
+await form.locator("input[name=phone]").fill("010-1234-5678");
+await form.locator("textarea[name=message]").fill("주말반 자리 있나요?\n초급입니다.");
+await form.locator("input[name=consent]").check();
+await r.page.waitForSelector("iframe[data-turnstile-frame]");
+// The test site key passes automatically; wait for the token to arrive by postMessage.
+await r.page.waitForTimeout(2500);
+await form.locator("button[type=submit]").click();
+const done = await r.page.getByRole("status").textContent({ timeout: 15000 }).catch(() => null);
+await r.page.screenshot({ path: `${ev.dir}/form-done.png` });
+check("브라우저 폼 제출 → 접수 완료 메시지", done?.includes("접수되었습니다"), { done, errors: r.errors });
+await r.page.close();
+await browser.close();
+
+// 2. stored, listed, exported
+const list = await api("GET", `/sites/${siteId}/inquiries`);
+const stored = list.data.inquiries?.find((row) => row.name === "브라우저 시험");
+check("D1 저장 (연락처 숫자만)", stored?.phone === "01012345678" && stored.page === "/", stored);
+
+// 3. mail to the owner
+let mail;
+for (let i = 0; i < 40 && !mail; i++) {
+  const found = await (await fetch(`${MAILPIT}/api/v1/search?query=${encodeURIComponent(`to:${notify}`)}`)).json();
+  mail = found.messages?.[0];
+  if (!mail) await new Promise((res) => setTimeout(res, 250));
+}
+const detail = mail ? await (await fetch(`${MAILPIT}/api/v1/message/${mail.ID}`)).json() : null;
+check(
+  "사장님 메일 수신: 제목에 상호, 본문에 이름·연락처·내용",
+  mail?.Subject === "[제페스 풋볼 아카데미] 홈페이지 문의 - 브라우저 시험" &&
+    detail?.Text.includes("010-1234-5678") &&
+    detail.Text.includes("주말반 자리 있나요?"),
+  { subject: mail?.Subject },
+);
+let notified;
+for (let i = 0; i < 20; i++) {
+  notified = (await api("GET", `/sites/${siteId}/inquiries`)).data.inquiries.find((row) => row.id === stored?.id);
+  if (notified?.notify_status === "sent") break;
+  await new Promise((res) => setTimeout(res, 250));
+}
+check("알림 결과 sent 기록", notified?.notify_status === "sent");
+
+// 4. abuse and validation paths (API level)
+check("동의 없으면 422", (await post({ ...ok, consent: false })).status === 422);
+check("전화번호 형식 오류 422", (await post({ ...ok, phone: "12" })).status === 422);
+check("Turnstile 토큰 없으면 403", (await post({ ...ok, turnstileToken: undefined })).status === 403);
+const before = (await api("GET", `/sites/${siteId}/inquiries`)).data.inquiries.length;
+const honeypot = await post({ ...ok, website: "http://spam" });
+const fast = await post({ ...ok, elapsedMs: 300 });
+const after = (await api("GET", `/sites/${siteId}/inquiries`)).data.inquiries.length;
+check("허니팟·2초 미만 제출은 200으로 답하되 저장 안 함", honeypot.status === 200 && fast.status === 200 && before === after);
+check("JSON 아니면 415", (await routerRequest(host, "/api/inquiry", { method: "POST", body: "a=b", headers: { "content-type": "application/x-www-form-urlencoded" } })).status === 415);
+check("16KB 넘는 본문 400", (await post({ ...ok, message: "x".repeat(20000) })).status === 400);
+check("GET은 405", (await routerRequest(host, "/api/inquiry")).status === 405);
+check("연결 안 된 호스트는 404", (await routerRequest(`nobody-${run}.localhost`, "/api/inquiry", { method: "POST", body: "{}", headers: { "content-type": "application/json" } })).status === 404);
+
+// 5. rate limit per visitor (hashed IP). Local wrangler sets cf-connecting-ip to the real
+// client (always this container), so earlier runs share the window: age them out first.
+localD1("UPDATE inquiries SET created_at = '2000-01-01T00:00:00.000Z' WHERE client_hash IS NOT NULL");
+const ip = { "cf-connecting-ip": "203.0.113.7" };
+const statuses = [];
+for (let i = 0; i < 6; i++) statuses.push((await post({ ...ok, message: `한도 ${i}` }, ip)).status);
+check("같은 방문자 10분 5건 초과는 429", statuses.slice(0, 5).every((s) => s === 201) && statuses[5] === 429, { statuses });
+const hashes = localD1(`SELECT DISTINCT client_hash FROM inquiries WHERE site_id = '${siteId}' AND client_hash IS NOT NULL`);
+check("IP는 해시로만 저장", hashes.length >= 1 && hashes.every((h) => /^[0-9a-f]{32}$/.test(h.client_hash)) && !JSON.stringify(localD1(`SELECT * FROM inquiries WHERE site_id = '${siteId}'`)).includes("127.0.0.1"));
+
+// 6. CSV export
+const csvRes = await fetch(`${API}/sites/${siteId}/inquiries.csv`, { headers: { authorization: `Bearer ${TOKEN}` } });
+// text() would strip the BOM; check the bytes.
+const csvBytes = new Uint8Array(await csvRes.arrayBuffer());
+const csv = new TextDecoder("utf-8", { ignoreBOM: true }).decode(csvBytes);
+const bom = csvBytes[0] === 0xef && csvBytes[1] === 0xbb && csvBytes[2] === 0xbf;
+check("CSV 내보내기: BOM, 헤더, 하이픈 연락처", csvRes.ok && bom && csv.includes("접수(한국 시간)") && csv.includes("010-1234-5678"), { bom });
+check("목록은 인증 필요", (await fetch(`${API}/sites/${siteId}/inquiries`)).status === 401);
+
+// 7. metrics and suspended sites
+const metric = localD1(`SELECT SUM(count) AS n FROM metrics_daily WHERE site_id = '${siteId}' AND event = 'inquiry'`)[0];
+check("문의 지표 집계 (저장된 건수와 같음)", metric.n === (await api("GET", `/sites/${siteId}/inquiries`)).data.inquiries.length, metric);
+await api("POST", `/sites/${siteId}/suspend`);
+check("정지된 사이트는 문의 404", (await post(ok)).status === 404);
+await api("POST", `/sites/${siteId}/resume`);
+
+ev.finish({ siteId });
+
+exec
+/bin/zsh -lc 'for p in /AGENTS.md /Users/AGENTS.md /Users/steve/AGENTS.md /Users/steve/Projects/AGENTS.md; do test ! -f $p || cat $p; done; pnpm test' in /Users/steve/Projects/daniworks-sites-platform
+ succeeded in 1262ms:
+
+> daniworks-sites-platform@ test /Users/steve/Projects/daniworks-sites-platform
+> pnpm -r test
+
+Scope: 4 of 5 workspace projects
+packages/schema test$ vitest run
+packages/schema test:  RUN  v5.1.1 /Users/steve/Projects/daniworks-sites-platform/packages/schema
+packages/schema test:  Test Files  1 passed (1)
+packages/schema test:       Tests  22 passed (22)
+packages/schema test:    Start at  03:40:43
+packages/schema test:    Duration  136ms (import 53%, transform 38%, tests 7%, worker 2%)
+packages/schema test: Done
+packages/renderer test$ vitest run
+packages/renderer test:  RUN  v5.1.1 /Users/steve/Projects/daniworks-sites-platform/packages/renderer
+packages/renderer test:  Test Files  2 passed (2)
+packages/renderer test:       Tests  16 passed (16)
+packages/renderer test:    Start at  03:40:44
+packages/renderer test:    Duration  276ms (import 50%, tests 27%, transform 22%, worker 1%)
+packages/renderer test: Done
+apps/api test$ vitest run
+apps/api test:  RUN  v5.1.1 /Users/steve/Projects/daniworks-sites-platform/apps/api
+apps/api test:  Test Files  2 passed (2)
+apps/api test:       Tests  36 passed (36)
+apps/api test:    Start at  03:40:44
+apps/api test:    Duration  174ms (import 71%, tests 20%, transform 8%, worker 2%)
+apps/api test: Done
+
+exec
+/bin/zsh -lc 'cat packages/renderer/src/asset-version*; cat packages/renderer/scripts/* 2>/dev/null | head -100; pnpm check-types' in /Users/steve/Projects/daniworks-sites-platform
+ succeeded in 550ms:
+zsh:1: no matches found: packages/renderer/src/asset-version*
+// Builds the shared, template-versioned assets once: CSS, client bundle, template images.
+// Output: dist/shared/<version>/... where <version> is a content hash, so the files can be
+// cached forever. Per-site publishing only renders HTML that points at this version.
+import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { cpSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { dirname, join, relative } from "node:path";
+import { fileURLToPath } from "node:url";
+import { build } from "esbuild";
+
+const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+const staging = join(root, "dist/.staging");
+const assets = join(staging, "_assets");
+rmSync(join(root, "dist"), { recursive: true, force: true });
+mkdirSync(assets, { recursive: true });
+
+execFileSync(
+  join(root, "node_modules/.bin/tailwindcss"),
+  ["-i", "src/styles.css", "-o", join(assets, "site.css"), "--minify"],
+  { cwd: root, stdio: ["ignore", "ignore", "inherit"] },
+);
+
+// Replace whole react-icons sets with the allowlist modules (src/icons/*.ts).
+const iconSets = { "react-icons/fa6": "src/icons/fa6.ts", "react-icons/fi": "src/icons/fi.ts" };
+const iconAllowlist = {
+  name: "icon-allowlist",
+  setup(b) {
+    b.onResolve({ filter: /^react-icons\/(fa6|fi)$/ }, (args) => {
+      const target = join(root, iconSets[args.path]);
+      if (args.importer === target) return undefined; // the allowlist module itself imports the real set
+      return { path: target };
+    });
+  },
+};
+
+await build({
+  entryPoints: [join(root, "src/client.tsx")],
+  outdir: assets,
+  entryNames: "[name]",
+  chunkNames: "chunks/[name]-[hash]",
+  bundle: true,
+  splitting: true,
+  format: "esm",
+  minify: true,
+  target: "es2022",
+  jsx: "automatic",
+  define: { "process.env.NODE_ENV": '"production"' },
+  plugins: [iconAllowlist],
+  logLevel: "warning",
+});
+
+cpSync(join(root, "node_modules/@dani-builder/site-templates/assets/business-basic"), join(staging, "site-templates"), {
+  recursive: true,
+});
+
+// Responsive WebP variants next to each sample photo (src/images.ts names them).
+const { default: sharp } = await import("sharp");
+const { VARIANT_WIDTHS, VARIANT_QUALITY, variantUrl } = await import("../src/images.ts");
+for (const file of readdirSync(join(staging, "site-templates")).filter((f) => /\.(jpg|png)$/.test(f))) {
+  const src = join(staging, "site-templates", file);
+  const { width } = await sharp(src).metadata();
+  for (const w of VARIANT_WIDTHS.filter((w) => w < width)) {
+    await sharp(src).resize({ width: w }).webp({ quality: VARIANT_QUALITY }).toFile(variantUrl(src, w));
+  }
+}
+
+function walk(dir) {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
+    e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)],
+  );
+}
+const files = walk(staging).sort();
+const hash = createHash("sha256");
+for (const file of files) hash.update(relative(staging, file)).update(readFileSync(file));
+const version = hash.digest("hex").slice(0, 12);
+
+mkdirSync(join(root, "dist/shared"), { recursive: true });
+renameSync(staging, join(root, "dist/shared", version));
+mkdirSync(join(root, "src/generated"), { recursive: true });
+writeFileSync(
+  join(root, "src/generated/asset-version.ts"),
+  `// Generated by scripts/build-assets.mjs. Do not edit.\nexport const ASSET_VERSION = "${version}";\n`,
+);
+
+const kib = (f) => (statSync(join(root, "dist/shared", version, f)).size / 1024).toFixed(1);
+const chunkDir = join(root, "dist/shared", version, "_assets/chunks");
+const chunkKiB = readdirSync(chunkDir).reduce((s, f) => s + statSync(join(chunkDir, f)).size, 0) / 1024;
+console.log(`asset version ${version}: ${files.length} files`);
+console.log(`site.css ${kib("_assets/site.css")} KiB, client.js ${kib("_assets/client.js")} KiB, chunks ${chunkKiB.toFixed(1)} KiB`);
+
+> daniworks-sites-platform@ check-types /Users/steve/Projects/daniworks-sites-platform
+> pnpm -r check-types
+
+Scope: 4 of 5 workspace projects
+apps/router check-types$ tsc -p tsconfig.json
+packages/schema check-types$ tsc -p tsconfig.json
+apps/router check-types: Done
+packages/schema check-types: Done
+packages/renderer check-types$ tsc -p tsconfig.json
+packages/renderer check-types: Done
+apps/api check-types$ tsc -p tsconfig.json
+apps/api check-types: Done
+
+exec
+/bin/zsh -lc "nl -ba apps/api/src/inquiries.ts | sed -n '75,125p'; nl -ba apps/api/src/turnstile.ts | tail -32; cat apps/api/wrangler.toml | head -18; cat packages/renderer/src/platform/inquiry-form.tsx | sed -n '115,145p'; rg 'ASSET_VERSION' packages/renderer" in /Users/steve/Projects/daniworks-sites-platform
+ succeeded in 0ms:
+    75	
+    76	  const turnstile = await verifyTurnstile(env.TURNSTILE_SECRET, input.turnstileToken, request.ip);
+    77	  if (!turnstile.ok) {
+    78	    return { status: 403, body: { ok: false, error: "스팸 방지 확인에 실패했습니다. 다시 시도해 주세요." } };
+    79	  }
+    80	
+    81	  const now = new Date();
+    82	  const day = now.toISOString().slice(0, 10);
+    83	  const clientHash = request.ip ? await sha256Hex(new TextEncoder().encode(`${env.HASH_PEPPER ?? "dsites"}:${day}:${request.ip}`), 32) : null;
+    84	  if (clientHash) {
+    85	    const since = new Date(now.getTime() - 10 * 60_000).toISOString();
+    86	    const recent = await env.DB.prepare("SELECT COUNT(*) AS n FROM inquiries WHERE client_hash = ? AND created_at >= ?")
+    87	      .bind(clientHash, since)
+    88	      .first<{ n: number }>();
+    89	    if ((recent?.n ?? 0) >= LIMITS.perClient) {
+    90	      return { status: 429, body: { ok: false, error: "잠시 뒤 다시 시도해 주세요" } };
+    91	    }
+    92	  }
+    93	  const today = await env.DB.prepare("SELECT COUNT(*) AS n FROM inquiries WHERE site_id = ? AND created_at >= ?")
+    94	    .bind(site.id, `${day}T00:00:00.000Z`)
+    95	    .first<{ n: number }>();
+    96	  if ((today?.n ?? 0) >= LIMITS.perSiteDay) {
+    97	    return { status: 429, body: { ok: false, error: "오늘은 더 이상 문의를 받을 수 없습니다. 전화로 연락해 주세요." } };
+    98	  }
+    99	
+   100	  const id = crypto.randomUUID();
+   101	  const createdAt = now.toISOString();
+   102	  const notify = site.notify_email ? "pending" : "skipped";
+   103	  await env.DB.prepare(
+   104	    "INSERT INTO inquiries (id, site_id, name, phone, message, page, client_hash, notify_status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+   105	  )
+   106	    .bind(id, site.id, input.name, input.phone, input.message, input.page ?? null, clientHash, notify, createdAt)
+   107	    .run();
+   108	  await bumpMetric(env.DB, site.id, "inquiry", now);
+   109	
+   110	  if (site.notify_email) {
+   111	    waitUntil(notifyOwner(env, site.id, site.notify_email, { id, ...input, createdAt, hostname: request.hostname }));
+   112	  }
+   113	  return { status: 201, body: { ok: true, id } };
+   114	}
+   115	
+   116	async function notifyOwner(
+   117	  env: Env,
+   118	  siteId: string,
+   119	  to: string,
+   120	  inquiry: { id: string; name: string; phone: string; message: string; page?: string; createdAt: string; hostname: string },
+   121	) {
+   122	  const name = await siteName(env, siteId);
+   123	  const phone = displayPhone(inquiry.phone);
+   124	  const lines = [
+   125	    `${name} 홈페이지로 새 문의가 들어왔습니다.`,
+    20	  } catch (error) {
+    21	    return { ok: false, reason: `siteverify-unreachable: ${String(error)}` };
+    22	  }
+    23	}
+    24	
+    25	/**
+    26	 * Page hosting the Turnstile widget on the platform's own hostname. Widgets accept a short
+    27	 * hostname allowlist, so customer domains embed this frame and receive the token by
+    28	 * postMessage instead of rendering the widget themselves.
+    29	 */
+    30	export function turnstileFrame(siteKey: string, parentOrigin: string) {
+    31	  const parent = JSON.stringify(parentOrigin).replace(/</g, "\\u003c");
+    32	  const key = JSON.stringify(siteKey).replace(/</g, "\\u003c");
+    33	  return `<!doctype html>
+    34	<html lang="ko"><head><meta charset="utf-8"><meta name="robots" content="noindex">
+    35	<meta name="viewport" content="width=device-width, initial-scale=1">
+    36	<style>html,body{margin:0;background:transparent}</style>
+    37	<script src="https://challenges.cloudflare.com/turnstile/v0/api.js?onload=onTurnstileLoad&render=explicit" async defer></script>
+    38	<script>
+    39	var parentOrigin = ${parent};
+    40	function send(message) { window.parent.postMessage(Object.assign({ type: "dsites-turnstile" }, message), parentOrigin); }
+    41	function onTurnstileLoad() {
+    42	  turnstile.render("#widget", {
+    43	    sitekey: ${key},
+    44	    language: "ko",
+    45	    callback: function (token) { send({ token: token }); },
+    46	    "expired-callback": function () { send({ token: null }); },
+    47	    "error-callback": function () { send({ error: true }); }
+    48	  });
+    49	}
+    50	</script></head><body><div id="widget"></div></body></html>`;
+    51	}
+# Platform API: site/version CRUD, preview, publish (render → R2 → KV), rollback.
+name = "sites-api"
+main = "src/index.ts"
+# Daniworks account (owns the dsites.kr zone). Local dev ignores it.
+account_id = "358a1b6caabcf91741109efca1ec0547"
+compatibility_date = "2026-11-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Safety net: re-sync router KV records that lag D1 (see src/routes.ts).
+[triggers]
+crons = ["*/5 * * * *", "17 * * * *"]
+
+[vars]
+# Public sites are served at <slug>.<BASE_DOMAIN>. Local dev uses *.localhost.
+BASE_DOMAIN = "localhost"
+PUBLIC_SCHEME = "http"
+API_ORIGIN = "http://127.0.0.1:8788"
+# Cloudflare's always-pass test key; the matching test secret goes in .dev.vars.
+            <label className="grid gap-1.5 text-sm font-medium">
+              이름
+              <input name="name" required maxLength={30} autoComplete="name" className={field} />
+            </label>
+            <label className="grid gap-1.5 text-sm font-medium">
+              연락처
+              <input
+                name="phone"
+                required
+                inputMode="tel"
+                autoComplete="tel"
+                pattern="[0-9\-\s]{9,14}"
+                placeholder="010-1234-5678"
+                className={field}
+              />
+            </label>
+            <label className="grid gap-1.5 text-sm font-medium">
+              문의 내용
+              <textarea name="message" required maxLength={1000} rows={5} className={field} />
+            </label>
+            {/* Honeypot: people never see or fill it. */}
+            <input name="website" tabIndex={-1} autoComplete="off" aria-hidden="true" className="hidden" />
+            <label className="flex items-start gap-2 text-sm text-[var(--color-text-muted)]">
+              <input name="consent" type="checkbox" required className="mt-1" />
+              <span>
+                문의 응대를 위한 개인정보 수집·이용에 동의합니다.{" "}
+                <a href={siteHref("/privacy")} className="underline">
+                  자세히
+                </a>
+              </span>
+            </label>
+packages/renderer/src/index.ts:export { ASSET_VERSION } from "./generated/asset-version.js";
+packages/renderer/scripts/build-assets.mjs:  `// Generated by scripts/build-assets.mjs. Do not edit.\nexport const ASSET_VERSION = "${version}";\n`,
+
+2026-11-18T18:41:01.622572Z ERROR codex_core::session: failed to record rollout items: thread 01a1eff5-95c0-7040-bf6c-47882487c7ba not found
+codex
+The render cache can leave inquiry forms incompatible with newly enabled Turnstile enforcement, and concurrent requests can bypass the new abuse limits. Type checks pass, but these behavior defects require fixes.
+
+Full review comments:
+
+- [P2] Invalidate rendered pages when Turnstile configuration changes — /Users/steve/Projects/daniworks-sites-platform/apps/api/src/publish.ts:44-44
+  When Turnstile is enabled after a version was rendered, republishing that version still returns early from `ensureRendered` because the cache checks only asset version and origin. Its HTML therefore retains a null frame URL while the backend now requires a token, making every inquiry fail with 403. Include the effective Turnstile frame configuration in render-cache invalidation so republishing updates the form.
+
+- [P2] Enforce inquiry limits atomically with insertion — /Users/steve/Projects/daniworks-sites-platform/apps/api/src/inquiries.ts:103-107
+  Concurrent submissions can all read counts below the client or site limit before any request inserts its inquiry. Each then succeeds and schedules an email, allowing bursts to bypass both advertised abuse limits. Make the limit check and conditional insertion atomic rather than separating the COUNT queries from the INSERT.
+The render cache can leave inquiry forms incompatible with newly enabled Turnstile enforcement, and concurrent requests can bypass the new abuse limits. Type checks pass, but these behavior defects require fixes.
+
+Full review comments:
+
+- [P2] Invalidate rendered pages when Turnstile configuration changes — /Users/steve/Projects/daniworks-sites-platform/apps/api/src/publish.ts:44-44
+  When Turnstile is enabled after a version was rendered, republishing that version still returns early from `ensureRendered` because the cache checks only asset version and origin. Its HTML therefore retains a null frame URL while the backend now requires a token, making every inquiry fail with 403. Include the effective Turnstile frame configuration in render-cache invalidation so republishing updates the form.
+
+- [P2] Enforce inquiry limits atomically with insertion — /Users/steve/Projects/daniworks-sites-platform/apps/api/src/inquiries.ts:103-107
+  Concurrent submissions can all read counts below the client or site limit before any request inserts its inquiry. Each then succeeds and schedules an email, allowing bursts to bypass both advertised abuse limits. Make the limit check and conditional insertion atomic rather than separating the COUNT queries from the INSERT.

@@ -1,32 +1,32 @@
 {
   "sites": {
     "lesson": {
-      "siteId": "4ab35e09-433f-4f99-82b0-ff22a95b35d0",
-      "versionId": "74130b4c-c7a8-4cbf-9138-70a676a85cd0",
-      "hostname": "jefes-mwmo8jye.localhost",
-      "slug": "jefes-mwmo8jye",
-      "token": "b8a840b7d80f45f48972d642c4aa9a02"
+      "siteId": "d5d75a18-43a9-44fc-8ae8-dcd503b39c89",
+      "versionId": "8a5f4ea6-1942-4d99-ad6f-f55b0231cac0",
+      "hostname": "jefes-mwnq2nq1.localhost",
+      "slug": "jefes-mwnq2nq1",
+      "token": "b0c4d9021629479f8f0c005f69b7e91a"
     },
     "field": {
-      "siteId": "ad1585a8-20a0-4a49-a1cb-9bd248bf3735",
-      "versionId": "afe40800-eff5-4dc4-b2f4-04caeaeaee42",
-      "hostname": "sangkwae-mwmo8jye.localhost",
-      "slug": "sangkwae-mwmo8jye",
-      "token": "fd4ab4e53d13479dbf9d73454ff52c05"
+      "siteId": "62773081-811a-410d-a513-4856d2dc0ef5",
+      "versionId": "ba2220c0-2c32-49c7-b31f-4308035a43f7",
+      "hostname": "sangkwae-mwnq2nq1.localhost",
+      "slug": "sangkwae-mwnq2nq1",
+      "token": "7f4389c06ef549d79b70bb6320481268"
     }
   },
   "scores": {
     "lesson": {
-      "performance": 100,
+      "performance": 99,
       "accessibility": 100,
       "bestPractices": 96,
       "seo": 92,
-      "lcpMs": 1217,
+      "lcpMs": 2261,
       "cls": 0,
-      "tbtMs": 61,
+      "tbtMs": 0,
       "runs": [
         100,
-        "TARGET_CRASHED",
+        99,
         99
       ]
     },
@@ -35,12 +35,12 @@
       "accessibility": 100,
       "bestPractices": 96,
       "seo": 92,
-      "lcpMs": 1872,
+      "lcpMs": 1807,
       "cls": 0,
-      "tbtMs": 3,
+      "tbtMs": 0,
       "runs": [
         100,
-        100,
+        99,
         100
       ]
     }
@@ -57,7 +57,7 @@
     {
       "name": "lesson: 사이트 생성 201",
       "pass": true,
-      "hostname": "jefes-mwmo8jye.localhost"
+      "hostname": "jefes-mwnq2nq1.localhost"
     },
     {
       "name": "lesson: 저장된 설정은 v2",
@@ -74,14 +74,14 @@
     {
       "name": "lesson: 게시 200",
       "pass": true,
-      "versionId": "74130b4c-c7a8-4cbf-9138-70a676a85cd0",
+      "versionId": "8a5f4ea6-1942-4d99-ad6f-f55b0231cac0",
       "number": 1,
-      "publishedAt": "2026-11-18T22:06:51.397Z",
+      "publishedAt": "2026-11-19T15:46:01.656Z",
       "pages": [
         "/",
         "/privacy"
       ],
-      "renderId": "0f41cf6f35ae439f"
+      "renderId": "c99951df92564498"
     },
     {
       "name": "lesson: 공개 홈 200 + canonical + JSON-LD + 연락 바",
@@ -102,7 +102,7 @@
     {
       "name": "field: 사이트 생성 201",
       "pass": true,
-      "hostname": "sangkwae-mwmo8jye.localhost"
+      "hostname": "sangkwae-mwnq2nq1.localhost"
     },
     {
       "name": "field: 저장된 설정은 v2",
@@ -119,14 +119,14 @@
     {
       "name": "field: 게시 200",
       "pass": true,
-      "versionId": "afe40800-eff5-4dc4-b2f4-04caeaeaee42",
+      "versionId": "ba2220c0-2c32-49c7-b31f-4308035a43f7",
       "number": 1,
-      "publishedAt": "2026-11-18T22:06:51.665Z",
+      "publishedAt": "2026-11-19T15:46:01.891Z",
       "pages": [
         "/",
         "/privacy"
       ],
-      "renderId": "1163ff30342b431b"
+      "renderId": "c0a68f9c0df340d3"
     },
     {
       "name": "field: 공개 홈 200 + canonical + JSON-LD + 연락 바",
@@ -148,7 +148,7 @@
       "name": "프리뷰: 하이드레이션 오류 없음, 링크가 프리뷰 안, 문의 전송 차단",
       "pass": true,
       "errors": [],
-      "privacyHref": "/preview/b8a840b7d80f45f48972d642c4aa9a02/privacy",
+      "privacyHref": "/preview/b0c4d9021629479f8f0c005f69b7e91a/privacy",
       "blocked": "프리뷰에서는 문의가 전송되지 않습니다."
     },
     {
@@ -190,32 +190,32 @@
     {
       "name": "lesson: Lighthouse 모바일 성능 90 이상, LCP 2.5초 이하",
       "pass": true,
-      "performance": 100,
+      "performance": 99,
       "accessibility": 100,
       "bestPractices": 96,
       "seo": 92,
-      "lcpMs": 1217,
+      "lcpMs": 2261,
       "cls": 0,
-      "tbtMs": 61,
+      "tbtMs": 0,
       "runs": [
         100,
-        "TARGET_CRASHED",
+        99,
         99
       ]
     },
     {
       "name": "lesson: Lighthouse SEO 90 이상, 접근성 90 이상",
       "pass": true,
-      "performance": 100,
+      "performance": 99,
       "accessibility": 100,
       "bestPractices": 96,
       "seo": 92,
-      "lcpMs": 1217,
+      "lcpMs": 2261,
       "cls": 0,
-      "tbtMs": 61,
+      "tbtMs": 0,
       "runs": [
         100,
-        "TARGET_CRASHED",
+        99,
         99
       ]
     },
@@ -226,12 +226,12 @@
       "accessibility": 100,
       "bestPractices": 96,
       "seo": 92,
-      "lcpMs": 1872,
+      "lcpMs": 1807,
       "cls": 0,
-      "tbtMs": 3,
+      "tbtMs": 0,
       "runs": [
         100,
-        100,
+        99,
         100
       ]
     },
@@ -242,12 +242,12 @@
       "accessibility": 100,
       "bestPractices": 96,
       "seo": 92,
-      "lcpMs": 1872,
+      "lcpMs": 1807,
       "cls": 0,
-      "tbtMs": 3,
+      "tbtMs": 0,
       "runs": [
         100,
-        100,
+        99,
         100
       ]
     }

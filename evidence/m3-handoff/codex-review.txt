@@ -1,0 +1,1332 @@
+OpenAI Codex v0.167.0
+--------
+workdir: /Users/steve/Projects/daniworks-sites-platform
+model: gpt-6.1-sol
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: low
+reasoning summaries: none
+session id: 01a1f0ad-4838-7440-bad2-466277576443
+--------
+user
+current changes
+exec
+/bin/zsh -lc 'pwd; git status --short; find .. -name AGENTS.md -o -name AGENTS.override.md' in /Users/steve/Projects/daniworks-sites-platform
+exec
+/bin/zsh -lc 'ls -a; for p in /AGENTS.md /Users/AGENTS.md /Users/steve/AGENTS.md /Users/steve/Projects/AGENTS.md; do [ ! -f "$p" ] || cat "$p"; done; git diff; cat apps/api/src/handoff.ts; cat scripts/verify-m3-handoff.mjs' in /Users/steve/Projects/daniworks-sites-platform
+ succeeded in 0ms:
+.
+..
+.dockerignore
+.git
+.gitignore
+README.md
+apps
+docker
+docker-compose.yml
+docs
+evidence
+node_modules
+package.json
+packages
+pnpm-lock.yaml
+pnpm-workspace.yaml
+scripts
+tsconfig.base.json
+diff --git a/apps/api/src/index.ts b/apps/api/src/index.ts
+index 36577f4..e2526d7 100644
+--- a/apps/api/src/index.ts
++++ b/apps/api/src/index.ts
+@@ -8,6 +8,7 @@ import type { Env } from "./env.js";
+ import { HttpError, json, readJson, requireAdmin } from "./http.js";
+ import { MEDIA_PATH, r2MediaKey, r2SharedKey } from "./keys.js";
+ import { addDomain, auditOrigins, domainQuota, listDomains, maintainDomains, refreshDomain, removeDomain, type DomainRow } from "./domains.js";
++import { templateSeedExport } from "./handoff.js";
+ import { handleMcp } from "./mcp.js";
+ import { assetBase, publish, rollback, siteOrigin } from "./publish.js";
+ import { auditHostRecords, reconcileHostRecords, syncHostRecordsNow } from "./routes.js";
+@@ -163,6 +164,11 @@ async function handle(request: Request, env: Env): Promise<Response> {
+     if (method === "DELETE" && parts.length === 4) return json(await removeDomain(env, site.id, hostname));
+   }
+ 
++  // GET /sites/:id/template-seed[?versionId=]: content for the AI homepage importer
++  if (method === "GET" && parts.length === 3 && parts[2] === "template-seed") {
++    return json(await templateSeedExport(env, site.id, url.searchParams.get("versionId") ?? undefined));
++  }
++
+   // Lifecycle: POST /cancel, /reactivate, /purge {confirmSlug}; GET /export.zip
+   if (method === "POST" && parts.length === 3 && parts[2] === "cancel") return json(await cancelSite(env, site));
+   if (method === "POST" && parts.length === 3 && parts[2] === "reactivate") return json(await reactivateSite(env, site));
+diff --git a/packages/renderer/src/index.ts b/packages/renderer/src/index.ts
+index 03216b9..d020892 100644
+--- a/packages/renderer/src/index.ts
++++ b/packages/renderer/src/index.ts
+@@ -3,7 +3,7 @@ export { toPageData, toSitePages, requireValidConfig, SiteConfigError, BUILDER_V
+ export type { SiteConfig, SiteConfigInput, LegacySiteConfig } from "./site-config.js";
+ export { isServiceConfig } from "./site-config.js";
+ export type { PageData, SiteChrome } from "./view.js";
+-export { parseSiteConfig, validateSiteConfig } from "./validate.js";
++export { HOST_COMPOSITION, parseSiteConfig, validateSiteConfig } from "./validate.js";
+ export { allowedPickerIcons } from "./icons/allowlist.js";
+ export { ASSET_VERSION, RENDER_VERSION } from "./generated/asset-version.js";
+ export { compileServiceSeed, SAMPLE_PHOTOS, mediaPath } from "./templates/service-local/compile.js";
+diff --git a/scripts/verify-all.mjs b/scripts/verify-all.mjs
+index 37ad05e..5bfec1d 100644
+--- a/scripts/verify-all.mjs
++++ b/scripts/verify-all.mjs
+@@ -17,6 +17,7 @@ const steps = [
+   ["m3-reports", "verify-m3-reports.mjs"],
+   ["m3-republish", "verify-m3-republish.mjs"],
+   ["m3-lifecycle", "verify-m3-lifecycle.mjs"],
++  ["m3-handoff", "verify-m3-handoff.mjs"],
+ ];
+ const only = process.argv.slice(2);
+ const summary = [];
+import { compileServiceSeed, HOST_COMPOSITION, isServiceConfig, parseSiteConfig } from "@sites/renderer";
+import type { Env } from "./env.js";
+import { HttpError } from "./http.js";
+import { siteOrigin } from "./publish.js";
+import { getSite } from "./store.js";
+
+/**
+ * Hand-off to the AI homepage product (Strapi via create-daniworks-app's importer): the site's
+ * content as a Builder TemplateSeed plus the selection it renders with. Uploaded photos get
+ * absolute URLs so the importer can download them. The importer side lives in builder-v2.
+ */
+export async function templateSeedExport(env: Env, siteId: string, versionId?: string) {
+  const site = await getSite(env.DB, siteId);
+  const id = versionId ?? site.published_version_id;
+  if (!id) throw new HttpError(409, "게시된 버전이 없습니다. versionId를 지정하세요");
+  const row = await env.DB.prepare("SELECT number, config FROM site_versions WHERE id = ? AND site_id = ?").bind(id, siteId).first<{ number: number; config: string }>();
+  if (!row) throw new HttpError(404, "버전이 없습니다");
+  const parsed = parseSiteConfig(JSON.parse(row.config));
+  if (!parsed.ok || !isServiceConfig(parsed.config)) throw new HttpError(422, "업종 템플릿(v2) 설정만 내보낼 수 있습니다");
+  const config = parsed.config;
+  const seed = compileServiceSeed(config);
+  const origin = await siteOrigin(env, site);
+  const assets = seed.assets.map((asset) =>
+    asset.src.startsWith("/_media/") ? { ...asset, src: `${origin}${asset.src}`, sourceUrl: `${origin}${asset.src}`, sourceImageUrl: `${origin}${asset.src}` } : asset,
+  );
+  return {
+    format: "dani-builder.template-seed",
+    selection: { templateId: "business-basic", compositionId: HOST_COMPOSITION, paletteId: config.paletteId, themeId: "open-atelier" },
+    source: { siteId, slug: site.slug, version: row.number, templateId: config.templateId, preset: config.preset },
+    business: config.business,
+    seed: { ...seed, assets },
+  };
+}
+// M3 step 3-6: AI homepage hand-off. The exported TemplateSeed passes the Builder seed contract
+// (the same check builder-v2's importer runs) and its uploaded photos download by URL.
+import { createRequire } from "node:module";
+import { API, TOKEN, api, evidence, uploadShared } from "./lib/verify.mjs";
+
+const sharp = createRequire(new URL("../packages/renderer/package.json", import.meta.url))("sharp");
+const { fieldFixture } = await import("../packages/renderer/src/templates/service-local/fixtures.ts");
+const { businessBasicTemplate, collectSeedValidationErrors } = await import(
+  "../packages/renderer/node_modules/@dani-builder/site-templates/dist/index.js"
+);
+const ev = evidence("m3-handoff");
+const { check } = ev;
+const run = Date.now().toString(36);
+
+uploadShared();
+const config = { ...structuredClone(fieldFixture), slug: `handoff-${run}` };
+const created = await api("POST", "/sites", { config, createdBy: "operator" });
+const siteId = created.data.siteId;
+check("게시 전에는 versionId 없이 409", (await api("GET", `/sites/${siteId}/template-seed`)).status === 409);
+const photo = await sharp({ create: { width: 1000, height: 700, channels: 3, background: "#369" } }).jpeg().toBuffer();
+const up = await fetch(`${API}/sites/${siteId}/assets`, { method: "POST", headers: { authorization: `Bearer ${TOKEN}`, "content-type": "image/jpeg" }, body: photo }).then((r) => r.json());
+const v2 = structuredClone(config);
+v2.content.hero.image = { key: up.key, alt: "현장", width: up.width, height: up.height };
+const draft = await api("POST", `/sites/${siteId}/versions`, { config: v2 });
+await api("POST", `/sites/${siteId}/publish`, { versionId: draft.data.versionId });
+
+const out = (await api("GET", `/sites/${siteId}/template-seed`)).data;
+check("형식·선택 정보·출처", out.format === "dani-builder.template-seed" && out.selection.templateId === "business-basic" && out.source.version === 2 && out.source.preset === "field");
+const errors = collectSeedValidationErrors(businessBasicTemplate, out.selection.compositionId, out.seed);
+check("빌더 seed 계약 검증 통과(importer와 같은 검사)", errors.length === 0, { errors: errors.slice(0, 5) });
+check("페이지: 홈과 개인정보처리방침, 상호", out.seed.pages.map((p) => p.route).join() === "/,/privacy" && out.seed.global.sitename === config.business.name);
+const uploaded = out.seed.assets.find((a) => a.key === up.key);
+const download = uploaded ? await fetch(uploaded.src.replace(/^https?:\/\/[^/]+/, API)) : null;
+check("업로드 사진은 절대 URL이고 내려받아짐", uploaded?.src.startsWith("http") && download?.ok && download.headers.get("content-type") === "image/jpeg");
+const older = (await api("GET", `/sites/${siteId}/template-seed?versionId=${created.data.versionId}`)).data;
+check("versionId로 예전 버전도 내보냄", older.source.version === 1 && !older.seed.assets.some((a) => a.key === up.key));
+
+ev.finish({ siteId });
+
+exec
+/bin/zsh -lc 'find . -name AGENTS.md -o -name AGENTS.override.md; cat /Users/steve/.codex/skills/workers-best-practices/SKILL.md; cat apps/api/src/publish.ts; cat packages/renderer/src/templates/service-local/compile.ts' in /Users/steve/Projects/daniworks-sites-platform
+ succeeded in 1134ms:
+./node_modules/.pnpm/@dani-builder+strapi-client@2.5.0/node_modules/@dani-builder/strapi-client/AGENTS.md
+./node_modules/.pnpm/next@16.4.6_react-dom@19.3.1_react@19.3.1__react@19.3.1/node_modules/next/AGENTS.md
+./node_modules/.pnpm/next@16.4.6_@opentelemetry+api@1.10.0_@types+node@26.6.6_react-dom@19.3.1_react@19.3.1__react@19.3.1/node_modules/next/AGENTS.md
+---
+name: workers-best-practices
+description: Cloudflare Workers best practices for production applications. Use when writing, reviewing, or configuring Workers.
+---
+
+Your knowledge of Cloudflare Workers APIs, types, and configuration may be outdated. **Prefer retrieval over pre-training** when writing or reviewing Workers code.
+
+Use the project's installed versions, generated types, and Wrangler compatibility settings as the baseline for existing code. Retrieve relevant Cloudflare documentation to verify API, configuration, runtime behavior, and limit claims.
+
+## References
+
+Read the sections relevant to the task:
+
+| Reference | When to use it |
+|-----------|----------------|
+| [Configuration and observability](references/configuration.md) | Compatibility dates, bindings, generated types, secrets, logs, and traces |
+| [Runtime patterns](references/runtime-patterns.md) | Streaming, promise lifetime, request state, service calls, security, and runtime tests |
+| [Platform API checks](references/platform-apis.md) | Handler signatures, platform classes, binding access, and serialization |
+
+For missing evidence, consult [Workers best practices](https://developers.cloudflare.com/workers/best-practices/workers-best-practices/index.md) or find the affected product in the [Cloudflare docs directory](https://developers.cloudflare.com/directory/index.md). Use the installed Wrangler schema for config fields. A newer type package does not supersede the project's configured target.
+
+## Keep Compatibility Dates Current
+
+Use today's date for new Workers. Encourage periodic updates for existing Workers, reviewing compatibility changes and running relevant tests. Assess existing behavior against its configured date and flags; see [compatibility guidance](references/configuration.md#keep-compatibility_date-current).
+
+## Enable Observability
+
+Enable [Workers Logs](https://developers.cloudflare.com/workers/observability/logs/workers-logs/index.md) and [Traces](https://developers.cloudflare.com/workers/observability/traces/index.md) when creating or preparing a Worker for production. Set `observability.enabled` and `observability.traces.enabled` to `true`; the top-level setting alone does not enable traces. Use structured JSON logging and configure sampling for the workload. During reviews, flag missing logs or traces. See the [configuration example](references/configuration.md#enable-workers-logs-and-traces).
+
+## Anti-Patterns to Flag
+
+| Anti-pattern | Consequence and preferred pattern |
+|-------------|-----------------------------------|
+| `await response.text()` or similar buffering on unbounded data | Can exhaust Worker memory; [stream large or unbounded bodies](references/runtime-patterns.md#stream-request-and-response-bodies). |
+| Hardcoded secrets in source or config | Leaks credentials through version control; use Wrangler secrets. |
+| `Math.random()` for security-sensitive tokens or IDs | Predictable values; use `crypto.randomUUID()` or `crypto.getRandomValues()`. |
+| Async work started without awaiting, returning, or attaching it to `ctx.waitUntil()` | Work can be dropped and errors missed; tie it to the request or background-work lifetime. |
+| Module-level mutable request state | Leaks data across requests and can cause I/O ownership errors; pass request state explicitly. |
+| Cloudflare REST API calls for operations available through Worker bindings | Adds network and authentication overhead; use the available binding. |
+| `ctx.passThroughOnException()` used as general error handling | Can conceal Worker failures by forwarding to the origin; use explicit error handling and structured error responses. |
+| Hand-written `Env` that duplicates Wrangler bindings | Can drift from configuration; generate binding types with `wrangler types`. |
+| Direct string comparison of secret values | Can expose timing differences; use the [Web Crypto comparison pattern](references/runtime-patterns.md#use-web-crypto-for-secure-token-generation). |
+| Destructuring `ctx` methods, such as `const { waitUntil } = ctx` | Loses the receiver; call `ctx.waitUntil(...)`. |
+| `any` on `Env` or handler parameters | Hides binding and handler contract errors; use the project's generated and platform types. |
+| `as unknown as T` to force a platform type match | Hides incompatibilities; fix the underlying contract. |
+| `implements` used in place of extending a platform base class | Does not inherit runtime behavior, `this.ctx`, or `this.env`; use the appropriate base class. |
+| Unbound `env.X` in a platform class method | Bindings are available through `this.env.X`; see [binding access patterns](references/platform-apis.md#binding-access--the-most-common-error). |
+| Applying one serialization rule across Queues, Workflow steps, storage, and WebSockets | Can reject valid payloads or accept unsupported ones; check the [specific API and encoding](references/platform-apis.md#serialization-boundaries). |
+
+## Validation
+
+Use the project's existing checks for affected Workers behavior: type-check binding or handler contract changes, and run relevant runtime tests for behavior changes. Preserve required repository checks; a narrow edit does not require a full Workers audit.
+
+## Scope
+
+This skill covers Workers-specific best practices and code review. For related topics:
+
+- **Durable Objects**: load the `durable-objects` skill
+- **Workflows**: see [Rules of Workflows](https://developers.cloudflare.com/workflows/build/rules-of-workflows/index.md)
+- **Wrangler CLI commands**: load the `wrangler` skill
+import { ASSET_VERSION, RENDER_VERSION, renderSite, type SiteConfig } from "@sites/renderer";
+import type { Env } from "./env.js";
+import { HttpError } from "./http.js";
+import { kvSiteKey, r2PageKey, r2SharedKey, type PublishedPointer } from "./keys.js";
+import { syncBlogFeed } from "./blog.js";
+import { ensureNotPurged } from "./purge-guard.js";
+import { routesOf, syncHostRecordsNow } from "./routes.js";
+import {
+  getSite,
+  getVersion,
+  latestVersion,
+  markPublished,
+  markRendered,
+  primaryHostname,
+  type SiteRow,
+  type VersionRow,
+} from "./store.js";
+
+export const assetBase = () => `/_shared/${ASSET_VERSION}`;
+
+/** Turnstile frame URL baked into published pages; null when Turnstile is not configured. */
+export const turnstileFrameUrl = (env: Env) =>
+  env.TURNSTILE_SITE_KEY && env.API_ORIGIN ? `${env.API_ORIGIN}/turnstile-frame` : null;
+
+/** Public origin a site is served from: its active custom domain, else `<slug>.<BASE_DOMAIN>`. */
+export async function siteOrigin(env: Env, site: SiteRow) {
+  const host = await primaryHostname(env.DB, site, env.BASE_DOMAIN);
+  return `${env.PUBLIC_SCHEME ?? "https"}://${host}`;
+}
+
+async function requireSharedAssets(env: Env) {
+  const head = await env.SITES.head(r2SharedKey(`${ASSET_VERSION}/_assets/site.css`));
+  if (!head) {
+    throw new HttpError(409, `공용 에셋 ${ASSET_VERSION}이 R2에 없습니다. scripts/upload-shared.mjs를 먼저 실행하세요`);
+  }
+}
+
+/** Everything outside the config that changes the HTML (stored in rendered_origin). */
+export const renderKeyOf = (env: Env, origin: string) => JSON.stringify({ origin, turnstileFrame: turnstileFrameUrl(env) });
+
+/**
+ * Renders every page of a version with the current renderer and shared assets under a fresh,
+ * immutable render_id. Nothing points at it yet: concurrent renders never mix pages.
+ */
+export async function renderToR2(env: Env, version: VersionRow, origin: string) {
+  const config = JSON.parse(version.config) as SiteConfig;
+  // HTML comes from the current renderer, so it must point at the current client bundle.
+  await requireSharedAssets(env);
+  const { pages } = await renderSite(config, { assetBase: assetBase(), origin, turnstileFrame: turnstileFrameUrl(env) });
+  const renderId = crypto.randomUUID().replace(/-/g, "").slice(0, 16);
+  const written: string[] = [];
+  for (const page of pages) {
+    const key = r2PageKey(version.site_id, version.id, page.path, renderId);
+    written.push(key);
+    await env.SITES.put(key, page.html, { httpMetadata: { contentType: "text/html; charset=utf-8" } });
+  }
+  // Any render (publish, rollback, domain maintenance, republish) cleans up if a purge started.
+  await ensureNotPurged(env, version.site_id, written);
+  return { renderId, renderKey: renderKeyOf(env, origin), routes: pages.map((page) => page.route) };
+}
+
+/**
+ * Renders a version unless it is already rendered against the current shared assets and
+ * origin, then records the render (the pointer follows it on the next sync).
+ */
+async function ensureRendered(env: Env, version: VersionRow, origin: string, { keepAssets = false } = {}) {
+  const config = JSON.parse(version.config) as SiteConfig;
+  // Rollback keeps the version's own render; publish moves it to the current renderer and assets.
+  // (site_versions.asset_version holds RENDER_VERSION: assets plus server renderer.)
+  const assetsOk = keepAssets || version.asset_version === RENDER_VERSION;
+  if (version.rendered_at && assetsOk && version.rendered_origin === renderKeyOf(env, origin)) {
+    return routesOf(config);
+  }
+  const render = await renderToR2(env, version, origin);
+  await markRendered(env.DB, version.id, RENDER_VERSION, render.renderKey, render.renderId);
+  return render.routes;
+}
+
+async function pointTo(env: Env, site: SiteRow, version: VersionRow, pages: string[]) {
+  const publishedAt = await markPublished(env.DB, site.id, version.id, RENDER_VERSION);
+  const renderId = (await getVersion(env.DB, site.id, version.id)).render_id;
+  const pointer: PublishedPointer = { versionId: version.id, number: version.number, publishedAt, pages, renderId };
+  await env.ROUTES.put(kvSiteKey(site.id), JSON.stringify(pointer));
+  await syncHostRecordsNow(env, site.id);
+  await syncBlogFeed(env, site.id, JSON.parse(version.config) as { business?: { blogUrl?: string } });
+  return pointer;
+}
+
+/** Publish = render (if needed) → R2 → move the KV pointer. Visible worldwide within about a minute. */
+export async function publish(env: Env, site: SiteRow, versionId?: string) {
+  if (site.cancelled_at) throw new HttpError(409, "해지된 사이트입니다. 먼저 해지를 취소하세요");
+  await requireSharedAssets(env);
+  const version = versionId ? await getVersion(env.DB, site.id, versionId) : await latestVersion(env.DB, site.id);
+  const pages = await ensureRendered(env, version, await siteOrigin(env, site));
+  return pointTo(env, site, version, pages);
+}
+
+/**
+ * Rollback = move the pointer back to a version that was published before. No re-render, unless
+ * the site's origin changed since that version was rendered (custom domain added or removed):
+ * then only its HTML is re-rendered so canonical and OG URLs point at the current host.
+ */
+export async function rollback(env: Env, site: SiteRow, versionId: string) {
+  if (site.cancelled_at) throw new HttpError(409, "해지된 사이트입니다. 먼저 해지를 취소하세요");
+  const version = await getVersion(env.DB, site.id, versionId);
+  if (!version.first_published_at) throw new HttpError(409, "게시된 적 없는 버전으로는 롤백할 수 없습니다");
+  const exists = await env.SITES.head(r2PageKey(site.id, version.id, "index.html", version.render_id));
+  if (!exists) throw new HttpError(409, "렌더된 파일이 R2에 없습니다. publish로 다시 게시하세요");
+  const pages = await ensureRendered(env, version, await siteOrigin(env, site), { keepAssets: true });
+  return pointTo(env, site, version, pages);
+}
+
+/**
+ * The site's origin changed (custom domain activated, failed or removed): re-render the live
+ * version's HTML in place (same R2 keys). The KV pointer is not touched, so this can never undo
+ * a concurrent publish; if the live version changes meanwhile, the new one is checked too.
+ * Returns false when it could not settle (the caller keeps origin_pending for the cron).
+ */
+export async function rerenderLive(env: Env, siteId: string): Promise<boolean> {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const site = await getSite(env.DB, siteId);
+    if (!site.published_version_id) {
+      await syncHostRecordsNow(env, siteId);
+      return true;
+    }
+    const version = await getVersion(env.DB, siteId, site.published_version_id);
+    await ensureRendered(env, version, await siteOrigin(env, site));
+    // Settled only if the live version is unchanged and its HTML matches the origin as of now
+    // (an overlapping domain change may have moved it while this render ran).
+    const after = await getSite(env.DB, siteId);
+    const rendered = await getVersion(env.DB, siteId, version.id);
+    if (after.published_version_id === version.id && rendered.rendered_origin === renderKeyOf(env, await siteOrigin(env, after))) {
+      await syncHostRecordsNow(env, siteId);
+      return true;
+    }
+  }
+  return false;
+}
+import { businessBasicTemplate, type TemplateAsset, type TemplateSeed } from "@dani-builder/site-templates";
+import type { Photo, ServiceSiteConfig } from "@sites/schema";
+import { presets } from "./presets.js";
+
+/** Packaged sample photos by file name (`t:<name>`), shared by every composition. */
+const samples = new Map<string, TemplateAsset>(
+  Object.values(businessBasicTemplate.compositions)
+    .flatMap((composition) => composition.seed.assets)
+    .map((asset) => [asset.src.replace(/^.*\//, "").replace(/\.(jpg|png)$/, ""), asset]),
+);
+
+export const SAMPLE_PHOTOS: readonly string[] = [...samples.keys()];
+
+/** Media URL path for an uploaded photo key `m:<siteId>/<file>`; served by both router and API. */
+export const mediaPath = (key: string) => `/_media/${key.slice(2)}`;
+
+type Block = Record<string, unknown>;
+type Paragraph = { type: "paragraph"; children: { type: "text"; text: string }[] };
+type Heading = { type: "heading"; level: number; children: { type: "text"; text: string }[] };
+
+const paragraphs = (value: string): Paragraph[] =>
+  value
+    .split(/\n{2,}/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((part) => ({ type: "paragraph", children: [{ type: "text", text: part }] }));
+
+const heading = (text: string): Heading => ({ type: "heading", level: 2, children: [{ type: "text", text }] });
+
+export const telHref = (phone: string) => `tel:${phone.replace(/-/g, "")}`;
+
+function section(
+  value: { kicker?: string; heading: string; subheading?: string },
+  extra: Record<string, unknown> = {},
+) {
+  return {
+    kickerText: value.kicker ?? null,
+    heading: value.heading,
+    subheading: value.subheading ?? null,
+    theme: "default",
+    ...extra,
+  };
+}
+
+/** TemplateSeed rejects `undefined`; JSON round-trip drops optional keys that were never set. */
+const plain = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
+
+/**
+ * Compiles a `service-local` config into a Builder TemplateSeed: one landing page plus the
+ * privacy page. Block choice, order and variants belong to the template, never to the author.
+ */
+export function compileServiceSeed(config: ServiceSiteConfig): TemplateSeed {
+  const { business, content } = config;
+  const preset = presets[config.preset];
+  const assets = new Map<string, TemplateAsset>();
+
+  function image(photo: Photo) {
+    if (!assets.has(photo.key)) {
+      if (photo.key.startsWith("t:")) {
+        const sample = samples.get(photo.key.slice(2));
+        if (!sample) throw new Error(`없는 샘플 사진입니다: ${photo.key}`);
+        assets.set(photo.key, { ...sample, key: photo.key, alt: photo.alt });
+      } else {
+        assets.set(photo.key, {
+          key: photo.key,
+          src: mediaPath(photo.key),
+          alt: photo.alt,
+          role: "image",
+          width: photo.width ?? 1600,
+          height: photo.height ?? 1200,
+          mime: photo.key.endsWith(".png") ? "image/png" : "image/jpeg",
+          sourceUrl: "customer-upload",
+          sourceImageUrl: "customer-upload",
+          author: business.name,
+          authorUrl: null,
+          licenseUrl: "customer-provided",
+          sampleNotice: "",
+        });
+      }
+    }
+    return { media: { assetKey: photo.key }, alt: photo.alt, fit: "cover" };
+  }
+
+  const tel = { label: "전화 상담", href: telHref(business.phone), newWindow: false, icon: null };
+  const inquiryLink = { label: preset.inquiryCta, href: "/#inquiry", newWindow: false, icon: null };
+  const kakao = business.kakaoUrl
+    ? { label: "카카오톡 상담", href: business.kakaoUrl, newWindow: true, icon: null }
+    : null;
+
+  const blocks: Block[] = [];
+  blocks.push({
+    __component: "blocks.hero",
+    section: section(content.hero),
+    variant: preset.heroVariant,
+    ctaText: null,
+    ctaLink: inquiryLink,
+    secondaryLink: tel,
+    headerMode: "none",
+    image: image(content.hero.image),
+  });
+  blocks.push({
+    __component: "blocks.features",
+    section: section(content.services, { anchorId: "services" }),
+    variant: preset.servicesVariant,
+    image: null,
+    items: content.services.items.map((item) => ({
+      label: item.label,
+      description: item.description,
+      icon: item.icon ?? null,
+      link: null,
+    })),
+  });
+  if (content.process) {
+    blocks.push({
+      __component: "blocks.features",
+      section: section(content.process, { anchorId: "process", theme: "light" }),
+      variant: "simple-grid",
+      image: null,
+      items: content.process.items.map((item) => ({ label: item.label, description: item.description, link: null })),
+    });
+  }
+  if (content.gallery) {
+    blocks.push({
+      __component: "blocks.highlights",
+      section: section(content.gallery, { anchorId: "gallery" }),
+      variant: preset.galleryVariant,
+      image: null,
+      items: content.gallery.items.map((item) => ({
+        label: item.label,
+        description: item.description ?? null,
+        image: image(item.image),
+        link: null,
+      })),
+    });
+  }
+  if (content.testimonials) {
+    blocks.push({
+      __component: "blocks.testimonials",
+      section: section(content.testimonials, { anchorId: "reviews", theme: "light" }),
+      variant: "card-grid",
+      image: null,
+      items: content.testimonials.items.map((item) => ({
+        quote: item.quote,
+        authorName: item.authorName ?? null,
+        authorRole: item.authorRole ?? null,
+        avatar: null,
+        logo: null,
+        rating: item.rating ?? null,
+      })),
+    });
+  }
+  if (content.team) {
+    blocks.push({
+      __component: "blocks.team",
+      section: section(content.team, { anchorId: "team" }),
+      variant: "grid",
+      items: content.team.items.map((item) => ({
+        memberName: item.memberName,
+        role: item.role ?? null,
+        bio: item.bio ?? null,
+        photo: item.photo ? image(item.photo).media : null,
+        socialLinks: [],
+      })),
+    });
+  }
+  if (content.pricing) {
+    const count = content.pricing.items.length;
+    blocks.push({
+      __component: "blocks.pricing",
+      section: section(content.pricing, { anchorId: "pricing" }),
+      variant: count === 1 ? "single" : count === 2 ? "two-column" : "three-column",
+      items: content.pricing.items.map((item) => ({
+        planName: item.planName,
+        price: item.price,
+        billingPeriod: item.billingPeriod ?? null,
+        description: item.description ?? null,
+        featureList: item.features.map((feature) => `- ${feature}`).join("\n") || null,
+        ctaLink: inquiryLink,
+        highlighted: item.highlighted,
+      })),
+    });
+  }
+
+  const info: Block[] = [];
+  if (business.hours.length) {
+    info.push({
+      label: "운영 시간",
+      description: business.hours.map((h) => `${h.label} ${h.value}`).join("\n\n"),
+      link: null,
+    });
+  }
+  if (business.serviceAreas.length) {
+    info.push({ label: preset.areasLabel, description: business.serviceAreas.join(", "), link: null });
+  }
+  info.push({
+    label: "상담",
+    description: [`전화 ${business.phone}`, business.address].filter(Boolean).join("\n\n"),
+    link: business.mapUrl ? { label: "지도 보기", href: business.mapUrl, newWindow: true, icon: null } : tel,
+  });
+  blocks.push({
+    __component: "blocks.features",
+    section: { kickerText: null, heading: preset.infoHeading, subheading: null, theme: "muted", anchorId: "info" },
+    variant: "dual-column",
+    image: null,
+    items: info,
+  });
+
+  const faqs = content.faqs.map((faq, index) => ({
+    key: `faq:${index + 1}`,
+    locale: "ko",
+    question: faq.question,
+    sortOrder: index + 1,
+    answer: paragraphs(faq.answer),
+  }));
+  if (faqs.length) {
+    blocks.push({
+      __component: "blocks.faq",
+      section: { kickerText: "FAQ", heading: "자주 묻는 질문", subheading: null, theme: "default", anchorId: "faq" },
+      items: faqs.map((faq) => ({ relationKey: faq.key })),
+    });
+  }
+  blocks.push({
+    __component: "blocks.inquiry-form",
+    section: section(content.inquiry, { anchorId: "inquiry" }),
+    successMessage: "문의가 접수되었습니다.\n남겨주신 연락처로 곧 연락드릴게요.",
+    errorMessage: "전송하지 못했습니다. 잠시 뒤 다시 시도하시거나 전화로 문의해 주세요.",
+  });
+  blocks.push({
+    __component: "blocks.cta",
+    section: section(content.cta, { theme: "accent" }),
+    // card-* renders light buttons on a light card under an accent theme (Builder issue draft:
+    // docs/builder-issues.md); inline-centered keeps both links readable.
+    variant: "inline-centered",
+    ctaText: null,
+    ctaLink: tel,
+    secondaryLink: kakao ?? inquiryLink,
+    image: null,
+  });
+
+  const privacy = {
+    key: "page:privacy",
+    locale: "ko",
+    title: "개인정보처리방침",
+    slug: "privacy",
+    directAccess: true,
+    route: "/privacy",
+    headerMode: "offset",
+    blocks: [
+      {
+        __component: "blocks.content",
+        section: { kickerText: null, heading: "개인정보처리방침", subheading: null, theme: "default" },
+        variant: "prose",
+        body: privacyBody(config),
+      },
+    ],
+  };
+
+  const navGroups = [
+    { label: preset.nav.services, href: "/#services", links: [] },
+    ...(content.gallery ? [{ label: preset.nav.gallery, href: "/#gallery", links: [] }] : []),
+    ...(content.testimonials ? [{ label: preset.nav.reviews, href: "/#reviews", links: [] }] : []),
+    { label: preset.nav.info, href: "/#info", links: [] },
+  ];
+  const businessInfo = [
+    [`대표 ${business.representative}`, business.businessNumber && `사업자등록번호 ${business.businessNumber}`]
+      .filter(Boolean)
+      .join(" · "),
+    business.address,
+    `전화 ${business.phone}`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  return plain({
+    assets: [...assets.values()],
+    pages: [
+      {
+        key: "page:home",
+        locale: "ko",
+        title: business.name,
+        slug: "home",
+        directAccess: false,
+        route: "/",
+        headerMode: "offset",
+        blocks,
+      },
+      privacy,
+    ],
+    faqs,
+    navigation: {
+      key: "navigation:main",
+      locale: "ko",
+      align: "right",
+      mainLogo: null,
+      darkLogo: null,
+      groups: navGroups,
+      primaryLink: inquiryLink,
+      secondaryLink: null,
+    },
+    global: {
+      key: "global:site",
+      locale: "ko",
+      sitename: business.name,
+      home: { relationKey: "page:home" },
+      footer: {
+        organization: business.name,
+        businessInfo,
+        logo: null,
+        sitemap: [
+          {
+            label: "안내",
+            links: [
+              { label: "개인정보처리방침", href: "/privacy", newWindow: false, icon: null },
+              ...(business.blogUrl ? [{ label: "블로그", href: business.blogUrl, newWindow: true, icon: null }] : []),
+            ],
+          },
+        ],
+        otherLinks: [],
+        socialLinks: [],
+      },
+    },
+  }) as unknown as TemplateSeed;
+}
+
+/** Inquiry-form privacy policy. Operators confirm it with the customer before opening. */
+function privacyBody(config: ServiceSiteConfig): (Paragraph | Heading)[] {
+  const { business } = config;
+  const contact = business.privacyEmail ? `${business.phone}, ${business.privacyEmail}` : business.phone;
+  return [
+    ...paragraphs(
+      `${business.name}(이하 '회사')는 홈페이지 문의를 처리하기 위해 아래와 같이 개인정보를 수집·이용합니다.`,
+    ),
+    heading("수집 항목과 목적"),
+    ...paragraphs("이름, 연락처, 문의 내용을 상담과 답변을 위해서만 수집합니다."),
+    heading("보유 기간"),
+    ...paragraphs("문의일로부터 1년간 보관한 뒤 지체 없이 파기합니다. 요청하시면 그 전에라도 삭제합니다."),
+    heading("처리 위탁"),
+    ...paragraphs("홈페이지 운영과 문의 저장은 다니웍스에 위탁합니다. 수탁자는 위탁 목적 밖으로 개인정보를 이용하지 않습니다."),
+    heading("개인정보 보호책임자"),
+    ...paragraphs(`${business.representative} (${contact})`),
+    heading("이용자의 권리"),
+    ...paragraphs("언제든 개인정보 열람, 정정, 삭제, 처리 정지를 요청할 수 있으며 위 연락처로 요청하시면 됩니다."),
+  ];
+}
+
+exec
+/bin/zsh -lc "cat package.json; cat scripts/lib/verify.mjs; sed -n '1,145p' apps/api/src/index.ts; rg -n 'cancel|_media' apps/router/src/index.ts; cat packages/renderer/src/validate.ts | head -85; rg -n 'sourceImageUrl|src:' packages/renderer/node_modules/@dani-builder/site-templates/dist -g '*.js' | head" in /Users/steve/Projects/daniworks-sites-platform
+ succeeded in 0ms:
+{
+  "name": "daniworks-sites-platform",
+  "private": true,
+  "packageManager": "pnpm@10.28.0",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "build": "pnpm --filter @sites/renderer build",
+    "test": "pnpm -r test",
+    "check-types": "pnpm -r check-types",
+    "dev:api": "pnpm --filter api dev",
+    "dev:router": "pnpm --filter router dev",
+    "upload:shared": "node scripts/upload-shared.mjs",
+    "verify:m1": "node scripts/verify-m1.mjs",
+    "deploy:staging": "pnpm build && pnpm --filter api migrate:staging && pnpm --filter api deploy:staging && pnpm --filter router deploy:staging",
+    "verify:staging": "node scripts/verify-staging.mjs"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/client": "2.4.0",
+    "chrome-launcher": "1.2.3",
+    "lighthouse": "13.6.0",
+    "playwright": "1.65.1"
+  }
+}
+// Shared helpers for scripts/verify-*.mjs. Runs on a dev machine or in the Docker `verify` service.
+import { execFileSync } from "node:child_process";
+import { mkdirSync, writeFileSync } from "node:fs";
+import http from "node:http";
+import { createRequire } from "node:module";
+
+const require = createRequire(import.meta.url);
+
+export const API = process.env.API_URL ?? "http://127.0.0.1:8788";
+export const ROUTER_PORT = process.env.ROUTER_PORT ?? "8787";
+export const TOKEN = process.env.ADMIN_TOKEN ?? "dev-admin-token";
+
+export function evidence(step) {
+  const dir = `evidence/${step}`;
+  mkdirSync(dir, { recursive: true });
+  const results = [];
+  return {
+    dir,
+    results,
+    check(name, pass, detail = {}) {
+      results.push({ name, pass: Boolean(pass), ...detail });
+      console.log(`${pass ? "PASS" : "FAIL"} ${name}${Object.keys(detail).length ? " " + JSON.stringify(detail) : ""}`);
+      return Boolean(pass);
+    },
+    finish(extra = {}) {
+      writeFileSync(`${dir}/results.json`, JSON.stringify({ ...extra, results }, null, 2));
+      const failed = results.filter((r) => !r.pass).length;
+      console.log(`\n${results.length - failed}/${results.length} passed`);
+      process.exit(failed ? 1 : 0);
+    },
+  };
+}
+
+export async function api(method, path, body, { auth = true, headers = {} } = {}) {
+  const res = await fetch(`${API}${path}`, {
+    method,
+    headers: { ...(auth ? { authorization: `Bearer ${TOKEN}` } : {}), "content-type": "application/json", ...headers },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const text = await res.text();
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    data = text;
+  }
+  return { status: res.status, data, headers: res.headers, text };
+}
+
+/** Request to the router with a Host header (Node cannot resolve *.localhost). */
+export function routerRequest(host, path = "/", { method = "GET", body, headers = {} } = {}) {
+  return new Promise((resolve, reject) => {
+    const req = http.request(
+      { host: "127.0.0.1", port: ROUTER_PORT, path, method, headers: { host: `${host}:${ROUTER_PORT}`, ...headers } },
+      (res) => {
+        let text = "";
+        res.setEncoding("utf8");
+        res.on("data", (c) => (text += c));
+        res.on("end", () => resolve({ status: res.statusCode, headers: res.headers, body: text }));
+      },
+    );
+    req.on("error", reject);
+    if (body !== undefined) req.write(typeof body === "string" ? body : JSON.stringify(body));
+    req.end();
+  });
+}
+
+export function uploadShared() {
+  execFileSync("node", ["scripts/upload-shared.mjs"], {
+    stdio: "inherit",
+    env: { ...process.env, API_URL: API, ADMIN_TOKEN: TOKEN },
+  });
+}
+
+export function chromium() {
+  return require("playwright").chromium;
+}
+
+export const viewports = { mobile: { width: 390, height: 844 }, desktop: { width: 1280, height: 800 } };
+
+/**
+ * Opens a page, scrolls it to trigger lazy images and reports hydration, console errors,
+ * failed and external requests. `allowExternal` lists URL prefixes that may be requested.
+ */
+export async function inspectPage(browser, url, viewport, { screenshot, allowExternal = [] } = {}) {
+  const page = await browser.newPage({ viewport });
+  const origin = new URL(url).origin;
+  const errors = [];
+  const failed = [];
+  const external = [];
+  page.on("console", (m) => m.type() === "error" && errors.push(m.text()));
+  page.on("pageerror", (e) => errors.push(String(e)));
+  page.on("requestfailed", (r) => failed.push(r.url()));
+  page.on("request", (r) => {
+    const u = r.url();
+    if (!u.startsWith(origin) && !u.startsWith("data:") && !allowExternal.some((p) => u.startsWith(p))) external.push(u);
+  });
+  await page.goto(url, { waitUntil: "networkidle" });
+  await page.evaluate(async () => {
+    for (let y = 0; y < document.body.scrollHeight; y += 400) {
+      window.scrollTo(0, y);
+      await new Promise((r) => setTimeout(r, 80));
+    }
+    window.scrollTo(0, 0);
+  });
+  await page.waitForLoadState("networkidle");
+  const state = await page.evaluate(() => {
+    const root = document.getElementById("root");
+    return {
+      hydrated:
+        !!root &&
+        Object.keys(root).some((k) => k.startsWith("__reactContainer")) &&
+        [...root.querySelectorAll("*")].some((el) => Object.keys(el).some((k) => k.startsWith("__reactFiber"))),
+      unloadedImages: [...document.images].filter((i) => !i.complete || i.naturalWidth === 0).map((i) => i.src),
+    };
+  });
+  if (screenshot) await page.screenshot({ path: screenshot, fullPage: true });
+  return { page, errors, failed, external, ...state };
+}
+
+/**
+ * Lighthouse (mobile, simulated throttling), median of `runs` by performance score as
+ * Lighthouse recommends: single runs vary with host CPU load (TBT especially).
+ */
+export async function lighthouse(url, runs = 3) {
+  const all = [];
+  for (let i = 0; i < runs; i++) all.push(await lighthouseOnce(url));
+  const ok = all.filter((r) => !r.error).sort((a, b) => a.performance - b.performance);
+  const median = ok[Math.floor(ok.length / 2)] ?? all[0];
+  return { ...median, runs: all.map((r) => r.error ?? r.performance) };
+}
+
+async function lighthouseOnce(url) {
+  const { default: run } = await import("lighthouse");
+  const chromeLauncher = await import("chrome-launcher");
+  const chrome = await chromeLauncher.launch({
+    chromePath: chromium().executablePath(),
+    chromeFlags: ["--headless=new", "--no-sandbox", "--disable-gpu", "--disable-dev-shm-usage"],
+  });
+  try {
+    const result = await run(url, {
+      port: chrome.port,
+      output: "json",
+      logLevel: "error",
+      onlyCategories: ["performance", "accessibility", "best-practices", "seo"],
+    });
+    const lhr = result.lhr;
+    if (lhr.runtimeError) return { error: lhr.runtimeError.code, performance: 0, report: lhr };
+    const score = (c) => Math.round((lhr.categories[c]?.score ?? 0) * 100);
+    return {
+      performance: score("performance"),
+      accessibility: score("accessibility"),
+      bestPractices: score("best-practices"),
+      seo: score("seo"),
+      lcpMs: Math.round(lhr.audits["largest-contentful-paint"]?.numericValue ?? 0),
+      cls: Number((lhr.audits["cumulative-layout-shift"]?.numericValue ?? 0).toFixed(3)),
+      tbtMs: Math.round(lhr.audits["total-blocking-time"]?.numericValue ?? 0),
+      report: lhr,
+    };
+  } finally {
+    await chrome.kill();
+  }
+}
+
+/** Reads or writes the router's local KV namespace (Docker: shared /state volume). */
+export function localKv(action, key, value) {
+  const args = ["exec", "wrangler", "kv", "key", action, key, ...(value !== undefined ? [value] : []), "--binding", "ROUTES", "--local", "--persist-to", process.env.STATE_DIR ?? "/state"];
+  if (action === "get") args.push("--text");
+  try {
+    const out = execFileSync("pnpm", args, { cwd: "apps/router", encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+    // wrangler prints this and exits 0 for a missing key.
+    return action === "get" && out === "Value not found" ? "" : out;
+  } catch (error) {
+    // A missing key exits non-zero; reads report it as empty.
+    if (action === "get" && /not found/i.test(String(error.stderr ?? error.stdout ?? ""))) return "";
+    throw error;
+  }
+}
+
+/** Runs SQL against the API's local D1 (Docker: shared /state volume). Returns result rows. */
+export function localD1(sql) {
+  const out = execFileSync(
+    "pnpm",
+    ["exec", "wrangler", "d1", "execute", "DB", "--local", "--persist-to", process.env.STATE_DIR ?? "/state", "--command", sql, "--json"],
+    { cwd: "apps/api", encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
+  );
+  return JSON.parse(out)[0]?.results ?? [];
+}
+import { parseSiteConfig, renderSite, SiteConfigError, type SiteConfig } from "@sites/renderer";
+import { listAssets, uploadAsset } from "./assets.js";
+import { refreshBlog, refreshDueBlogs } from "./blog.js";
+import { allInquiries, inquiriesCsv, listInquiries, requireEmail } from "./inquiries.js";
+import { currentQuarter, kstDay, metricsReport, quarterlyCsv, quarterlyOverview, quarterlyReport } from "./metrics.js";
+import { turnstileFrame } from "./turnstile.js";
+import type { Env } from "./env.js";
+import { HttpError, json, readJson, requireAdmin } from "./http.js";
+import { MEDIA_PATH, r2MediaKey, r2SharedKey } from "./keys.js";
+import { addDomain, auditOrigins, domainQuota, listDomains, maintainDomains, refreshDomain, removeDomain, type DomainRow } from "./domains.js";
+import { templateSeedExport } from "./handoff.js";
+import { handleMcp } from "./mcp.js";
+import { assetBase, publish, rollback, siteOrigin } from "./publish.js";
+import { auditHostRecords, reconcileHostRecords, syncHostRecordsNow } from "./routes.js";
+import { cancelSite, exportSite, listCancellations, purgeSite, reactivateSite } from "./lifecycle.js";
+import { commitRepublish, republishPlan, stagedPage, stageRepublish } from "./republish.js";
+import { addDraft, configFromBody, createSiteFromInput, creator, previewUrl } from "./sites.js";
+import { getSite, listSites, listVersions, setSiteStatus, versionByPreviewToken, type CreatedBy } from "./store.js";
+
+/** Must match wrangler.toml [triggers]: the hourly audit; the 5-minute cron only reconciles. */
+const AUDIT_CRON = "17 * * * *";
+
+async function serveImmutable(env: Env, key: string) {
+  const object = await env.SITES.get(key);
+  if (!object) return new Response("not found", { status: 404 });
+  const headers = new Headers();
+  object.writeHttpMetadata(headers);
+  headers.set("cache-control", "public, max-age=31536000, immutable");
+  return new Response(object.body, { headers });
+}
+
+async function handle(request: Request, env: Env): Promise<Response> {
+  const url = new URL(request.url);
+  const parts = url.pathname.split("/").filter(Boolean);
+  const method = request.method;
+
+  if (method === "GET" && url.pathname === "/health") return json({ ok: true });
+
+  // Shared assets are public and immutable; previews load them from here.
+  if (method === "GET" && parts[0] === "_shared") return serveImmutable(env, r2SharedKey(parts.slice(1).join("/")));
+  // Uploaded photos (public, content-addressed) so previews show them before publishing.
+  const media = method === "GET" ? MEDIA_PATH.exec(url.pathname) : null;
+  if (media) return serveImmutable(env, r2MediaKey(media[1]!, media[2]!));
+
+  // Turnstile widget frame embedded by public sites (see turnstile.ts).
+  if (method === "GET" && url.pathname === "/turnstile-frame") {
+    if (!env.TURNSTILE_SITE_KEY) return new Response("turnstile not configured", { status: 404 });
+    const parent = url.searchParams.get("parent") ?? "";
+    if (!/^https?:\/\/[a-z0-9.-]+(:\d+)?$/i.test(parent)) return new Response("bad parent", { status: 400 });
+    return new Response(turnstileFrame(env.TURNSTILE_SITE_KEY, parent), {
+      headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "x-robots-tag": "noindex" },
+    });
+  }
+
+  // Preview: anyone with the token can view a version. Never indexed. /preview/<token>[/privacy]
+  if (method === "GET" && parts[0] === "preview" && (parts.length === 2 || parts.length === 3)) {
+    const version = await versionByPreviewToken(env.DB, parts[1]!);
+    const site = await getSite(env.DB, version.site_id);
+    const { pages } = await renderSite(JSON.parse(version.config) as SiteConfig, {
+      assetBase: assetBase(),
+      origin: await siteOrigin(env, site),
+      preview: true,
+      turnstileFrame: null,
+      // Site links are root-relative (`/#inquiry`, `/privacy`); keep them inside this preview.
+      linkPrefix: `/preview/${parts[1]}`,
+    });
+    const route = parts[2] ? `/${parts[2]}` : "/";
+    const page = pages.find((entry) => entry.route === route);
+    if (!page) throw new HttpError(404, "없는 페이지입니다");
+    return new Response(page.html, {
+      headers: {
+        "content-type": "text/html; charset=utf-8",
+        "x-robots-tag": "noindex, nofollow",
+        "cache-control": "no-store",
+      },
+    });
+  }
+
+  requireAdmin(request, env.ADMIN_TOKEN);
+
+  // MCP tools for AI agents (Streamable HTTP, stateless). Same admin token.
+  if (url.pathname === "/mcp") return handleMcp(request, env);
+
+  // PUT /admin/shared/<version>/<path>: upload one shared asset file.
+  if (method === "PUT" && parts[0] === "admin" && parts[1] === "shared" && parts.length > 3) {
+    const key = r2SharedKey(parts.slice(2).join("/"));
+    await env.SITES.put(key, request.body, {
+      httpMetadata: { contentType: request.headers.get("content-type") ?? "application/octet-stream" },
+    });
+    return json({ key }, 201);
+  }
+
+  // POST /validate {config}: errors without saving (console editor, scripts).
+  if (method === "POST" && url.pathname === "/validate") {
+    const body = await readJson<{ config?: unknown }>(request);
+    const result = parseSiteConfig(body.config);
+    return json(result.ok ? { valid: true, errors: [], config: result.config } : { valid: false, errors: result.errors });
+  }
+
+  // GET /reports/quarterly?quarter=2026-Q4: every site's totals for the quarter.
+  if (method === "GET" && url.pathname === "/reports/quarterly") {
+    const report = await quarterlyOverview(env.DB, url.searchParams.get("quarter") ?? currentQuarter(), env.BASE_DOMAIN);
+    if (!report) throw new HttpError(400, "quarter는 YYYY-Q1~Q4");
+    return json(report);
+  }
+
+  // Full republish: GET /republish/plan; staged HTML at GET /staged/:siteId/:renderId[/privacy]
+  if (method === "GET" && url.pathname === "/republish/plan") return json(await republishPlan(env));
+  if (method === "GET" && parts[0] === "staged" && (parts.length === 3 || parts.length === 4)) {
+    return stagedPage(env, parts[1]!, parts[2]!, parts[3] ?? "");
+  }
+
+  // GET /cancellations: cancelled sites with the date each may be purged.
+  if (method === "GET" && url.pathname === "/cancellations") return json({ cancellations: await listCancellations(env) });
+
+  // GET /domains/quota: custom hostnames on the zone vs. the 100 included.
+  if (method === "GET" && url.pathname === "/domains/quota") return json(await domainQuota(env));
+
+  if (parts[0] !== "sites") throw new HttpError(404, "없는 경로입니다");
+
+  // POST /sites {config, createdBy}
+  if (method === "POST" && parts.length === 1) {
+    const body = await readJson<{ config?: unknown; starter?: Record<string, unknown>; createdBy?: CreatedBy }>(request);
+    return json(await createSiteFromInput(env, configFromBody(body), creator(body.createdBy)), 201);
+  }
+
+  // GET /sites: every site with its published version number and primary hostname.
+  if (method === "GET" && parts.length === 1) {
+    return json({ sites: await listSites(env.DB, env.BASE_DOMAIN) });
+  }
+  if (parts.length < 2) throw new HttpError(404, "없는 경로입니다");
+
+  const site = await getSite(env.DB, parts[1]!);
+
+  if (method === "GET" && parts.length === 2) {
+    const versions = (await listVersions(env.DB, site.id)) as { preview_token: string }[];
+    return json({ site, versions: versions.map((v) => ({ ...v, preview_url: previewUrl(env, v.preview_token) })) });
+  }
+
+  // PATCH /sites/:id {notifyEmail}: operational settings outside the versioned config.
+  if (method === "PATCH" && parts.length === 2) {
+    const body = await readJson<{ notifyEmail?: unknown }>(request);
+    if ("notifyEmail" in body) {
+      await env.DB.prepare("UPDATE sites SET notify_email = ? WHERE id = ?").bind(requireEmail(body.notifyEmail), site.id).run();
+    }
+48:      await reader.cancel();
+161:    if (host.status === "cancelled") return page(410, "운영이 종료된 사이트입니다.");
+import { businessBasicTemplate, collectSeedValidationErrors, type TemplateSeed } from "@dani-builder/site-templates";
+import { formatIssues, SLUG_PATTERN, serviceSiteConfigSchema } from "@sites/schema";
+import { allowedPickerIcons, isPickerIconName } from "./icons/allowlist.js";
+import type { LegacySiteConfig, SiteConfig, SiteConfigInput } from "./site-config.js";
+import { compileServiceSeed } from "./templates/service-local/compile.js";
+
+/** Composition the Builder preview hosts a compiled seed in; only its seed is replaced. */
+export const HOST_COMPOSITION = "forest-stay";
+
+function collectIcons(value: unknown, path: string, out: { path: string; name: string }[]) {
+  if (Array.isArray(value)) {
+    value.forEach((item, i) => collectIcons(item, `${path}[${i}]`, out));
+  } else if (value && typeof value === "object") {
+    for (const [key, child] of Object.entries(value)) {
+      const childPath = path ? `${path}.${key}` : key;
+      if (key === "icon" && typeof child === "string") out.push({ path: childPath, name: child });
+      else collectIcons(child, childPath, out);
+    }
+  }
+}
+
+function iconErrors(value: unknown, root: string): string[] {
+  const icons: { path: string; name: string }[] = [];
+  collectIcons(value, root, icons);
+  return icons
+    .filter(({ name }) => isPickerIconName(name) && !allowedPickerIcons.has(name))
+    .map(({ path, name }) => `${path}: 허용 목록에 없는 아이콘 (${name})`);
+}
+
+function paletteErrors(paletteId: string): string[] {
+  const palettes = Object.keys(businessBasicTemplate.palettes);
+  return palettes.includes(paletteId) ? [] : [`paletteId: ${palettes.join("|")} 중 하나`];
+}
+
+function seedErrors(compositionId: string, seed: TemplateSeed): string[] {
+  return collectSeedValidationErrors(businessBasicTemplate, compositionId as never, seed).map((e) => `seed: ${String(e)}`);
+}
+
+function validateLegacy(config: LegacySiteConfig): string[] {
+  const errors: string[] = [];
+  if (!SLUG_PATTERN.test(config.slug ?? "")) errors.push(`slug: 소문자·숫자·하이픈 1~40자 (${config.slug})`);
+  if (config.templateId !== "business-basic") errors.push(`templateId: service-local(version 2) 또는 business-basic (${config.templateId})`);
+  const compositions = Object.keys(businessBasicTemplate.compositions);
+  if (!compositions.includes(config.compositionId)) errors.push(`compositionId: ${compositions.join("|")} 중 하나`);
+  errors.push(...paletteErrors(config.paletteId));
+  if (!config.meta?.title?.trim()) errors.push("meta.title: 필수");
+  if (!config.meta?.description?.trim()) errors.push("meta.description: 필수");
+  if (config.seed && compositions.includes(config.compositionId)) errors.push(...seedErrors(config.compositionId, config.seed));
+  errors.push(...iconErrors(config.seed, "seed"));
+  return errors;
+}
+
+export type Validation = { ok: true; config: SiteConfig; errors: [] } | { ok: false; errors: string[] };
+
+/**
+ * Every check a config must pass before it is stored. v2 configs are parsed (defaults filled),
+ * compiled into a Builder seed and checked against the Builder contract, so an invalid
+ * template output can never be saved.
+ */
+export function parseSiteConfig(input: SiteConfigInput | unknown): Validation {
+  const raw = (input ?? {}) as { version?: unknown };
+  if (raw.version === 2) {
+    const parsed = serviceSiteConfigSchema.safeParse(input);
+    if (!parsed.success) return { ok: false, errors: formatIssues(parsed.error) };
+    const config = parsed.data;
+    const errors = [...paletteErrors(config.paletteId), ...iconErrors(config.content, "content")];
+    try {
+      errors.push(...seedErrors(HOST_COMPOSITION, compileServiceSeed(config)));
+    } catch (error) {
+      errors.push(error instanceof Error ? error.message : String(error));
+    }
+    return errors.length ? { ok: false, errors } : { ok: true, config, errors: [] };
+  }
+  if (raw.version !== undefined && raw.version !== 1) return { ok: false, errors: ["version: 1 또는 2"] };
+  const errors = validateLegacy(input as LegacySiteConfig);
+  return errors.length ? { ok: false, errors } : { ok: true, config: input as LegacySiteConfig, errors: [] };
+}
+
+/** Errors only; kept for callers that already hold a parsed config. */
+export function validateSiteConfig(config: SiteConfigInput): string[] {
+  return parseSiteConfig(config).errors;
+}
+packages/renderer/node_modules/@dani-builder/site-templates/dist/compositions/business-basic-content.js:9:                    src: 'assets/business-basic/pine-cabin.jpg',
+packages/renderer/node_modules/@dani-builder/site-templates/dist/compositions/business-basic-content.js:16:                    sourceImageUrl: 'https://images.unsplash.com/photo-1449158743715-0a90ebb6d2d8?auto=format&fit=crop&fm=jpg&w=1400&q=85',
+packages/renderer/node_modules/@dani-builder/site-templates/dist/compositions/business-basic-content.js:24:                    src: 'assets/business-basic/pine-interior.jpg',
+packages/renderer/node_modules/@dani-builder/site-templates/dist/compositions/business-basic-content.js:31:                    sourceImageUrl: 'https://images.unsplash.com/photo-1631756964162-25c8c07579b5?auto=format&fit=crop&fm=jpg&w=1400&q=85',
+packages/renderer/node_modules/@dani-builder/site-templates/dist/compositions/business-basic-content.js:39:                    src: 'assets/business-basic/pine-trail.jpg',
+packages/renderer/node_modules/@dani-builder/site-templates/dist/compositions/business-basic-content.js:46:                    sourceImageUrl: 'https://images.unsplash.com/photo-1496526311033-8a80ae14a1f9?auto=format&fit=crop&fm=jpg&w=1400&q=85',
+packages/renderer/node_modules/@dani-builder/site-templates/dist/compositions/business-basic-content.js:54:                    src: 'assets/business-basic/pine-breakfast.jpg',
+packages/renderer/node_modules/@dani-builder/site-templates/dist/compositions/business-basic-content.js:61:                    sourceImageUrl: 'https://images.unsplash.com/photo-1761587412860-222f6ce02f82?auto=format&fit=max&fm=jpg&w=1600&h=1600&q=85',
+packages/renderer/node_modules/@dani-builder/site-templates/dist/compositions/business-basic-content.js:69:                    src: 'assets/business-basic/pine-bench.jpg',
+packages/renderer/node_modules/@dani-builder/site-templates/dist/compositions/business-basic-content.js:76:                    sourceImageUrl: 'https://images.unsplash.com/photo-1634490898730-4d2486a28b03?auto=format&fit=max&fm=jpg&w=1600&h=1600&q=85',
+
+exec
+/bin/zsh -lc "sed -n '132,205p' apps/router/src/index.ts; cat apps/api/src/routes.ts | grep -n -E 'published|status|cancel' ; rg -n 'handoff|importer|template-seed' docs README.md; cat apps/api/package.json; nl -ba apps/api/src/handoff.ts; pnpm check-types" in /Users/steve/Projects/daniworks-sites-platform
+ succeeded in 854ms:
+        hostname,
+        ip: request.headers.get("cf-connecting-ip"),
+        body,
+      });
+      return jsonResponse(result.status, result.body);
+    }
+
+    if (request.method !== "GET" && request.method !== "HEAD") {
+      return new Response("method not allowed", { status: 405 });
+    }
+
+    // Shared assets are content-addressed by version, so any host may serve them.
+    if (url.pathname.startsWith("/_shared/")) {
+      return (
+        (await serveObject(env, r2SharedKey(url.pathname.slice("/_shared/".length)), "public, max-age=31536000, immutable")) ??
+        new Response("not found", { status: 404 })
+      );
+    }
+    // Uploaded photos are public and content-addressed.
+    const media = MEDIA_PATH.exec(url.pathname);
+    if (media) {
+      return (
+        (await serveObject(env, r2MediaKey(media[1]!, media[2]!), "public, max-age=31536000, immutable")) ??
+        new Response("not found", { status: 404 })
+      );
+    }
+
+    const host = await resolveHost(env, hostname);
+    if (!host) return page(404, "연결된 사이트가 없습니다.");
+    if (host.status === "cancelled") return page(410, "운영이 종료된 사이트입니다.");
+    if (host.status === "suspended") return page(503, "잠시 운영을 멈춘 사이트입니다.", { "retry-after": "86400" });
+    if (host.redirectTo) {
+      return Response.redirect(`${url.protocol}//${host.redirectTo}${url.pathname}${url.search}`, 301);
+    }
+    const pointer = host.pointer;
+    if (!pointer) return page(404, "아직 공개되지 않은 사이트입니다.");
+
+    if (url.pathname === "/robots.txt") {
+      return new Response(`User-agent: *\nAllow: /\nSitemap: https://${hostname}/sitemap.xml\n`, {
+        headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "public, max-age=3600" },
+      });
+    }
+    const pages = pointer.pages ?? ["/"];
+    if (url.pathname === "/sitemap.xml") {
+      const lastmod = pointer.publishedAt.slice(0, 10);
+      const urls = pages
+        .map((route) => `<url><loc>https://${hostname}${route}</loc><lastmod>${lastmod}</lastmod></url>`)
+        .join("");
+      return new Response(
+        `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${urls}</urlset>\n`,
+        { headers: { "content-type": "application/xml; charset=utf-8", "cache-control": "public, max-age=3600" } },
+      );
+    }
+    const route = url.pathname === "/index.html" ? "/" : url.pathname.replace(/\/(index\.html)?$/, "") || "/";
+    if (pages.includes(route)) {
+      const path = route === "/" ? "index.html" : `${route.slice(1)}/index.html`;
+      const response = await serveObject(env, r2PageKey(host.siteId, pointer.versionId, path, pointer.renderId), "public, max-age=60");
+      if (response) {
+        response.headers.set("x-site-version", String(pointer.number));
+        if (route !== "/") return response;
+        // Latest blog posts, filled at request time from the cron's KV cache. The body now
+        // changes without the object changing, so the R2 ETag no longer describes it.
+        response.headers.delete("etag");
+        const siteId = host.siteId;
+        return new HTMLRewriter()
+          .on("[data-blog-feed]", {
+            async element(element) {
+              const feed = await env.ROUTES.get<BlogFeed>(`blog:${siteId}`, { type: "json", cacheTtl: 300 });
+              // Edge caches can lag a blog change: only posts from the blog this page links to.
+              const html = feed && feed.source === element.getAttribute("data-blog-feed") ? blogCardsHtml(feed.posts) : "";
+              if (html) element.setInnerContent(html, { html: true });
+            },
+          })
+          .transform(response);
+30:/** Public status of a site as the router sees it. */
+31:export function hostStatus(site: SiteRow): HostRecord["status"] {
+32:  if (site.cancelled_at) return "cancelled";
+33:  return site.status === "suspended" ? "suspended" : "active";
+42:  if (domain.kind === "custom" && domain.status !== "active") return null;
+45:    status: state.status,
+62:          publishedAt: site.published_at ?? site.updated_at,
+68:  const { results: domains } = await env.DB.prepare("SELECT hostname, kind, status FROM domains WHERE site_id = ?")
+70:    .all<{ hostname: string; kind: string; status: string }>();
+71:  const status = hostStatus(site);
+72:  const key = JSON.stringify([status, pointer?.versionId, pointer?.publishedAt, pointer?.renderId, primary, domains]);
+73:  return { site, pointer, primary, domains, status, key };
+77: * Rewrites the KV record of every hostname of a site from D1, the source of truth: status,
+78: * published pointer and redirect. One writer per site at a time (D1 lease). A caller that
+docs/prd.md:136:- AI 홈페이지 전환: 사이트 설정(TemplateSeed)을 Strapi로 가져오는 스크립트. `create-daniworks-app` importer를 고객 seed를 받도록 확장하는 방향.
+{
+  "name": "api",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler d1 migrations apply DB --local --persist-to ../../.wrangler/state && wrangler dev --port 8788 --ip 127.0.0.1 --persist-to ../../.wrangler/state",
+    "check-types": "tsc -p tsconfig.json",
+    "deploy:staging": "wrangler deploy --env staging",
+    "migrate:staging": "wrangler d1 migrations apply DB --env staging --remote",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@cf-wasm/photon": "0.4.0",
+    "@modelcontextprotocol/server": "2.4.0",
+    "@sites/renderer": "workspace:*",
+    "@sites/schema": "workspace:*",
+    "fflate": "0.8.3",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261118.1",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.1",
+    "wrangler": "^4.164.0"
+  }
+}
+     1	import { compileServiceSeed, HOST_COMPOSITION, isServiceConfig, parseSiteConfig } from "@sites/renderer";
+     2	import type { Env } from "./env.js";
+     3	import { HttpError } from "./http.js";
+     4	import { siteOrigin } from "./publish.js";
+     5	import { getSite } from "./store.js";
+     6	
+     7	/**
+     8	 * Hand-off to the AI homepage product (Strapi via create-daniworks-app's importer): the site's
+     9	 * content as a Builder TemplateSeed plus the selection it renders with. Uploaded photos get
+    10	 * absolute URLs so the importer can download them. The importer side lives in builder-v2.
+    11	 */
+    12	export async function templateSeedExport(env: Env, siteId: string, versionId?: string) {
+    13	  const site = await getSite(env.DB, siteId);
+    14	  const id = versionId ?? site.published_version_id;
+    15	  if (!id) throw new HttpError(409, "게시된 버전이 없습니다. versionId를 지정하세요");
+    16	  const row = await env.DB.prepare("SELECT number, config FROM site_versions WHERE id = ? AND site_id = ?").bind(id, siteId).first<{ number: number; config: string }>();
+    17	  if (!row) throw new HttpError(404, "버전이 없습니다");
+    18	  const parsed = parseSiteConfig(JSON.parse(row.config));
+    19	  if (!parsed.ok || !isServiceConfig(parsed.config)) throw new HttpError(422, "업종 템플릿(v2) 설정만 내보낼 수 있습니다");
+    20	  const config = parsed.config;
+    21	  const seed = compileServiceSeed(config);
+    22	  const origin = await siteOrigin(env, site);
+    23	  const assets = seed.assets.map((asset) =>
+    24	    asset.src.startsWith("/_media/") ? { ...asset, src: `${origin}${asset.src}`, sourceUrl: `${origin}${asset.src}`, sourceImageUrl: `${origin}${asset.src}` } : asset,
+    25	  );
+    26	  return {
+    27	    format: "dani-builder.template-seed",
+    28	    selection: { templateId: "business-basic", compositionId: HOST_COMPOSITION, paletteId: config.paletteId, themeId: "open-atelier" },
+    29	    source: { siteId, slug: site.slug, version: row.number, templateId: config.templateId, preset: config.preset },
+    30	    business: config.business,
+    31	    seed: { ...seed, assets },
+    32	  };
+    33	}
+
+> daniworks-sites-platform@ check-types /Users/steve/Projects/daniworks-sites-platform
+> pnpm -r check-types
+
+Scope: 5 of 6 workspace projects
+apps/console check-types$ tsc -p tsconfig.json
+packages/schema check-types$ tsc -p tsconfig.json
+packages/schema check-types: Done
+apps/console check-types: Done
+packages/renderer check-types$ tsc -p tsconfig.json
+packages/renderer check-types: Done
+apps/router check-types$ tsc -p tsconfig.json
+apps/api check-types$ tsc -p tsconfig.json
+apps/router check-types: Done
+apps/api check-types: Done
+
+codex
+No actionable bugs were identified in the staged, unstaged, or untracked changes. Workspace type checks pass; the new integration verification was not run.
+No actionable bugs were identified in the staged, unstaged, or untracked changes. Workspace type checks pass; the new integration verification was not run.

@@ -1,5 +1,5 @@
 {
-  "siteId": "56231f27-a33d-4440-8af0-350b322714e2",
+  "siteId": "b3a64d53-b855-48b4-abc5-ec4098295a14",
   "results": [
     {
       "name": "게시 전에는 versionId 없이 409",
@@ -29,7 +29,7 @@
     {
       "name": "프로젝트에 seed.json(seed+colors)과 자산 파일명 일치, 이전 자산 정리",
       "pass": true,
-      "log": "handoff-mwmof082 v2 → /tmp/aihome-b4Osrt/template-data: 2 pages, 3 assets, palette pine\n다음: 새 CMS에서 pnpm --filter cms template:import",
+      "log": "handoff-mwnq7t3m v2 → /tmp/aihome-XWnnDE/template-data: 2 pages, 3 assets, palette pine\n다음: 새 CMS에서 pnpm --filter cms template:import",
       "files": [
         "8ec72a052fbe41f51efd.jpg",
         "clay-shelves.jpg",
