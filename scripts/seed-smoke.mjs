@@ -67,7 +67,7 @@ const manual = await ensureSite("smoke-clean", fieldFixture, (c) => (c.business.
 if (manual.fresh) {
   await paySite(manual.id);
   await api("POST", `/sites/${manual.id}/publish`);
-  await api("POST", `/sites/${manual.id}/suspend`);
+  await api("POST", `/sites/${manual.id}/suspend`, { reason: "사장님 요청: 매장 리모델링 중" });
 }
 
 const draft = await ensureSite("smoke-draft", fieldFixture, (c) => (c.business.name = "반짝 이사청소"));

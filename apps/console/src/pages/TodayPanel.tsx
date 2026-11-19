@@ -75,7 +75,9 @@ export function TodayPanel() {
   if (!today.data) return null;
   const { billing, manualSuspensions, domains, unlinked } = today.data;
   const drafts = today.data.drafts.filter((d) => d.draft !== "billed"); // billed drafts are under 결제
-  const total = billing.length + manualSuspensions.length + drafts.length + domains.length + unlinked.length;
+  // Sections run most urgent first (money and sites that are down, then what waits on the
+  // owner). Linking customers is housekeeping: listed below, not counted as today's work.
+  const total = billing.length + manualSuspensions.length + drafts.length + domains.length;
   return (
     <Stack spacing={1} data-testid="today">
       <Typography variant="h6" sx={{ fontWeight: 700 }}>
@@ -129,13 +131,18 @@ export function TodayPanel() {
               />
             </Section>
           ) : null}
-          {unlinked.length ? (
-            <Section title="고객 미연결" count={unlinked.length} testid="today-unlinked">
-              <List rows={unlinked} render={(row) => <Item key={row.id} site={row} note="연락할 사장님이 연결되지 않음" />} />
-            </Section>
-          ) : null}
         </Box>
       )}
+      {unlinked.length ? (
+        <Paper variant="outlined" sx={{ p: 1.5, bgcolor: "grey.50" }} data-testid="today-unlinked">
+          <Typography variant="body2" sx={{ fontWeight: 700, mb: 0.5 }}>
+            정리할 것 · 고객(사장님)이 연결되지 않은 사이트 {unlinked.length}곳
+          </Typography>
+          <Stack direction="row" spacing={1.5} useFlexGap sx={{ flexWrap: "wrap" }}>
+            <List rows={unlinked} render={(row) => <Item key={row.id} site={row} note="" />} />
+          </Stack>
+        </Paper>
+      ) : null}
     </Stack>
   );
 }
