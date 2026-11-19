@@ -1,0 +1,32 @@
+{
+  "results": [
+    {
+      "name": "게시 후 호스트 레코드에 업체명",
+      "pass": true
+    },
+    {
+      "name": "중단: 503 + Retry-After + noindex + 캐시 안 함",
+      "pass": true
+    },
+    {
+      "name": "중단 페이지: 업체명(이스케이프)과 준비 중 안내",
+      "pass": true
+    },
+    {
+      "name": "중단 페이지: 연락처·주소·문의 폼·연체 문구 없음",
+      "pass": true
+    },
+    {
+      "name": "중단: 하위 페이지도 같은 안내",
+      "pass": true
+    },
+    {
+      "name": "업체명 없는 옛 레코드: 일반 안내 503",
+      "pass": true
+    },
+    {
+      "name": "재개: 다시 200",
+      "pass": true
+    }
+  ]
+}

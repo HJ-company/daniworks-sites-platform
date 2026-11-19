@@ -45,7 +45,14 @@ function expectedRecord(state: Snapshot, domain: DomainRow): HostRecord | null {
     status: state.status,
     pointer: state.pointer,
     redirectTo: domain.hostname === state.primary ? null : state.primary,
+    name: state.name,
   };
+}
+
+/** Business name of a stored config, for notice pages. v1 configs have none. */
+function businessName(config: { business?: { name?: unknown } }): string | null {
+  const name = config.business?.name;
+  return typeof name === "string" && name.trim() ? name.trim() : null;
 }
 
 /** Routes a stored config renders to (v2 adds the privacy page). */
@@ -53,24 +60,26 @@ export const routesOf = (config: { version?: unknown }) => (config.version === 2
 
 async function snapshot(env: Env, siteId: string) {
   const { site, version } = await servingState(env.DB, siteId);
+  const config = version ? (JSON.parse(version.config) as { version?: unknown; business?: { name?: unknown } }) : null;
   const pointer: PublishedPointer | null =
-    version
+    version && config
       ? {
           versionId: version.id,
           number: version.number,
           // Rows from before migration 0003 are backfilled; never drop a live pointer over a missing time.
           publishedAt: site.published_at ?? site.updated_at,
-          pages: routesOf(JSON.parse(version.config) as { version?: unknown }),
+          pages: routesOf(config),
           renderId: version.render_id,
         }
       : null;
+  const name = config ? businessName(config) : null;
   const primary = await primaryHostname(env.DB, site, env.BASE_DOMAIN);
   const { results: domains } = await env.DB.prepare("SELECT hostname, kind, status FROM domains WHERE site_id = ?")
     .bind(site.id)
     .all<{ hostname: string; kind: string; status: string }>();
   const status = hostStatus(site);
-  const key = JSON.stringify([status, pointer?.versionId, pointer?.publishedAt, pointer?.renderId, primary, domains]);
-  return { site, pointer, primary, domains, status, key };
+  const key = JSON.stringify([status, pointer?.versionId, pointer?.publishedAt, pointer?.renderId, primary, name, domains]);
+  return { site, pointer, primary, domains, status, name, key };
 }
 
 /**
