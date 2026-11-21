@@ -49,6 +49,8 @@ step "api ($ENV)"
 pnpm --filter api exec wrangler deploy --env "$ENV"
 if [ "$uploaded" = 0 ]; then
   step "shared assets ($ENV, first deploy)"
+  # A brand-new route takes a little while to answer.
+  for _ in $(seq 1 30); do curl -fsS -o /dev/null "$API_URL/health" && break; sleep 2; done
   upload_shared
 fi
 step "router ($ENV)"

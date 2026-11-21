@@ -28,6 +28,8 @@ milestone: M5
 
 공개 사이트는 존을 나눴다. 한 존에서 `*/*` 라우트는 Worker 하나에만 걸 수 있는데, 운영 router가 dsites.kr의 `*/*`를 쓴다(고객 도메인 트래픽이 이 라우트로 들어온다). 그래서 스테이징 router는 daniworks.kr 존에 `staging.daniworks.kr/*`와 `*.staging.daniworks.kr/*`로만 붙는다. api는 두 환경 모두 dsites.kr에 있다. `api.dsites.kr/*`와 `api-staging.dsites.kr/*`는 `*/*`보다 구체적이라 그쪽이 우선한다.
 
+주의: 실측해 보니 스테이징 router의 `*.staging.daniworks.kr/*`가 문서와 달리 `staging.daniworks.kr`으로 끝나는 모든 호스트(`abcstaging.daniworks.kr`, `dsites-console-staging.daniworks.kr`)를 잡았다(2026-11-21). 그래서 콘솔은 Custom Domain에 더해 같은 호스트의 정확한 라우트를 둔다(더 구체적인 라우트가 이기고, 라우트는 Custom Domain보다 우선한다). daniworks.kr에 이름이 `staging`으로 끝나는 호스트를 새로 만들 때도 같은 처리가 필요하다.
+
 `<slug>.staging.daniworks.kr`은 2단계 서브도메인이라 Universal SSL이 덮지 못한다. daniworks.kr의 ACM(Total TLS 또는 Advanced 인증서)으로 `*.staging.daniworks.kr` 인증서를 둔다.
 
 ## 배포 흐름

@@ -29,7 +29,13 @@ BILLING_ACCOUNT = "로컬은행 000-0000-0000 (예금주 다니웍스, 로컬 �
 name = "sites-console-staging"
 workers_dev = false
 preview_urls = false
-routes = [{ pattern = "dsites-console-staging.daniworks.kr", custom_domain = true }]
+# The route as well as the Custom Domain: the staging router's `*.staging.daniworks.kr/*` was seen
+# to catch `dsites-console-staging.daniworks.kr` too (any host ending in "staging.daniworks.kr"),
+# and a route outranks a Custom Domain. This exact route is more specific than the router's.
+routes = [
+  { pattern = "dsites-console-staging.daniworks.kr", custom_domain = true },
+  { pattern = "dsites-console-staging.daniworks.kr/*", zone_name = "daniworks.kr" },
+]
 
 [env.staging.vars]
 # Authentik application for the staging console (its own issuer URL). Redirect URI:
