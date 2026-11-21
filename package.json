@@ -13,8 +13,9 @@
     "dev:router": "pnpm --filter router dev",
     "upload:shared": "node scripts/upload-shared.mjs",
     "verify:m1": "node scripts/verify-m1.mjs",
-    "deploy:staging": "pnpm build && pnpm --filter api migrate:staging && pnpm --filter api deploy:staging && pnpm --filter router deploy:staging",
-    "verify:staging": "node scripts/verify-staging.mjs"
+    "deploy:staging": "scripts/deploy.sh staging",
+    "verify:staging": "node scripts/verify-staging.mjs",
+    "deploy:production": "scripts/deploy.sh production"
   },
   "devDependencies": {
     "@modelcontextprotocol/client": "2.4.0",

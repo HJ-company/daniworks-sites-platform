@@ -23,23 +23,41 @@ OIDC_CLIENT_ID = "dsites-console"
 MCP_URL = "http://127.0.0.1:8788/mcp"
 BILLING_ACCOUNT = "로컬은행 000-0000-0000 (예금주 다니웍스, 로컬 예시)"
 
+# Deployed environments. Secrets per env: OIDC_CLIENT_SECRET, SESSION_SECRET (32+ random
+# characters): `wrangler secret put <NAME> --env <env>`.
 [env.staging]
 name = "sites-console-staging"
 workers_dev = false
 preview_urls = false
-routes = [{ pattern = "dsites-console.daniworks.kr", custom_domain = true }]
+routes = [{ pattern = "dsites-console-staging.daniworks.kr", custom_domain = true }]
 
 [env.staging.vars]
-# Authentik application for the console (its own issuer URL). Redirect URI:
-# https://dsites-console.daniworks.kr/auth/callback
-OIDC_ISSUER = "https://authentik.daniworks.kr/application/o/dsites-console/"
-OIDC_CLIENT_ID = "dsites-console"
-MCP_URL = "https://api.dsites.kr/mcp"
-# Deposit account shown in payment requests to owners. Staging placeholder: put the real
-# account here before the production launch (empty: the console warns and leaves it out).
+# Authentik application for the staging console (its own issuer URL). Redirect URI:
+# https://dsites-console-staging.daniworks.kr/auth/callback
+OIDC_ISSUER = "https://authentik.daniworks.kr/application/o/dsites-console-staging/"
+OIDC_CLIENT_ID = "dsites-console-staging"
+MCP_URL = "https://api-staging.dsites.kr/mcp"
 BILLING_ACCOUNT = "다니웍스은행 000-000000-00-000 (예금주 (주)다니웍스, 스테이징 임시값)"
-# Secrets: OIDC_CLIENT_SECRET, SESSION_SECRET (32+ random characters): wrangler secret put … --env staging
 
 [[env.staging.services]]
 binding = "API"
 service = "sites-api-staging"
+
+[env.production]
+name = "sites-console-production"
+workers_dev = false
+preview_urls = false
+routes = [{ pattern = "dsites-console.daniworks.kr", custom_domain = true }]
+
+[env.production.vars]
+# Redirect URI: https://dsites-console.daniworks.kr/auth/callback
+OIDC_ISSUER = "https://authentik.daniworks.kr/application/o/dsites-console/"
+OIDC_CLIENT_ID = "dsites-console"
+MCP_URL = "https://api.dsites.kr/mcp"
+# Deposit account shown in payment requests to owners. Empty until the real account is set before
+# launch: the console then warns and leaves the account out of the message.
+BILLING_ACCOUNT = ""
+
+[[env.production.services]]
+binding = "API"
+service = "sites-api-production"

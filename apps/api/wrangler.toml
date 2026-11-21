@@ -46,35 +46,39 @@ bucket_name = "daniworks-sites"
 binding = "ROUTES"
 id = "00000000000000000000000000000000"
 
-# Staging on the real zone: `pnpm --filter api deploy:staging`. Until launch dsites.kr doubles as staging.
-# Bindings and vars are not inherited by environments, so every one is repeated here.
+# Deployed environments. Bindings and vars are not inherited by environments, so each repeats them.
+# Staging deploys on every push to main (.github/workflows/deploy-staging.yml); production on a
+# release tag or a manual run after approval (deploy-production.yml). Secrets are set once per env
+# with `wrangler secret put <NAME> --env <env>`: ADMIN_TOKEN, TURNSTILE_SECRET, HASH_PEPPER,
+# CF_ZONE_ID (dsites.kr), CF_API_TOKEN (SSL and Certificates: Edit), OPENAI_API_KEY.
+
+# Staging: public sites on <slug>.staging.daniworks.kr (the router's zone), the API next to
+# production's on dsites.kr. api-staging.dsites.kr/* is more specific than production's `*/*`.
 [env.staging]
 name = "sites-api-staging"
 workers_dev = false
 preview_urls = false
-# More specific than the router's `*/*`, so it wins for this host.
-routes = [{ pattern = "api.dsites.kr/*", zone_name = "dsites.kr" }]
+routes = [{ pattern = "api-staging.dsites.kr/*", zone_name = "dsites.kr" }]
 
 [env.staging.triggers]
 crons = ["*/5 * * * *", "17 * * * *"]
 
 [env.staging.vars]
-BASE_DOMAIN = "dsites.kr"
+BASE_DOMAIN = "staging.daniworks.kr"
 PUBLIC_SCHEME = "https"
-API_ORIGIN = "https://api.dsites.kr"
-PREVIEW_ORIGIN = "https://dsites.kr"
-CONSOLE_OIDC_ISSUER = "https://authentik.daniworks.kr/application/o/dsites-console/"
-CONSOLE_OIDC_CLIENT_ID = "dsites-console"
-MCP_OIDC_ISSUER = "https://authentik.daniworks.kr/application/o/dsites-mcp/"
-MCP_OIDC_CLIENT_ID = "dsites-mcp"
-# TURNSTILE_SITE_KEY: widget whose hostnames include api.dsites.kr (the frame host).
-# TURNSTILE_SECRET, HASH_PEPPER: `wrangler secret put ... --env staging`
+API_ORIGIN = "https://api-staging.dsites.kr"
+PREVIEW_ORIGIN = "https://staging.daniworks.kr"
+CONSOLE_OIDC_ISSUER = "https://authentik.daniworks.kr/application/o/dsites-console-staging/"
+CONSOLE_OIDC_CLIENT_ID = "dsites-console-staging"
+MCP_OIDC_ISSUER = "https://authentik.daniworks.kr/application/o/dsites-mcp-staging/"
+MCP_OIDC_CLIENT_ID = "dsites-mcp-staging"
+# TURNSTILE_SITE_KEY: widget whose hostnames include api-staging.dsites.kr (the frame host).
 MAIL_MODE = "binding"
 MAIL_FROM = "noreply@dsites.kr"
 CF_API_BASE = "https://api.cloudflare.com/client/v4"
+# Custom hostnames share production's SaaS zone (dsites.kr). Their traffic reaches production's
+# router unless a test hostname gets its own route to sites-router-staging (docs/deploy.md).
 DOMAIN_CNAME_TARGET = "connect.dsites.kr"
-# CF_ZONE_ID (dsites.kr) and CF_API_TOKEN (SSL and Certificates: Edit): wrangler secret put
-# ADMIN_TOKEN: `wrangler secret put ADMIN_TOKEN --env staging`
 
 # Cloudflare Email Service; dsites.kr must be onboarded for sending (wrangler email sending enable).
 [[env.staging.send_email]]
@@ -93,3 +97,46 @@ bucket_name = "daniworks-sites-staging"
 [[env.staging.kv_namespaces]]
 binding = "ROUTES"
 id = "81f56d8264ab431ab7ca5da79add2496"
+
+# Production: public sites on <slug>.dsites.kr and customer domains (Cloudflare for SaaS).
+[env.production]
+name = "sites-api-production"
+workers_dev = false
+preview_urls = false
+# More specific than the router's `*/*`, so it wins for this host.
+routes = [{ pattern = "api.dsites.kr/*", zone_name = "dsites.kr" }]
+
+[env.production.triggers]
+crons = ["*/5 * * * *", "17 * * * *"]
+
+[env.production.vars]
+BASE_DOMAIN = "dsites.kr"
+PUBLIC_SCHEME = "https"
+API_ORIGIN = "https://api.dsites.kr"
+PREVIEW_ORIGIN = "https://dsites.kr"
+CONSOLE_OIDC_ISSUER = "https://authentik.daniworks.kr/application/o/dsites-console/"
+CONSOLE_OIDC_CLIENT_ID = "dsites-console"
+MCP_OIDC_ISSUER = "https://authentik.daniworks.kr/application/o/dsites-mcp/"
+MCP_OIDC_CLIENT_ID = "dsites-mcp"
+# TURNSTILE_SITE_KEY: widget whose hostnames include api.dsites.kr (the frame host).
+MAIL_MODE = "binding"
+MAIL_FROM = "noreply@dsites.kr"
+CF_API_BASE = "https://api.cloudflare.com/client/v4"
+DOMAIN_CNAME_TARGET = "connect.dsites.kr"
+
+[[env.production.send_email]]
+name = "EMAIL"
+
+[[env.production.d1_databases]]
+binding = "DB"
+database_name = "daniworks-sites-production"
+database_id = "04157951-5c0a-4dfa-b97a-8c37e982df6e"
+migrations_dir = "migrations"
+
+[[env.production.r2_buckets]]
+binding = "SITES"
+bucket_name = "daniworks-sites-production"
+
+[[env.production.kv_namespaces]]
+binding = "ROUTES"
+id = "1f7ad9d80569455281b9a1d8bbbe74c8"

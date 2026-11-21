@@ -1,0 +1,21 @@
+# Every push to main deploys staging (api-staging.dsites.kr, *.staging.daniworks.kr,
+# dsites-console-staging.daniworks.kr).
+name: deploy-staging
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# One staging deploy at a time; a newer push waits for the running one instead of cancelling it
+# mid-migration.
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false
+
+jobs:
+  staging:
+    uses: ./.github/workflows/deploy.yml
+    with:
+      environment: staging
+    secrets: inherit

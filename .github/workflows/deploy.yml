@@ -1,0 +1,56 @@
+# Reusable deploy job: checks, then scripts/deploy.sh for one environment.
+# Callers: deploy-staging.yml (push to main) and deploy-production.yml (tag or manual run).
+# Secrets live on the GitHub Environment of the same name (Settings → Environments):
+#   CLOUDFLARE_API_TOKEN  account token: Workers Scripts/Routes edit, D1 edit, KV edit, R2 edit
+#   ADMIN_TOKEN           the api Worker's ADMIN_TOKEN for that environment (shared asset upload)
+name: deploy
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        type: string
+        required: true
+      ref:
+        type: string
+        required: false
+        default: ""
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    timeout-minutes: 30
+    env:
+      CLOUDFLARE_ACCOUNT_ID: 358a1b6caabcf91741109efca1ec0547
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 0
+
+      # Only commits already on main reach an environment (a tag or manual run cannot ship a
+      # branch that skipped review).
+      - name: Commit is on main
+        run: |
+          git fetch origin main
+          git merge-base --is-ancestor HEAD origin/main || { echo "::error::$(git rev-parse --short HEAD) is not on main"; exit 1; }
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Checks
+        run: |
+          pnpm build
+          pnpm check-types
+          pnpm test
+
+      - name: Deploy ${{ inputs.environment }}
+        run: scripts/deploy.sh ${{ inputs.environment }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}

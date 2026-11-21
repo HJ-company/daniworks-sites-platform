@@ -5,8 +5,6 @@
   "scripts": {
     "dev": "wrangler d1 migrations apply DB --local --persist-to ../../.wrangler/state && wrangler dev --port 8788 --ip 127.0.0.1 --persist-to ../../.wrangler/state",
     "check-types": "tsc -p tsconfig.json",
-    "deploy:staging": "wrangler deploy --env staging",
-    "migrate:staging": "wrangler d1 migrations apply DB --env staging --remote",
     "test": "vitest run"
   },
   "dependencies": {

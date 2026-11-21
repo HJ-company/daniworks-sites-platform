@@ -14,8 +14,9 @@ const { businessBasicTemplate } = await import(
   "../packages/renderer/node_modules/@dani-builder/site-templates/dist/index.js"
 );
 
-const BASE = process.env.BASE_DOMAIN ?? "dsites.kr";
-const API = process.env.API_URL ?? `https://api.${BASE}`;
+// Staging serves sites on staging.daniworks.kr and the API next to production on dsites.kr.
+const BASE = process.env.BASE_DOMAIN ?? "staging.daniworks.kr";
+const API = process.env.API_URL ?? "https://api-staging.dsites.kr";
 const TOKEN =
   process.env.ADMIN_TOKEN ??
   (existsSync("apps/api/.dev.vars.staging")

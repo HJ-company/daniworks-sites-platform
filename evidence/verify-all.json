@@ -1,12 +1,12 @@
 {
-  "at": "2026-11-19T23:32:43.099Z",
+  "at": "2026-11-21T04:46:46.238Z",
   "summary": [
     {
       "step": "m1",
       "ok": true,
       "passed": 19,
       "total": 19,
-      "seconds": 7,
+      "seconds": 6,
       "failed": []
     },
     {
@@ -14,7 +14,7 @@
       "ok": true,
       "passed": 28,
       "total": 28,
-      "seconds": 50,
+      "seconds": 51,
       "failed": []
     },
     {
@@ -22,7 +22,7 @@
       "ok": true,
       "passed": 26,
       "total": 26,
-      "seconds": 4,
+      "seconds": 5,
       "failed": []
     },
     {
@@ -62,7 +62,7 @@
       "ok": true,
       "passed": 30,
       "total": 30,
-      "seconds": 16,
+      "seconds": 18,
       "failed": []
     },
     {
@@ -94,7 +94,7 @@
       "ok": true,
       "passed": 14,
       "total": 14,
-      "seconds": 49,
+      "seconds": 48,
       "failed": []
     },
     {
@@ -166,7 +166,7 @@
       "ok": true,
       "passed": 29,
       "total": 29,
-      "seconds": 8,
+      "seconds": 9,
       "failed": []
     }
   ]

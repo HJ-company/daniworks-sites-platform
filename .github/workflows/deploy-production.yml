@@ -1,0 +1,27 @@
+# Production (api.dsites.kr, *.dsites.kr and customer domains, dsites-console.daniworks.kr).
+# Starts on a release tag (`git tag v2026.11.21 && git push origin v2026.11.21`) or a manual run
+# with a ref. Either way the job waits for a reviewer: the `production` GitHub Environment has
+# required reviewers. The ref must already be on main.
+name: deploy-production
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Tag, branch or commit on main to deploy
+        required: true
+        default: main
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  production:
+    uses: ./.github/workflows/deploy.yml
+    with:
+      environment: production
+      ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref }}
+    secrets: inherit

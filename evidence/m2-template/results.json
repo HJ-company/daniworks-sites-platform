@@ -1,18 +1,18 @@
 {
   "sites": {
     "lesson": {
-      "siteId": "0d19540d-0609-4321-98f0-c93a28c4ef7d",
-      "versionId": "c411a99f-319f-4c1f-8e20-23c431ec1c28",
-      "hostname": "jefes-mwo6k3u3.localhost",
-      "slug": "jefes-mwo6k3u3",
-      "token": "cb4179d32c554e0282f38146ffc42ef3"
+      "siteId": "b564277b-c4b3-4a2b-8401-84601e5e1b7b",
+      "versionId": "5a5eecaa-77f4-48b1-ac1f-cb214e0ea145",
+      "hostname": "jefes-mwpx7ps0.localhost",
+      "slug": "jefes-mwpx7ps0",
+      "token": "8b1d37d5ae394cc6bf7253a011d893be"
     },
     "field": {
-      "siteId": "2818404a-a0cd-432e-a5f0-c546638cdad0",
-      "versionId": "cee9f261-72fa-43ce-95c2-abadd3b55bcf",
-      "hostname": "sangkwae-mwo6k3u3.localhost",
-      "slug": "sangkwae-mwo6k3u3",
-      "token": "3c4c7f97acdb4800b74b614b11608a4e"
+      "siteId": "62818fad-d59e-444d-a1fa-c0f9698c23ab",
+      "versionId": "1e88d28d-1016-451d-8987-a98ad918e520",
+      "hostname": "sangkwae-mwpx7ps0.localhost",
+      "slug": "sangkwae-mwpx7ps0",
+      "token": "fef62038418c4a378bb795bed1faea36"
     }
   },
   "scores": {
@@ -21,11 +21,11 @@
       "accessibility": 100,
       "bestPractices": 100,
       "seo": 100,
-      "lcpMs": 1957,
+      "lcpMs": 2189,
       "cls": 0,
       "tbtMs": 0,
       "runs": [
-        100,
+        99,
         99,
         99
       ]
@@ -35,12 +35,12 @@
       "accessibility": 100,
       "bestPractices": 100,
       "seo": 100,
-      "lcpMs": 2264,
+      "lcpMs": 2188,
       "cls": 0,
       "tbtMs": 0,
       "runs": [
-        100,
         99,
+        100,
         99
       ]
     }
@@ -57,7 +57,7 @@
     {
       "name": "lesson: 사이트 생성 201",
       "pass": true,
-      "hostname": "jefes-mwo6k3u3.localhost"
+      "hostname": "jefes-mwpx7ps0.localhost"
     },
     {
       "name": "lesson: 저장된 설정은 v2",
@@ -74,14 +74,14 @@
     {
       "name": "lesson: 게시 200",
       "pass": true,
-      "versionId": "c411a99f-319f-4c1f-8e20-23c431ec1c28",
+      "versionId": "5a5eecaa-77f4-48b1-ac1f-cb214e0ea145",
       "number": 1,
-      "publishedAt": "2026-11-19T23:27:29.789Z",
+      "publishedAt": "2026-11-21T04:41:27.393Z",
       "pages": [
         "/",
         "/privacy"
       ],
-      "renderId": "701cc676b84e4510"
+      "renderId": "2705220dada8418b"
     },
     {
       "name": "lesson: 공개 홈 200 + canonical + JSON-LD + 연락 바",
@@ -102,7 +102,7 @@
     {
       "name": "field: 사이트 생성 201",
       "pass": true,
-      "hostname": "sangkwae-mwo6k3u3.localhost"
+      "hostname": "sangkwae-mwpx7ps0.localhost"
     },
     {
       "name": "field: 저장된 설정은 v2",
@@ -119,14 +119,14 @@
     {
       "name": "field: 게시 200",
       "pass": true,
-      "versionId": "cee9f261-72fa-43ce-95c2-abadd3b55bcf",
+      "versionId": "1e88d28d-1016-451d-8987-a98ad918e520",
       "number": 1,
-      "publishedAt": "2026-11-19T23:27:30.066Z",
+      "publishedAt": "2026-11-21T04:41:27.664Z",
       "pages": [
         "/",
         "/privacy"
       ],
-      "renderId": "d84294ca85424e13"
+      "renderId": "89fb48ab03554263"
     },
     {
       "name": "field: 공개 홈 200 + canonical + JSON-LD + 연락 바",
@@ -148,7 +148,7 @@
       "name": "프리뷰: 하이드레이션 오류 없음, 링크가 프리뷰 안, 문의 전송 차단",
       "pass": true,
       "errors": [],
-      "privacyHref": "/preview/cb4179d32c554e0282f38146ffc42ef3/privacy",
+      "privacyHref": "/preview/8b1d37d5ae394cc6bf7253a011d893be/privacy",
       "blocked": "시안에서는 문의가 전송되지 않습니다."
     },
     {
@@ -194,11 +194,11 @@
       "accessibility": 100,
       "bestPractices": 100,
       "seo": 100,
-      "lcpMs": 1957,
+      "lcpMs": 2189,
       "cls": 0,
       "tbtMs": 0,
       "runs": [
-        100,
+        99,
         99,
         99
       ]
@@ -210,11 +210,11 @@
       "accessibility": 100,
       "bestPractices": 100,
       "seo": 100,
-      "lcpMs": 1957,
+      "lcpMs": 2189,
       "cls": 0,
       "tbtMs": 0,
       "runs": [
-        100,
+        99,
         99,
         99
       ]
@@ -226,12 +226,12 @@
       "accessibility": 100,
       "bestPractices": 100,
       "seo": 100,
-      "lcpMs": 2264,
+      "lcpMs": 2188,
       "cls": 0,
       "tbtMs": 0,
       "runs": [
-        100,
         99,
+        100,
         99
       ]
     },
@@ -242,12 +242,12 @@
       "accessibility": 100,
       "bestPractices": 100,
       "seo": 100,
-      "lcpMs": 2264,
+      "lcpMs": 2188,
       "cls": 0,
       "tbtMs": 0,
       "runs": [
-        100,
         99,
+        100,
         99
       ]
     }

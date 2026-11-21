@@ -3,7 +3,8 @@
 스타터 홈페이지 플랫폼. 사이트 설정(JSON)을 D1에 버전으로 쌓고, 게시할 때 HTML로 렌더해 R2에 올린다. 라우터 Worker가 접속 도메인을 보고 해당 사이트 파일을 서빙한다.
 
 - 요구사항: [docs/prd.md](docs/prd.md)
-- 결과: [M0 렌더 PoC](docs/m0-render-poc.md), [M1 게시 PoC](docs/m1-publish-poc.md), [스테이징 배포](docs/staging-deploy.md), [M2 첫 고객](docs/m2-first-customer.md), [M3 운영](docs/m3-operations.md)
+- 배포: [docs/deploy.md](docs/deploy.md) (스테이징·운영, GitHub Actions)
+- 결과: [M0 렌더 PoC](docs/m0-render-poc.md), [M1 게시 PoC](docs/m1-publish-poc.md), [M1 스테이징](docs/staging-deploy.md), [M2 첫 고객](docs/m2-first-customer.md), [M3 운영](docs/m3-operations.md)
 
 ```bash
 pnpm install
@@ -39,9 +40,11 @@ API_URL=... ADMIN_TOKEN=... node scripts/republish-all.mjs [--apply]            
 API_URL=... ADMIN_TOKEN=... node scripts/handoff-to-strapi.mjs --site=<slug> --into=<프로젝트>  # AI 홈페이지 전환
 ```
 
-스테이징(`*.dsites.kr`, `api.dsites.kr`)은 [docs/staging-deploy.md](docs/staging-deploy.md)를 따른다.
+### 배포
+
+main에 push하면 스테이징(`*.staging.daniworks.kr`, `api-staging.dsites.kr`)이 배포된다. 운영(`*.dsites.kr`, `api.dsites.kr`)은 `v*` 태그 또는 Actions 수동 실행 뒤 승인으로 배포된다. 처음 설정과 세부는 [docs/deploy.md](docs/deploy.md).
 
 ```bash
-pnpm deploy:staging                               # 빌드 → D1 원격 마이그레이션 → api → router
+pnpm deploy:staging                               # 로컬에서 직접: 빌드 → D1 마이그레이션 → 공용 자산 → api → router → console
 pnpm verify:staging                               # 실제 도메인에서 전체 시나리오
 ```

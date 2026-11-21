@@ -24,17 +24,19 @@ bucket_name = "daniworks-sites"
 binding = "ROUTES"
 id = "00000000000000000000000000000000"
 
-# Staging on the real zone: `pnpm --filter router deploy:staging`.
-# `*/*` catches every host on the zone, including Cloudflare for SaaS custom hostnames
-# (their traffic enters through the zone's routes). api.dsites.kr/* is more specific and wins.
+# Staging: <slug>.staging.daniworks.kr and draft links on staging.daniworks.kr/preview/…. The
+# zone's certificate must cover *.staging.daniworks.kr (Universal SSL covers one level only).
 [env.staging]
 name = "sites-router-staging"
 workers_dev = false
 preview_urls = false
-routes = [{ pattern = "*/*", zone_name = "dsites.kr" }]
+routes = [
+  { pattern = "staging.daniworks.kr/*", zone_name = "daniworks.kr" },
+  { pattern = "*.staging.daniworks.kr/*", zone_name = "daniworks.kr" },
+]
 
 [env.staging.vars]
-BASE_DOMAIN = "dsites.kr"
+BASE_DOMAIN = "staging.daniworks.kr"
 
 [[env.staging.services]]
 binding = "API"
@@ -48,3 +50,28 @@ bucket_name = "daniworks-sites-staging"
 [[env.staging.kv_namespaces]]
 binding = "ROUTES"
 id = "81f56d8264ab431ab7ca5da79add2496"
+
+# Production: `*/*` catches every host on the zone, including Cloudflare for SaaS custom hostnames
+# (their traffic enters through the zone's routes). api.dsites.kr/* and api-staging.dsites.kr/*
+# are more specific and win.
+[env.production]
+name = "sites-router-production"
+workers_dev = false
+preview_urls = false
+routes = [{ pattern = "*/*", zone_name = "dsites.kr" }]
+
+[env.production.vars]
+BASE_DOMAIN = "dsites.kr"
+
+[[env.production.services]]
+binding = "API"
+service = "sites-api-production"
+entrypoint = "PublicApi"
+
+[[env.production.r2_buckets]]
+binding = "SITES"
+bucket_name = "daniworks-sites-production"
+
+[[env.production.kv_namespaces]]
+binding = "ROUTES"
+id = "1f7ad9d80569455281b9a1d8bbbe74c8"

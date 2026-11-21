@@ -11,7 +11,7 @@
     {
       "name": "새 사이트: 구독 시안, 월 33,000원(부가세 포함), 게시 불가 표시",
       "pass": true,
-      "siteId": "e679eb4c-c9b5-4cd9-a297-7f4eecf7409f",
+      "siteId": "480eda2e-7640-45c7-943b-ead5ce306c0f",
       "cycle": "monthly",
       "amount": 33000,
       "status": "trial",
@@ -26,8 +26,8 @@
       "daysOverdue": null,
       "canPublish": false,
       "nextPeriod": {
-        "start": "2026-11-20",
-        "end": "2026-12-19"
+        "start": "2026-11-21",
+        "end": "2026-12-20"
       }
     },
     {
@@ -37,8 +37,8 @@
     {
       "name": "연 단위로 바꾸면 기본 396,000원, 기간 1년",
       "pass": true,
-      "start": "2026-11-20",
-      "end": "2027-11-19"
+      "start": "2026-11-21",
+      "end": "2027-11-20"
     },
     {
       "name": "금액 직접 지정(쉼표 허용)",
@@ -59,24 +59,24 @@
     {
       "name": "입금 확인 → 활성, 기본 기간 오늘부터 한 달",
       "pass": true,
-      "id": "c4a4a88f-708a-4a86-aa85-c6288b98c6e4",
-      "site_id": "e679eb4c-c9b5-4cd9-a297-7f4eecf7409f",
-      "site_slug": "bill-mwo6pjb8",
+      "id": "b3c63e9c-7aa9-4d44-be43-1b1e28b7a260",
+      "site_id": "480eda2e-7640-45c7-943b-ead5ce306c0f",
+      "site_slug": "bill-mwpxd7ye",
       "business_name": "상쾌공간",
       "amount": 35000,
       "method": "manual",
       "payer_name": "김철수",
-      "paid_on": "2026-11-20",
-      "period_start": "2026-11-20",
-      "period_end": "2026-12-19",
+      "paid_on": "2026-11-21",
+      "period_start": "2026-11-21",
+      "period_end": "2026-12-20",
       "confirmed_by": "스크립트",
       "pg_tx_id": null,
       "invoice_issued_on": null,
       "memo": null,
       "voided_at": null,
       "void_reason": null,
-      "created_at": "2026-11-19T23:31:42.702Z",
-      "updated_at": "2026-11-19T23:31:42.702Z"
+      "created_at": "2026-11-21T04:45:43.888Z",
+      "updated_at": "2026-11-21T04:45:43.888Z"
     },
     {
       "name": "입금 날짜·기간 형식 검증",
@@ -101,29 +101,29 @@
     {
       "name": "기간이 끝난 지 3일: 연체, 유예 11일 남음, 공개 유지",
       "pass": true,
-      "site_id": "e679eb4c-c9b5-4cd9-a297-7f4eecf7409f",
-      "slug": "bill-mwo6pjb8",
-      "customer_id": "320a67d6-75ee-4258-8c24-6f45190cd7ee",
+      "site_id": "480eda2e-7640-45c7-943b-ead5ce306c0f",
+      "slug": "bill-mwpxd7ye",
+      "customer_id": "aed17314-44a7-4535-8296-cb485182751d",
       "suspend_reason": null,
-      "customer_name": "상쾌공간 mwo6pjb8",
+      "customer_name": "상쾌공간 mwpxd7ye",
       "business_name": "상쾌공간",
-      "siteId": "e679eb4c-c9b5-4cd9-a297-7f4eecf7409f",
+      "siteId": "480eda2e-7640-45c7-943b-ead5ce306c0f",
       "cycle": "monthly",
       "amount": 35000,
       "status": "overdue",
       "statusLabel": "연체",
-      "billedAt": "2026-11-19T23:31:42.691Z",
-      "paidThrough": "2026-11-17",
-      "latestEnd": "2026-11-17",
+      "billedAt": "2026-11-21T04:45:43.876Z",
+      "paidThrough": "2026-11-18",
+      "latestEnd": "2026-11-18",
       "nextPaidStart": null,
-      "nextDueOn": "2026-11-18",
-      "graceEndsOn": "2026-12-01",
+      "nextDueOn": "2026-11-19",
+      "graceEndsOn": "2026-12-02",
       "graceDaysLeft": 11,
       "daysOverdue": 3,
       "canPublish": true,
       "nextPeriod": {
-        "start": "2026-11-18",
-        "end": "2026-12-17"
+        "start": "2026-11-19",
+        "end": "2026-12-18"
       }
     },
     {
@@ -191,16 +191,16 @@
       "pass": true
     },
     {
-      "name": "상쾌공간 mwo6pjb8",
+      "name": "상쾌공간 mwpxd7ye",
       "pass": true,
-      "id": "320a67d6-75ee-4258-8c24-6f45190cd7ee",
+      "id": "aed17314-44a7-4535-8296-cb485182751d",
       "contact_name": "김철수",
       "phone": "010-0000-0001",
       "email": null,
       "billing_cycle": null,
       "status": "active",
-      "created_at": "2026-11-19T23:31:42.627Z",
-      "updated_at": "2026-11-19T23:31:42.627Z",
+      "created_at": "2026-11-21T04:45:43.809Z",
+      "updated_at": "2026-11-21T04:45:43.809Z",
       "external_ref": "https://notion.so/lead-1",
       "business_number": "123-45-67890",
       "invoice_email": "tax@example.test",
